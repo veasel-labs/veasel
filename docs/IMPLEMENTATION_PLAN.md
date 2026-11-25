@@ -52,6 +52,18 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   The Desktop startup fix uses the same loopback port as the launcher. A local
   Desktop build attached to the released V backend and shared its PID with the
   released TUI in both startup orders, using isolated profiles.
+- A temporary predecessor harness recorded the published Linux release
+  `v0.103.3-next.0` passing with both packaged launchers in both orders
+  (AppImage→TUI and TUI→AppImage). The artifacts matched `release.json`; both
+  runs kept one authenticated backend PID and reached a TUI connected view plus
+  the Desktop Focus route. A rerun of the checked-in harness failed to observe
+  AppImage-first readiness/Focus, then hit the host disk quota creating the
+  second-order profile. The recorded prior pass is not a passing run of the
+  checked-in harness. The Desktop renderer was inspected headlessly, so this
+  proves startup/reuse only. The
+  release predates exact-file approval PR #821. Reproduction and exact artifact
+  hashes are in [`desktop/packaged-shared-listener-smoke.md`](desktop/packaged-shared-listener-smoke.md)
+  and [`desktop/evidence/shared-listener-v0.103.3-next.0.json`](desktop/evidence/shared-listener-v0.103.3-next.0.json).
 - On the same Linux host, the released AppImage completed a real Claude Code
   task with a file-edit approval in Focus. The released TUI completed a real
   Codex task in explicit accept-edits mode. Both sessions edited only
@@ -65,19 +77,18 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 - [x] Add Veasel-specific, authenticated admission, listing and manifest replay for portable goals.
   Admission records preserve the declared scope and survive restart.
-- [ ] Verify local repository identity, canonical roots and base commits before
-  any dispatch. PR #830 implements an authenticated read-only preflight for
-  checkout identity and scoped paths; it remains a point-in-time diagnostic
-  until merged and must be revalidated by any future dispatcher. Resolve
+- [x] Implement authenticated read-only repository identity preflight for
+  local roots and scoped paths (PR #830). The result remains point-in-time
+  diagnostic evidence and must be revalidated by any future dispatcher.
+- [ ] Bind repository identity/base-SHA revalidation to every dispatch. Resolve
   runner and verifier IDs against registered capabilities and enforce policy
   ceilings and deadlines in V.
 - [x] Persist per-task status and attempt history, initialize it idempotently,
   and atomically claim only dependency-ready tasks within the goal-wide attempt
-  budget (all tasks and retries count). Classify claims whose owner process
-  has exited as uncertain and never replay them; opening another Store does
-  not interrupt a live owner.
-  This state-only groundwork does not dispatch work or link
-  attempts to session operations.
+  budget (all tasks and retries count). Classify claims with missing, exited,
+  or unverifiable owner identity as uncertain and never replay them.
+  This state-only groundwork does not dispatch work or link attempts to
+  session operations.
 - [ ] Link claimed attempts to the existing operation lifecycle before adding
   dispatch. Runner and verifier resolution, dispatch and UI remain separate.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run

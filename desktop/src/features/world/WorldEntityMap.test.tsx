@@ -265,10 +265,13 @@ describe('WorldEntityMap activation', () => {
     const { user } = renderMap();
     // Houses (places) carry always-on name signs; objects stay clear until hover.
     expect(document.querySelector('[data-sign="true"]')).not.toBeNull();
+    const region = screen.getByRole('application', { name: 'test world' });
+    expect(region.style.backgroundImage).not.toContain('grass-a.png');
     // At idle only house signs and the spawn's proximity plaque are visible.
     for (const label of document.querySelectorAll('[data-entity-label-for]')) {
       expect(label.getAttribute('data-sign') === 'true' || label.getAttribute('data-nearby') === 'true').toBe(true);
     }
+    expect(document.querySelector('[data-entity-label-for="object:terminal"]')).toBeNull();
 
     const library = screen.getByRole('button', { name: /^Library · Capability library/i });
     await user.hover(library);

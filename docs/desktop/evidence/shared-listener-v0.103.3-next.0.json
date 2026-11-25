@@ -1,0 +1,60 @@
+{
+  "classification": "PACKAGED LINUX SHARED-LISTENER STARTUP, PRIOR RUN PASSED; CURRENT HARNESS RERUN FAILED",
+  "date": "2026-11-25",
+  "release": {
+    "tag": "v0.103.3-next.0",
+    "source_commit": "1ed9ae5f3c82c5e1f70a1cb48f91f6270c159c80",
+    "manifest_sha256": "c210c4a33792cf1ce5ee3bc0ff18f279b2f73a7141153dd730018c6cee238c4b",
+    "appimage": {
+      "name": "veasel-desktop-0.103.3-next.0-linux-x86_64.AppImage",
+      "sha256": "ce33a72cd4dbdc6f79cc10fcf63b29b1991aeda83e972b4736d0d220ac7bd03f"
+    },
+    "cli_archive": {
+      "name": "veasel-Linux.tar.gz",
+      "sha256": "a28ad27a0db7fabac56eb890d6cd4513a433659a48ce46daa9377e98e36a2b20"
+    },
+    "standalone_tui": {
+      "name": "veasel-tui",
+      "sha256": "f94a88eb371d3b432c01c03a2e730a9f729209997c0f93f38325605e4a7f3981"
+    }
+  },
+  "host": {
+    "platform": "linux-x86_64",
+    "data_directory": "isolated temporary profile",
+    "default_data_path_used": false,
+    "backend_override_set": false
+  },
+  "modes": [
+    {
+      "first_launcher": "AppImage",
+      "second_launcher": "standalone TUI",
+      "result": "passed",
+      "backend_version": "0.103.3-next.0",
+      "same_backend_pid_after_both_launchers": true,
+      "authenticated_loopback_health": true,
+      "tui_connected_view": true,
+      "desktop_focus_route": true
+    },
+    {
+      "first_launcher": "standalone TUI",
+      "second_launcher": "AppImage",
+      "result": "passed",
+      "backend_version": "0.103.3-next.0",
+      "same_backend_pid_after_both_launchers": true,
+      "authenticated_loopback_health": true,
+      "tui_connected_view": true,
+      "desktop_focus_route": true
+    }
+  ],
+  "limitations": [
+    "Desktop renderer was inspected through its loopback DevTools endpoint in headless mode; this does not prove a visible interactive Desktop session.",
+    "This checks backend reuse and startup order only; it does not create or continue a coding session, exercise provider auth, tool approvals, file edits, restart recovery, or native macOS/Windows behavior.",
+    "The release source includes shared-listener PR #820 but predates exact-file approval PR #821."
+  ],
+  "harness": {
+    "reproduction": "scripts/packaged-shared-listener-smoke.py",
+    "prior_pass": "Temporary predecessor with the same artifact, backend reuse, TUI, and Focus-route assertions; it ran before the checked-in child-environment allowlist was added. It made no provider request, but that run does not prove child environment isolation.",
+    "checked_in_harness_rerun": "failed",
+    "rerun_details": "On 2026-11-25 the AppImage-first attempt exited before the expected Focus route/readiness was observed. The TUI subsequently started a backend, so the run did not prove AppImage-first shared PID. Creation of the second-order profile then failed with Disk quota exceeded."
+  }
+}

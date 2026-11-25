@@ -67,8 +67,10 @@ paths:
         with tasks in a stable Kahn traversal. Initially ready tasks and
         children released by each completed task are enqueued in manifest
         order. Direct dependency lists retain manifest order. Task status and
-        attempt history come from durable SQLite state. A running attempt whose
-        owner process has exited is reported as uncertain and is never replayed.
+        attempt history come from durable SQLite state. The 1 MiB admission
+        limit bounds this projection. A running attempt whose owner process has
+        exited or whose identity cannot be verified is reported as uncertain
+        and is never replayed.
         This endpoint does not schedule, execute, or attach work.
       parameters:
         - in: path

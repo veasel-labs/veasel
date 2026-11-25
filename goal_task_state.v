@@ -103,10 +103,11 @@ fn migrate_goal_task_state(mut db sqlite.DB) ! {
 	db.commit()!
 }
 
-// State is seeded for old admissions on open and for each new admission. Only
-// claims owned by a different process are recovered: opening another Store in
-// the current process must not interrupt live claims. A prior-process running
-// attempt is ambiguous, so recovery marks it uncertain and never replays it.
+// State is seeded for old admissions on open and for each new admission. A
+// claim remains running only when its owner is verifiably alive with the same
+// process-start identity. Dead, reused, legacy, or unverifiable ownership is
+// uncertain and never replayed. Opening another Store preserves verified live
+// claims in the current process.
 fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 	admissions := db.exec('SELECT manifest FROM goal_admissions')!
 	db.begin()!

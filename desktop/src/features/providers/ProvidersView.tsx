@@ -73,11 +73,15 @@ export default function ProvidersView() {
         <Panel title="Coding providers" meta="Detected on this machine through their supported CLI status contracts">
           {providers.isPending ? <LoadingState label="Checking installed provider CLIs" /> : null}
           {providers.isError ? (
-            <ErrorState
-              title="Provider status is unavailable"
-              error={providers.error}
-              onRetry={() => void providers.refetch()}
-            />
+            <div className={styles.connectionState}>
+              <ErrorState
+                title="Provider status is unavailable"
+                error={providers.error}
+                guidance="The Veasel backend is not responding, so no login or provider state was changed. Retry when it is running."
+                onRetry={() => void providers.refetch()}
+                retryLabel="Retry connection"
+              />
+            </div>
           ) : null}
           {providers.data ? (
             providers.data.length === 0 ? (
@@ -174,11 +178,15 @@ export default function ProvidersView() {
           <Panel title="Workspace skills" meta={context.workspace || 'User-level skill roots'}>
             {skills.isPending ? <LoadingState label="Discovering skills" /> : null}
             {skills.isError ? (
-              <ErrorState
-                title="Skills could not be discovered"
-                error={skills.error}
-                onRetry={() => void skills.refetch()}
-              />
+              <div className={styles.connectionState}>
+                <ErrorState
+                  title="Skills could not be discovered"
+                  error={skills.error}
+                  guidance="The backend could not inspect your skill roots. Nothing was imported or executed. Retry when it is available."
+                  onRetry={() => void skills.refetch()}
+                  retryLabel="Retry discovery"
+                />
+              </div>
             ) : null}
             {skills.data ? (
               <>
@@ -239,11 +247,15 @@ export default function ProvidersView() {
           <Panel title="MCP servers" meta="Configuration is shown without secret values or command arguments">
             {mcp.isPending ? <LoadingState label="Discovering MCP servers" /> : null}
             {mcp.isError ? (
-              <ErrorState
-                title="MCP configuration could not be discovered"
-                error={mcp.error}
-                onRetry={() => void mcp.refetch()}
-              />
+              <div className={styles.connectionState}>
+                <ErrorState
+                  title="MCP configuration could not be discovered"
+                  error={mcp.error}
+                  guidance="The backend could not inspect MCP settings. No server was enabled or trusted. Retry when it is available."
+                  onRetry={() => void mcp.refetch()}
+                  retryLabel="Retry discovery"
+                />
+              </div>
             ) : null}
             {mcp.data ? (
               mcp.data.servers.length ? (

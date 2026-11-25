@@ -9,6 +9,56 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /v1/goals:
+    post:
+      operationId: admitGoal
+      description: >-
+        Records a Veasel Goal v1 manifest without scheduling or verifying repository
+        access. Repository paths, executor IDs, deadlines and budgets must be
+        verified against local policy before dispatch.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoalAdmission'
+      responses:
+        '200':
+          description: The same manifest was already admitted.
+        '201':
+          description: Manifest recorded. The response contains the admitted manifest.
+        '400':
+          description: Invalid manifest.
+        '401':
+          description: Authentication is required.
+        '409':
+          description: The goal ID already belongs to a different manifest.
+    get:
+      operationId: listAdmittedGoals
+      responses:
+        '200':
+          description: The 100 most recent goal admission summaries.
+        '401':
+          description: Authentication is required.
+  /v1/goals/{id}:
+    get:
+      operationId: getAdmittedGoal
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Stored goal manifest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalAdmission'
+        '401':
+          description: Authentication is required.
+        '404':
+          description: No goal has the requested ID.
   /v1/health:
     get:
       operationId: getHealth
@@ -2385,6 +2435,58 @@ components:
       description: |
         Required on every route except GET /v1/health, for every method, including the SSE stream. The token is VEASEL_API_TOKEN when set, otherwise the contents of the `api-token` file in the Veasel data directory (VEASEL_DATA_DIR, default ~/.local/share/veasel), created with mode 0600. Tokens in query strings are rejected. Missing or wrong credentials return 401 with a WWW-Authenticate: Bearer challenge. Requests whose Host or Origin is not loopback return 403 even with a valid token. See docs/security/backend-caller-auth.md.
   schemas:
+    GoalAdmission:
+      type: object
+      required: [schema_version, id, title, authorized_repositories, acceptance_criteria, deadline, budget, delivery_mode, tasks]
+      properties:
+        schema_version: { const: 1 }
+        id: { type: string, pattern: '^[A-Za-z0-9._-]{1,100}$' }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        authorized_repositories:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [owner, name, path]
+            properties:
+              owner: { type: string, minLength: 1 }
+              name: { type: string, minLength: 1 }
+              path: { type: string, minLength: 1 }
+        acceptance_criteria:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [id, description, verification]
+            properties:
+              id: { type: string, minLength: 1 }
+              description: { type: string, minLength: 1 }
+              verification: { type: string, minLength: 1 }
+        deadline: { type: string, format: date-time }
+        budget:
+          type: object
+          required: [max_attempts, wall_seconds, provider_turns]
+          properties:
+            max_attempts: { type: integer, minimum: 1 }
+            wall_seconds: { type: integer, minimum: 1 }
+            provider_turns: { type: integer, minimum: 1 }
+        delivery_mode: { enum: [report, draft] }
+        tasks:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [id, title, repository, base_sha, paths, recipe, runner, verifier]
+            properties:
+              id: { type: string, minLength: 1 }
+              title: { type: string, minLength: 1, maxLength: 200 }
+              repository: { type: string, minLength: 1 }
+              base_sha: { type: string, pattern: '^(?:[0-9a-f]{40}|[0-9a-f]{64})$' }
+              paths: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
+              depends_on: { type: array, uniqueItems: true, items: { type: string } }
+              recipe: { enum: [research, bug, feature, migration, release] }
+              runner: { type: string, minLength: 1 }
+              verifier: { type: string, minLength: 1 }
     Health:
       type: object
       required: [healthy]

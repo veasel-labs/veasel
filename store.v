@@ -40,7 +40,7 @@ const session_columns = "id, title, directory, created_at, preferred_provider, p
 // latest_schema_version is the highest migration open_store applies. Tests
 // compare against it instead of a literal so adding a migration never breaks
 // them; keep it equal to the last `if current < N` block below.
-const latest_schema_version = 34
+const latest_schema_version = 35
 
 // add_column_if_missing makes ADD COLUMN migrations re-runnable: a ledger row
 // that was removed (tests, manual repair) must not fail on a duplicate column.
@@ -1266,6 +1266,12 @@ fn open_store_at(path string) !&Store {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to commit MCP workspace trust-scope migration')
+		}
+	}
+	if current < 35 {
+		migrate_goal_admissions(mut db) or {
+			db.close() or {}
+			return error('unable to migrate goal admissions: ${err}')
 		}
 	}
 	// Running or cancelling work may have contacted a provider or started a tool

@@ -917,3 +917,15 @@ HUMAN BLOCKERS if certificates/accounts are absent — never claim signed.
   ledger entries that still describe #830 as open are historical snapshots
   from before the merge. Its exact-main CI run `45683259590` remains pending;
   this records the merge and does not claim current main CI is green.
+
+- 2026-11-25 20:18 UTC: Homebrew tap commit `4b885ff33b68e014551744fbd137c792601ce27a`
+  (`Add optional Veasel Desktop cask`) landed directly on `main`, instead of
+  the requested feature-branch PR, because the local checkout inherited global
+  `push.default=upstream` while its feature branch tracked `origin/main`. Luna
+  had reviewed the commit and local checks passed; the commit adds the optional
+  ARM64 Desktop cask, manifest/signature-aware release verification, updater,
+  and install/uninstall CI. No history rewrite or revert was attempted. Main
+  CI run `45693669062` is queued; do not treat this integration as green until
+  its exact-SHA macOS cask job passes. Local push configuration is now
+  overridden to `current` in the Homebrew and AUR worktrees; use explicit
+  branch refspecs for future pushes.

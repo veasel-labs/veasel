@@ -28,6 +28,8 @@ pub:
 	permission_modes        []string
 	session_resume_verified bool
 	usage_reporting         string
+	launchable              bool
+	launch_reason           string
 }
 
 struct ProviderCliStatusCommandResult {
@@ -40,6 +42,10 @@ struct ClaudeAuthStatusResponse {
 	logged_in         ?bool  @[json: 'loggedIn']
 	auth_method       string @[json: 'authMethod']
 	subscription_type string @[json: 'subscriptionType']
+}
+
+struct CursorAuthStatusResponse {
+	is_authenticated ?bool @[json: 'isAuthenticated']
 }
 
 struct ProviderCliAuthResult {
@@ -65,6 +71,15 @@ fn provider_cli_status_with_auth(spec ProviderCliSpec, installed_path string, ve
 	} else {
 		'probe-missing'
 	}
+	launch_reason := if spec.launch_blocked_reason.len > 0 {
+		spec.launch_blocked_reason
+	} else if spec.protocol == 'unknown' {
+		'${spec.name} protocol is not verified; refusing to launch'
+	} else if spec.permission_modes.len == 0 {
+		'${spec.name} has no verified permission mode; refusing to launch'
+	} else {
+		''
+	}
 	return ProviderCliStatus{
 		id:                      spec.id
 		name:                    spec.name
@@ -80,6 +95,8 @@ fn provider_cli_status_with_auth(spec ProviderCliSpec, installed_path string, ve
 		permission_modes:        spec.permission_modes
 		session_resume_verified: spec.session_resume_verified
 		usage_reporting:         spec.usage_reporting
+		launchable:              launch_reason.len == 0
+		launch_reason:           launch_reason
 	}
 }
 
@@ -148,6 +165,17 @@ fn provider_cli_auth_result(spec ProviderCliSpec, exit_code int, output string) 
 			return ProviderCliAuthResult{
 				error: 'unrecognized-status-response'
 			}
+		}
+		'cursor-json' {
+			response := json2.decode[CursorAuthStatusResponse](output) or {
+				return ProviderCliAuthResult{ error: 'unrecognized-status-response' }
+			}
+			if is_authenticated := response.is_authenticated {
+				return ProviderCliAuthResult{
+					state: if is_authenticated { 'verified' } else { 'signed-out' }
+				}
+			}
+			return ProviderCliAuthResult{ error: 'unrecognized-status-response' }
 		}
 		else {
 			return ProviderCliAuthResult{

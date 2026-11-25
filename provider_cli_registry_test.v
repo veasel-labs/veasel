@@ -2,10 +2,12 @@ module main
 
 fn test_provider_cli_registry_is_truthful() {
 	registry := provider_cli_registry()
-	assert registry.len == 4
+	assert registry.len == 5
 	for spec in registry {
 		assert spec.exec.len > 0
-		assert spec.permission_modes.len > 0
+		if spec.id != 'cursor-agent' {
+			assert spec.permission_modes.len > 0
+		}
 		if spec.id == 'claude-code' {
 			assert spec.auth_status_args == ['auth', 'status', '--json']
 			assert spec.auth_status_kind == 'claude-json'
@@ -20,6 +22,14 @@ fn test_provider_cli_registry_is_truthful() {
 			assert spec.protocol == 'acp'
 			assert !spec.session_resume_verified
 			assert spec.usage_reporting == 'unknown'
+		}
+		if spec.id == 'cursor-agent' {
+			assert spec.exec == 'cursor-agent'
+			assert spec.protocol == 'acp'
+			assert spec.auth_status_args == ['status', '--format', 'json']
+			assert spec.auth_status_kind == 'cursor-json'
+			assert spec.permission_modes.len == 0
+			assert spec.launch_blocked_reason.contains('authenticate(cursor_login)')
 		}
 		if spec.id in ['opencode', 'muse'] {
 			assert spec.auth_status_args.len == 0
@@ -44,5 +54,10 @@ fn test_validate_provider_cli_launch_fails_closed() {
 	if _ := validate_provider_cli_launch('nope', 'ask') {
 		panic('unknown provider must refuse to launch')
 	}
+	cursor := validate_provider_cli_launch('cursor-agent', 'ask') or {
+		assert err.msg().contains('not launchable')
+		ProviderCliSpec{}
+	}
+	assert cursor.id == ''
 	_ := validate_provider_cli_launch('codex', 'plan') or { panic(err) }
 }

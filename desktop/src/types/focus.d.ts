@@ -8,7 +8,7 @@
  * build (whose rootDir is electron/) and the renderer bundle.
  */
 
-export type FocusProviderId = 'claude' | 'codex' | 'opencode' | 'muse';
+export type FocusProviderId = 'claude' | 'codex' | 'opencode' | 'muse' | 'cursor-agent';
 
 /** Provider attached to an existing thread; canonical sessions may not record one. */
 export type FocusThreadProviderId = FocusProviderId | 'unknown';
@@ -49,6 +49,8 @@ export interface FocusProviderStatus {
   authDetail: string;
   /** Command the user can run to sign in, when signed out. */
   signInHint: string | null;
+  /** Backend launch gate explanation for discovered but unavailable runners. */
+  launchBlocker?: string | null;
   models: FocusModelOption[];
   capabilities: FocusProviderCapabilities;
   checkedAt: string;

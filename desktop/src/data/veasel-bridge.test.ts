@@ -30,6 +30,7 @@ describe('veasel Focus bridge mapping', () => {
     expect(toFocusProviderId('codex')).toBe('codex');
     expect(toFocusProviderId('opencode')).toBe('opencode');
     expect(toFocusProviderId('muse')).toBe('muse');
+    expect(toFocusProviderId('cursor-agent')).toBe('cursor-agent');
     // Unknown providers must never be silently presented as Claude.
     expect(toFocusProviderId(null)).toBe('unknown');
     expect(toFocusProviderId('something-else')).toBe('unknown');
@@ -425,9 +426,10 @@ describe('veasel Focus bridge HTTP behavior', () => {
   it('reports provider auth as unknown instead of ready', async () => {
     const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: fakeFetch({}) });
     const providers = await bridge.providers();
-    expect(providers).toHaveLength(4);
-    expect(providers.map((provider) => provider.id)).toEqual(['claude', 'codex', 'opencode', 'muse']);
+    expect(providers).toHaveLength(5);
+    expect(providers.map((provider) => provider.id)).toEqual(['claude', 'codex', 'opencode', 'muse', 'cursor-agent']);
     expect(providers.every((provider) => provider.auth === 'unknown')).toBe(true);
+    expect(providers.find((provider) => provider.id === 'cursor-agent')?.capabilities.sessions).toBe(false);
   });
 
   it('maps verified native sign-in while keeping file presence unverified', async () => {
@@ -480,6 +482,39 @@ describe('veasel Focus bridge HTTP behavior', () => {
     expect(opencode?.auth).toBe('unknown');
     // ACP is a wired session protocol in the backend, installed or not.
     expect(opencode?.capabilities.sessions).toBe(true);
+  });
+
+  it('does not enable discovered Cursor ACP sessions until backend launch gate opens', async () => {
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/providers/cli': [
+          {
+            id: 'cursor-agent',
+            name: 'Cursor Agent',
+            exec: 'cursor-agent',
+            protocol: 'acp',
+            installed: true,
+            version: '2026.09.15-d2fe57e',
+            auth_probe_present: true,
+            auth_state: 'verified',
+            auth_method: '',
+            account_mode: '',
+            auth_error: '',
+            permission_modes: [],
+            session_resume_verified: false,
+            usage_reporting: 'unknown',
+            launchable: false,
+            launch_reason: 'Cursor Agent is discovered but not launchable: authenticate(cursor_login) and permission responses are unverified.',
+          },
+        ],
+      }),
+    });
+    const cursor = (await bridge.providers()).find((provider) => provider.id === 'cursor-agent');
+    expect(cursor?.installed).toBe(true);
+    expect(cursor?.auth).toBe('ready');
+    expect(cursor?.capabilities.sessions).toBe(false);
+    expect(cursor?.launchBlocker).toContain('authenticate(cursor_login)');
   });
 
   it('shows a provider-reported Claude.ai login without exposing account identity', async () => {

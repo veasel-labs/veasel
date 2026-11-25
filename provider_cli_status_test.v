@@ -90,6 +90,21 @@ fn test_codex_native_auth_status_uses_only_known_account_modes() {
 	assert trailing_data.error == 'unrecognized-status-response'
 }
 
+fn test_cursor_status_auth_is_parsed_without_enabling_launch() {
+	spec := provider_cli_by_id('cursor-agent') or { panic('missing Cursor Agent spec') }
+	logged_in := provider_cli_auth_result(spec, 0, '{"isAuthenticated":true}')
+	assert logged_in.state == 'verified'
+	assert logged_in.method == ''
+	logged_out := provider_cli_auth_result(spec, 0, '{"isAuthenticated":false}')
+	assert logged_out.state == 'signed-out'
+	malformed := provider_cli_auth_result(spec, 0, '{"authenticated":true}')
+	assert malformed.error == 'unrecognized-status-response'
+	status := provider_cli_status_with_auth(spec, '/usr/bin/cursor-agent', '2026.09.15-d2fe57e', false, logged_in)
+	assert status.auth_state == 'verified'
+	assert status.launchable == false
+	assert status.launch_reason.contains('authenticate(cursor_login)')
+}
+
 fn test_codex_native_auth_status_accepts_exact_response_from_stderr_only() {
 	spec := provider_cli_by_id('codex') or { panic('missing Codex CLI spec') }
 	command := ProviderCliStatusCommandResult{

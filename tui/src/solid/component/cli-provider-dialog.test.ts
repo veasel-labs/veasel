@@ -60,6 +60,38 @@ test("CLI runner picker disables providers that cannot honor the session permiss
   })
 })
 
+test("Cursor discovery remains disabled with an actionable ACP readiness reason", () => {
+  const reason = "Cursor Agent is discovered but not launchable: Veasel has not implemented the required ACP authenticate(cursor_login) step or verified Cursor permission responses."
+  const options = cliProviderOptions([
+    provider({
+      id: "cursor-agent",
+      name: "Cursor Agent",
+      exec: "cursor-agent",
+      version: "2026.09.15-d2fe57e",
+      auth_state: "verified",
+      permission_modes: [],
+      launchable: false,
+      launch_reason: reason,
+    }),
+  ])
+  expect(options[1]).toMatchObject({
+    value: "cursor-agent",
+    disabled: true,
+    description: expect.stringContaining(reason),
+  })
+})
+
+test("Cursor remains disabled when an older backend omits launch readiness", () => {
+  const options = cliProviderOptions([
+    provider({ id: "cursor-agent", name: "Cursor Agent", exec: "cursor-agent", permission_modes: [] }),
+  ])
+  expect(options[1]).toMatchObject({
+    value: "cursor-agent",
+    disabled: true,
+    description: expect.stringContaining("Veasel has not verified Cursor ACP"),
+  })
+})
+
 test("CLI version output cannot inject terminal controls into the picker", () => {
   const options = cliProviderOptions([provider({ version: "2.3.2\u001b[31m" })])
   expect(options[1]?.description).not.toContain("\u001b")

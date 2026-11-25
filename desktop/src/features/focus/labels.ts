@@ -80,6 +80,7 @@ export function approvalQuestion(providerLabel: string, kind: FocusToolKind, nam
 /** Why a provider cannot start a session right now, or null when it can. */
 export function providerBlocker(provider: FocusProviderStatus): string | null {
   if (!provider.installed) return 'Not installed on this machine';
+  if (provider.launchBlocker) return provider.launchBlocker;
   if (!provider.capabilities.sessions) return 'Detected. Sessions here are not available for it yet';
   if (provider.auth === 'signed-out')
     return `${provider.authDetail}. Run \`${provider.signInHint ?? 'its login command'}\` in a terminal`;

@@ -37,7 +37,7 @@ export function cliProviderOptions(providers: ApiCliProvider[], permissionMode =
       {
         title: "No installed CLI providers detected",
         value: "__none__",
-        description: "Install Claude Code, Codex, OpenCode, or Muse and reopen this picker.",
+        description: "Install Claude Code, Codex, OpenCode, Muse, or Cursor Agent and reopen this picker.",
         disabled: true,
       },
     ]
@@ -47,6 +47,11 @@ export function cliProviderOptions(providers: ApiCliProvider[], permissionMode =
     ...installed.map((provider) => {
       const mode = permissionMode
       const supportsMode = provider.permission_modes.includes(mode)
+      // Cursor remains unavailable unless the backend explicitly reports the
+      // newer launch contract; older servers omit these optional fields.
+      const launchable = provider.id === "cursor-agent"
+        ? provider.launchable === true
+        : provider.launchable !== false
       return {
         title: provider.name,
         value: provider.id,
@@ -54,10 +59,15 @@ export function cliProviderOptions(providers: ApiCliProvider[], permissionMode =
           safeModelCatalogText(provider.version) || "version unavailable",
           authSummary(provider),
           `permissions: ${provider.permission_modes.join(", ") || "none"}`,
-          ...(!supportsMode ? [`unavailable in ${mode} mode`] : []),
+          ...(provider.launch_reason
+            ? [safeModelCatalogText(provider.launch_reason)]
+            : provider.id === "cursor-agent" && !launchable
+              ? ["Veasel has not verified Cursor ACP authentication and permission handling."]
+              : []),
+          ...(!supportsMode && launchable ? [`unavailable in ${mode} mode`] : []),
         ].join(" · "),
         searchText: `${provider.id} ${provider.exec} ${provider.protocol}`,
-        disabled: !supportsMode,
+        disabled: !supportsMode || !launchable,
       }
     }),
   ]

@@ -11,6 +11,7 @@ export interface Destination {
 export type DestinationPath =
   | '/focus'
   | '/world'
+  | '/providers'
   | '/office'
   | '/operations'
   | '/workspace'
@@ -32,5 +33,11 @@ export const DESTINATIONS: readonly Destination[] = [
     label: 'World',
     question: 'Where is everything, and what is actually happening?',
     component: lazy(() => import('../features/world/WorldView')),
+  },
+  {
+    path: '/providers',
+    label: 'Providers',
+    question: 'Which installed tools and workspace capabilities can Veasel use?',
+    component: lazy(() => import('../features/providers/ProvidersView')),
   },
 ];

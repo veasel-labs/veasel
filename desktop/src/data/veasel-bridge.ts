@@ -3,7 +3,7 @@
  *
  * Implements the copied Focus `FocusBridge` contract against the canonical
  * Veasel session API (`/v1/sessions`, `/v1/sessions/:id/messages`,
- * `/v1/sessions/:id/cli-approvals`) so the GUI and the TUI share ONE
+ * `/v1/sessions/:id/events`, `/v1/sessions/:id/cli-approvals`) so the GUI and the TUI share ONE
  * persistent session store — no duplicate engine (ADR-0001 decision 1).
  * The copied components under `gui/focus/` are unmodified; this adapter is
  * the new wiring layer beside them.
@@ -267,6 +267,78 @@ export function messagesToEvents(messages: readonly VeaselMessage[]): FocusEvent
   return events;
 }
 
+/**
+ * Rebuild the persisted Focus timeline from chat messages and durable server
+ * event markers. Operation completion is journaled separately from chat text;
+ * reading both is what keeps the final result visible after reconnect/restart.
+ */
+export function messagesAndHistoryEventsToEvents(
+  messages: readonly VeaselMessage[],
+  journal: readonly VeaselServerEvent[],
+): FocusEvent[] {
+  const markers = journal.filter((event) => event.type === 'message.created');
+  if (markers.length === 0) return messagesToEvents(messages);
+
+  // Event retention may prune markers while chat history keeps messages. If
+  // the retained journal has fewer markers than the messages page, their positions
+  // cannot be correlated safely: attaching the retained tail to the page head
+  // would show an operation result on the wrong turn. Preserve the chat text
+  // and omit inferred outcomes until the API exposes stable message IDs here.
+  if (markers.length < messages.length) return messagesToEvents(messages);
+
+  // The messages endpoint is paginated. Align the returned page with the tail
+  // of the retained marker journal, ignoring completion records before it.
+  const markerOffset = markers.length - messages.length;
+  // Markers are written for each persisted message. An odd offset means the
+  // journal/page boundary split a turn (or a legacy empty-message case); keep
+  // the text rather than risk attaching one turn's outcome to another.
+  if (markerOffset > 0 && markerOffset % 2 !== 0) return messagesToEvents(messages);
+  let markersToSkip = Math.max(0, markerOffset);
+  let messageIndex = 0;
+  let turn = 0;
+  let hasUnfinishedMessage = false;
+  let matched = false;
+  const events: FocusEvent[] = [];
+
+  for (const event of journal) {
+    if (event.type === 'message.created') {
+      if (markersToSkip > 0) {
+        markersToSkip -= 1;
+        continue;
+      }
+      const message = messages[messageIndex++];
+      if (!message) continue;
+      matched = true;
+      const at = message.created_at ?? event.created_at ?? '';
+      if (message.role === 'user') {
+        turn += 1;
+        hasUnfinishedMessage = true;
+        events.push({ seq: event.id, at, turn, type: 'user', text: message.content });
+      } else if (message.role === 'assistant') {
+        events.push({
+          seq: event.id,
+          at,
+          turn: Math.max(turn, 1),
+          type: 'assistant',
+          itemId: `message-${message.id ?? event.id}`,
+          text: message.content,
+        });
+      }
+      continue;
+    }
+
+    if (event.type === 'session.turn_completed' && hasUnfinishedMessage) {
+      const update = veaselEventToLiveUpdate(event);
+      if (update?.kind === 'event' && update.event.type === 'turn.finished') {
+        events.push({ ...update.event, turn });
+      }
+      hasUnfinishedMessage = false;
+    }
+  }
+
+  return matched && messageIndex >= messages.length ? events : messagesToEvents(messages);
+}
+
 /** A pending durable CLI approval becomes a Focus approval request. */
 export function approvalToEvent(approval: VeaselCliApproval, turn = 1, seq = 1): FocusEvent {
   let input: unknown = approval.input_json;
@@ -337,7 +409,10 @@ export function createVeaselFocusBridge(options: {
     const messages = asArray<VeaselMessage>(
       await request(`/v1/sessions/${encodeURIComponent(id)}/messages`).catch(() => []),
     );
-    const events = messagesToEvents(messages);
+    const journal = asArray<VeaselServerEvent>(
+      await request(`/v1/sessions/${encodeURIComponent(id)}/events`).catch(() => []),
+    );
+    const events = messagesAndHistoryEventsToEvents(messages, journal);
     const approvals = asArray<VeaselCliApproval>(
       await request(`/v1/sessions/${encodeURIComponent(id)}/cli-approvals`).catch(() => []),
     );
@@ -581,14 +656,16 @@ export function createVeaselFocusBridge(options: {
       // Approvals are not pushed by the server: while a turn runs, watch the pending set and ask the store to
       // re-read the thread whenever it changes, so a request made mid-turn shows without reopening the session.
       const pollers = new Map<string, ReturnType<typeof setInterval>>();
-      const watchApprovals = (threadId: string): (() => Promise<void>) => {
+      const watchApprovals = (threadId: string, operationId?: string): (() => Promise<void>) => {
         let known = '';
         let failures = 0;
         let reportedDown = false;
+        let terminalRefreshSent = false;
         const tick = async (): Promise<void> => {
-          const approvals = await request(`/v1/sessions/${encodeURIComponent(threadId)}/cli-approvals`).catch(
-            () => null,
-          );
+          const [approvals, operations] = await Promise.all([
+            request(`/v1/sessions/${encodeURIComponent(threadId)}/cli-approvals`).catch(() => null),
+            request(`/v1/sessions/${encodeURIComponent(threadId)}/operations`).catch(() => null),
+          ]);
           if (approvals === null) {
             // The poll is also the only sign of life while a turn runs: two consecutive
             // failures mean the backend is gone, and Focus must say so instead of
@@ -613,6 +690,26 @@ export function createVeaselFocusBridge(options: {
           if (key !== known) {
             known = key;
             listener({ kind: 'refresh', threadId });
+          }
+
+          // SSE is the fast path. Poll the durable operation as a recovery path
+          // so a missed turn_completed frame cannot leave Focus showing only
+          // the assistant text forever. The refresh reads the durable history
+          // markers and renders the same fact-derived outcome.
+          const operation = operationId
+            ? asArray<{ id: string; status?: string }>(operations).find((entry) => entry.id === operationId)
+            : undefined;
+          if (
+            !terminalRefreshSent &&
+            operation &&
+            ['completed', 'failed', 'cancelled', 'uncertain'].includes(operation.status ?? '')
+          ) {
+            terminalRefreshSent = true;
+            listener({ kind: 'refresh', threadId });
+            const timer = pollers.get(threadId);
+            if (timer) clearInterval(timer);
+            pollers.delete(threadId);
+            finals.delete(threadId);
           }
         };
         pollers.set(
@@ -640,7 +737,7 @@ export function createVeaselFocusBridge(options: {
               parsed.type === 'assistant.delta') &&
             !pollers.has(threadId)
           ) {
-            const tick = watchApprovals(threadId);
+            const tick = watchApprovals(threadId, parsed.data?.operation_id);
             finals.set(threadId, tick);
             void tick();
           } else if (parsed.type === 'session.turn_completed' && pollers.has(threadId)) {

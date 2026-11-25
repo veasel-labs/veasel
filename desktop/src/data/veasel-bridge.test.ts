@@ -3,6 +3,7 @@ import { buildTimeline, pendingApproval } from '../features/focus/timeline';
 import {
   approvalToEvent,
   createVeaselFocusBridge,
+  messagesAndHistoryEventsToEvents,
   messagesToEvents,
   sessionToThread,
   toFocusProviderId,
@@ -44,6 +45,77 @@ describe('veasel Focus bridge mapping', () => {
     expect(events[2]?.turn).toBe(2);
   });
 
+  it('restores the durable completion outcome after a session reload', () => {
+    const events = messagesAndHistoryEventsToEvents(
+      [
+        { id: 1, role: 'user', content: 'fix the test' },
+        { id: 2, role: 'assistant', content: 'Applied the edit.' },
+      ],
+      [
+        { id: 11, type: 'message.created', session_id: 's1', data: {} },
+        { id: 12, type: 'message.created', session_id: 's1', data: {} },
+        {
+          id: 13,
+          type: 'session.turn_completed',
+          session_id: 's1',
+          data: {
+            status: 'completed',
+            outcome: 'completed_with_denials',
+            error: 'Approvals: 1 expired (Bash). Applied: Edit math.js. Not verified.',
+          },
+        },
+      ],
+    );
+    expect(events.map((event) => event.type)).toEqual(['user', 'assistant', 'turn.finished']);
+    const turns = buildTimeline(events);
+    expect(turns[0]?.items.at(-1)).toMatchObject({
+      kind: 'turn-end',
+      outcome: 'completed',
+      outcomeDetail: 'completed_with_denials',
+      detail: expect.stringContaining('1 expired (Bash)'),
+    });
+  });
+
+  it('does not attach retained outcomes to the wrong messages when event history is truncated', () => {
+    const messages = [
+      { id: 1, role: 'user', content: 'older question' },
+      { id: 2, role: 'assistant', content: 'older answer' },
+      { id: 3, role: 'user', content: 'newer question' },
+      { id: 4, role: 'assistant', content: 'newer answer' },
+    ] as const;
+    const journal = [
+      { id: 20, type: 'message.created', session_id: 's1', data: {} },
+      { id: 21, type: 'message.created', session_id: 's1', data: {} },
+      {
+        id: 22,
+        type: 'session.turn_completed',
+        session_id: 's1',
+        data: { status: 'completed', outcome: 'completed_with_denials', error: 'newer turn was denied' },
+      },
+    ] as const;
+
+    const events = messagesAndHistoryEventsToEvents(messages, journal);
+
+    expect(events).toEqual(messagesToEvents(messages));
+    expect(events.some((event) => event.type === 'turn.finished')).toBe(false);
+    expect(events.find((event) => event.type === 'assistant')?.text).toBe('older answer');
+  });
+
+  it('ignores completion records with no corresponding chat message (queued cancellation)', () => {
+    const events = messagesAndHistoryEventsToEvents(
+      [],
+      [
+        {
+          id: 1,
+          type: 'session.turn_completed',
+          session_id: 's1',
+          data: { status: 'cancelled', outcome: 'cancelled' },
+        },
+      ],
+    );
+    expect(events).toEqual([]);
+  });
+
   it('projects pending CLI approvals as Focus approval requests with parsed input', () => {
     const event = approvalToEvent({
       id: 'a1',
@@ -83,12 +155,50 @@ describe('veasel Focus bridge HTTP behavior', () => {
     expect(threads[0]?.id).toBe('s1');
   });
 
+  it('loads completion outcomes from the durable session history endpoint', async () => {
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/sessions/s1': { id: 's1', title: 'T', directory: '/p', created_at: '2026-11-16' },
+        '/v1/sessions/s1/messages': [
+          { id: 1, role: 'user', content: 'fix it' },
+          { id: 2, role: 'assistant', content: 'Applied the edit.' },
+        ],
+        '/v1/sessions/s1/events': [
+          { id: 11, type: 'message.created', session_id: 's1', data: {} },
+          { id: 12, type: 'message.created', session_id: 's1', data: {} },
+          {
+            id: 13,
+            type: 'session.turn_completed',
+            session_id: 's1',
+            data: {
+              status: 'completed',
+              outcome: 'completed_with_denials',
+              error: 'Approvals: 1 expired (Bash). Applied: Edit math.js.',
+            },
+          },
+        ],
+        '/v1/sessions/s1/cli-approvals': [],
+        '/v1/sessions/s1/operations': [{ status: 'completed' }],
+      }),
+    });
+
+    const snapshot = await bridge.readThread('s1');
+    expect(snapshot?.events.map((event) => event.type)).toEqual(['user', 'assistant', 'turn.finished']);
+    expect(buildTimeline(snapshot?.events ?? [])[0]?.items.at(-1)).toMatchObject({
+      kind: 'turn-end',
+      outcome: 'completed',
+      outcomeDetail: 'completed_with_denials',
+    });
+  });
+
   it('marks a thread awaiting-approval when a durable approval is pending', async () => {
     const bridge = createVeaselFocusBridge({
       baseUrl: 'http://veasel.test',
       fetch: fakeFetch({
         '/v1/sessions/s1': { id: 's1', title: 'T', directory: '/p', created_at: '2026-11-16' },
         '/v1/sessions/s1/messages': [{ id: 1, role: 'user', content: 'edit' }],
+        '/v1/sessions/s1/events': [],
         '/v1/sessions/s1/cli-approvals': [{ id: 'a1', tool_name: 'Edit', input_json: '{}', status: 'pending' }],
       }),
     });
@@ -750,6 +860,42 @@ describe('veasel turn outcomes (honest finish events)', () => {
     if (update?.kind === 'event' && update.event.type === 'turn.finished') {
       expect(update.event.outcome).toBe('failed');
       expect(update.event.outcomeDetail).toBeUndefined();
+    }
+  });
+
+  it('refreshes durable history if the turn-completed SSE frame is missed', async () => {
+    vi.useFakeTimers();
+    try {
+      let status = 'running';
+      let emit: (type: string, data: string) => void = () => {};
+      const bridge = createVeaselFocusBridge({
+        baseUrl: 'http://veasel.test',
+        fetch: (async (input: string) => {
+          if (input.endsWith('/cli-approvals')) return { ok: true, status: 200, json: async () => [] };
+          if (input.endsWith('/operations'))
+            return { ok: true, status: 200, json: async () => [{ id: 'op1', status }] };
+          return { ok: false, status: 404, json: async () => ({}) };
+        }) as FetchLike,
+        createEventStream: (_url, onEvent) => {
+          emit = onEvent;
+          return () => {};
+        },
+      });
+      const updates: FocusLiveUpdate[] = [];
+      const stop = bridge.onUpdate((update) => updates.push(update));
+      emit(
+        'session.turn_started',
+        JSON.stringify({ type: 'session.turn_started', session_id: 's1', data: { operation_id: 'op1' } }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(updates.filter((entry) => entry.kind === 'refresh')).toHaveLength(0);
+
+      status = 'completed';
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(updates.filter((entry) => entry.kind === 'refresh')).toEqual([{ kind: 'refresh', threadId: 's1' }]);
+      stop();
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

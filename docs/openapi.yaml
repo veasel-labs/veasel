@@ -1352,6 +1352,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/events:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listSessionHistoryEvents
+      description: >-
+        Returns the retained message-created markers and durable turn-completion
+        records for one session, in event order. Clients combine message markers
+        with the persisted messages endpoint to reconstruct turn outcomes after
+        reconnect or restart. Live assistant deltas are not replayed here.
+      responses:
+        '200':
+          description: Retained session history markers and outcomes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionHistoryEvent'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/sessions/{id}/operations:
     parameters:
       - in: path
@@ -3805,6 +3835,33 @@ components:
           type: string
         created_at:
           type: string
+    SessionHistoryEvent:
+      type: object
+      required: [id, type, session_id, created_at, data]
+      properties:
+        id: { type: integer, minimum: 1 }
+        type:
+          type: string
+          enum: [message.created, session.turn_completed]
+        session_id: { type: string, format: uuid }
+        created_at: { type: string }
+        data:
+          type: object
+          properties:
+            operation_id: { type: string, format: uuid }
+            status: { type: string, enum: [completed, failed, cancelled, uncertain] }
+            outcome:
+              type: string
+              enum: [completed, completed_with_denials, partial, failed, cancelled, uncertain]
+            error:
+              type: string
+              description: Safe public completion summary or error; never command arguments.
+            provider: { type: string }
+            model: { type: string }
+            usage_reported: { type: boolean }
+            input_tokens: { type: integer, minimum: 0 }
+            output_tokens: { type: integer, minimum: 0 }
+            cache_read_tokens: { type: integer, minimum: 0 }
     ChatExchange:
       type: object
       required: [messages, provider, model]

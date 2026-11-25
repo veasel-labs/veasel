@@ -399,6 +399,7 @@ fn test_every_declared_route_rejects_unauthenticated_requests_and_runs_no_handle
 	assert routes.len >= 80
 	assert 'POST /v1/auth/rotate' in routes
 	assert 'GET /v1/events' in routes
+	assert 'GET /v1/sessions/canary/events' in routes
 	assert 'GET /v1/sessions/canary/workspace/files' in routes
 	mut exempt := 0
 	for route in routes {

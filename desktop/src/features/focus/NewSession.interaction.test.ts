@@ -45,6 +45,43 @@ afterEach(() => {
 });
 
 describe('NewSession', () => {
+  it('explains the task requirement and enables start when text is entered', async () => {
+    window.atk = { focus: {} as FocusBridge } as unknown as AtkBridge;
+    const user = userEvent.setup();
+    render(
+      createElement(NewSession, {
+        projects: [{ name: 'demo', target: '/ws/demo', status: 'ok' }],
+        projectsLoading: false,
+        providers: [provider],
+        providersLoading: false,
+        onRefreshProviders: vi.fn(),
+        onStarted: vi.fn(),
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: 'Start session' })).toBeDisabled();
+    expect(screen.getByText('Enter a task to start.')).toBeVisible();
+    await user.type(screen.getByLabelText('Task'), 'Fix the test');
+    expect(screen.getByRole('button', { name: 'Start session' })).toBeEnabled();
+    expect(screen.getByText('Ctrl + Enter')).toBeVisible();
+  });
+
+  it('explains when the backend bridge is unavailable', () => {
+    render(
+      createElement(NewSession, {
+        projects: [{ name: 'demo', target: '/ws/demo', status: 'ok' }],
+        projectsLoading: false,
+        providers: [provider],
+        providersLoading: false,
+        onRefreshProviders: vi.fn(),
+        onStarted: vi.fn(),
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: 'Start session' })).toBeDisabled();
+    expect(screen.getByText('Veasel backend is not connected.')).toBeVisible();
+  });
+
   it('announces provider discovery while the first agent check is pending', () => {
     render(
       createElement(NewSession, {
@@ -57,7 +94,7 @@ describe('NewSession', () => {
       }),
     );
 
-    expect(screen.getByRole('status')).toHaveTextContent('Checking installed agents…');
+    expect(screen.getByText('Checking installed agents…')).toBeVisible();
   });
 
   it('explains the sign-in blocker beside the provider choices and disabled start action', () => {
@@ -80,14 +117,14 @@ describe('NewSession', () => {
       }),
     );
 
-    expect(screen.getByRole('status')).toHaveTextContent('No coding agent is signed in');
+    expect(screen.getByText(/No coding agent is signed in/)).toBeVisible();
     expect(screen.getByText(/claude auth login/)).toBeVisible();
     expect(screen.getByRole('button', { name: 'Start session' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Start session' })).toHaveAttribute(
       'aria-describedby',
       'focus-start-hint',
     );
-    expect(screen.getByText('Sign in to an agent to start')).toBeVisible();
+    expect(screen.getByText(/Sign in to an agent to start/)).toBeVisible();
   });
 
   it('creates only one session when keyboard and pointer submissions overlap', async () => {

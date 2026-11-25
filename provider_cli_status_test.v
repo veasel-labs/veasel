@@ -1,5 +1,7 @@
 module main
 
+import os
+
 fn status_test_spec() ProviderCliSpec {
 	return ProviderCliSpec{
 		id:                      'codex'
@@ -83,6 +85,46 @@ fn test_codex_native_auth_status_uses_only_known_account_modes() {
 	unknown := provider_cli_auth_result(spec, 0, 'Logged in as private@example.test')
 	assert unknown.state == ''
 	assert unknown.error == 'unrecognized-status-response'
+	trailing_data := provider_cli_auth_result(spec, 0, 'Logged in using ChatGPT\nprivate diagnostic')
+	assert trailing_data.state == ''
+	assert trailing_data.error == 'unrecognized-status-response'
+}
+
+fn test_codex_native_auth_status_accepts_exact_response_from_stderr_only() {
+	spec := provider_cli_by_id('codex') or { panic('missing Codex CLI spec') }
+	command := ProviderCliStatusCommandResult{
+		code:   0
+		stdout: ''
+		stderr: 'Logged in using ChatGPT\n'
+	}
+	output := provider_cli_auth_output(spec, command)
+	result := provider_cli_auth_result(spec, command.code, output)
+	assert output.trim_space() == 'Logged in using ChatGPT'
+	assert result.state == 'verified'
+	assert result.method == 'chatgpt'
+}
+
+fn test_codex_unrecognized_stdout_does_not_fall_back_to_stderr() {
+	spec := provider_cli_by_id('codex') or { panic('missing Codex CLI spec') }
+	command := ProviderCliStatusCommandResult{
+		code:   0
+		stdout: 'debug: not an auth status'
+		stderr: 'Logged in using ChatGPT'
+	}
+	output := provider_cli_auth_output(spec, command)
+	result := provider_cli_auth_result(spec, command.code, output)
+	assert result.state == ''
+	assert result.error == 'unrecognized-status-response'
+}
+
+fn test_provider_status_runner_captures_stderr_separately() {
+	sh := os.find_abs_path_of_executable('sh') or { return }
+	result := run_provider_cli_status_command(sh, ['-c', 'printf "status-on-stderr" >&2']) or {
+		panic(err)
+	}
+	assert result.code == 0
+	assert result.stdout == ''
+	assert result.stderr == 'status-on-stderr'
 }
 
 fn test_unverified_providers_keep_presence_only_auth_state() {

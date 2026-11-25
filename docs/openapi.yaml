@@ -59,6 +59,39 @@ paths:
           description: Authentication is required.
         '404':
           description: No goal has the requested ID.
+  /v1/goals/{id}/tasks:
+    get:
+      operationId: getAdmittedGoalTasks
+      description: >-
+        Returns an immutable projection of an admitted goal's task graph, with
+        tasks in a stable Kahn traversal. Initially ready tasks and children
+        released by each completed task are enqueued in manifest order. Direct
+        dependency lists retain manifest order. Goal admissions are limited to
+        a 1 MiB request body, which bounds this projection. The goal status is
+        admitted and each task status is pending; this endpoint does not
+        schedule, execute, or attach work.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Read-only task graph projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalTasksProjection'
+        '401':
+          description: Authentication is required.
+        '404':
+          description: No goal has the requested ID.
+        '500':
+          description: The stored goal could not be read or projected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/health:
     get:
       operationId: getHealth
@@ -2487,6 +2520,30 @@ components:
               recipe: { enum: [research, bug, feature, migration, release] }
               runner: { type: string, minLength: 1 }
               verifier: { type: string, minLength: 1 }
+    GoalTasksProjection:
+      type: object
+      required: [goal_id, status, tasks]
+      properties:
+        goal_id: { type: string }
+        status: { const: admitted }
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/GoalTaskProjectionItem'
+    GoalTaskProjectionItem:
+      type: object
+      required: [id, title, repository, base_sha, paths, depends_on, recipe, runner, verifier, status]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        repository: { type: string }
+        base_sha: { type: string }
+        paths: { type: array, items: { type: string } }
+        depends_on: { type: array, items: { type: string } }
+        recipe: { type: string }
+        runner: { type: string }
+        verifier: { type: string }
+        status: { const: pending }
     Health:
       type: object
       required: [healthy]

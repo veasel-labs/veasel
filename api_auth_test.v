@@ -72,7 +72,7 @@ fn auth_test_raw_once(port int, request string) string {
 			break
 		}
 		out << buf[..n]
-		if out.len > 1 << 16 {
+		if out.len > 1 << 20 {
 			break
 		}
 	}
@@ -432,6 +432,7 @@ fn test_every_declared_route_rejects_unauthenticated_requests_and_runs_no_handle
 
 	assert 'POST /v1/goals' in routes
 	assert 'GET /v1/goals/canary' in routes
+	assert 'GET /v1/goals/canary/tasks' in routes
 	admission_rows := store.admitted_goals() or { panic(err) }
 	assert admission_rows.len == 0
 	auth_test_goal_round_trip(port, token)
@@ -659,7 +660,7 @@ fn test_canary_handler_body_never_executes_without_valid_credentials() {
 
 fn auth_test_goal_round_trip(port int, token string) {
 	headers := ['Authorization: Bearer ${token}', 'Content-Type: application/json']
-	body := '{"schema_version":1,"id":"http-goal","title":"HTTP goal","authorized_repositories":[{"owner":"veasel-labs","name":"veasel","path":"/work/veasel"}],"acceptance_criteria":[{"id":"test","description":"Verify the manifest","verification":"Review"}],"deadline":"2027-01-01T00:00:00Z","budget":{"max_attempts":1,"wall_seconds":60,"provider_turns":1},"delivery_mode":"report","tasks":[{"id":"check","title":"Check","repository":"veasel-labs/veasel","base_sha":"${'f'.repeat(40)}","paths":["docs"],"recipe":"research","runner":"local-v","verifier":"review"}]}'
+	body := '{"schema_version":1,"id":"http-goal","title":"HTTP goal","authorized_repositories":[{"owner":"veasel-labs","name":"veasel","path":"/work/veasel"}],"acceptance_criteria":[{"id":"test","description":"Verify the manifest","verification":"Review"}],"deadline":"2027-01-01T00:00:00Z","budget":{"max_attempts":1,"wall_seconds":60,"provider_turns":1},"delivery_mode":"report","tasks":[{"id":"z-final","title":"Final","repository":"veasel-labs/veasel","base_sha":"${'f'.repeat(40)}","paths":["src"],"depends_on":["a-start"],"recipe":"feature","runner":"local-v","verifier":"review"},{"id":"b-independent","title":"Independent","repository":"veasel-labs/veasel","base_sha":"${'f'.repeat(40)}","paths":["docs"],"recipe":"research","runner":"local-v","verifier":"review"},{"id":"a-start","title":"Start","repository":"veasel-labs/veasel","base_sha":"${'f'.repeat(40)}","paths":["src"],"recipe":"feature","runner":"local-v","verifier":"review"}]}'
 	for expected in [' 201 ', ' 200 '] {
 		request := auth_test_request('POST', '/v1/goals', [...headers, 'Content-Length: ${body.len}'])
 		response := auth_test_raw(port, request + body)
@@ -671,5 +672,63 @@ fn auth_test_goal_round_trip(port int, token string) {
 	response := auth_test_raw(port, auth_test_request('GET', '/v1/goals/http-goal', headers))
 	assert auth_test_status(response).contains(' 200 ')
 	assert response.contains('HTTP goal')
+	tasks_response := auth_test_raw(port, auth_test_request('GET', '/v1/goals/http-goal/tasks', headers))
+	assert auth_test_status(tasks_response).contains(' 200 ')
+	projection := json2.decode[GoalTasksProjection](tasks_response.all_after('\r\n\r\n')) or {
+		panic(err)
+	}
+	assert projection.goal_id == 'http-goal'
+	assert projection.status == 'admitted'
+	assert projection.tasks.map(it.id) == ['b-independent', 'a-start', 'z-final']
+	assert projection.tasks.map(it.status) == ['pending', 'pending', 'pending']
+	assert projection.tasks.last().depends_on == ['a-start']
 	assert auth_test_status(auth_test_raw(port, auth_test_request('GET', '/v1/goals/missing', headers))).contains(' 404 ')
+	assert auth_test_status(auth_test_raw(port, auth_test_request('GET', '/v1/goals/missing/tasks', headers))).contains(' 404 ')
+
+	mut large_tasks := []GoalTask{cap: 300}
+	for i in 0 .. 300 {
+		large_tasks << GoalTask{
+			id:         'task-${i:03}'
+			title:      'Task ${i}'
+			repository: 'veasel-labs/veasel'
+			base_sha:   'f'.repeat(40)
+			paths:      ['src']
+			recipe:     'feature'
+			runner:     'local-v'
+			verifier:   'review'
+		}
+	}
+	large_goal := GoalAdmission{
+		schema_version:          1
+		id:                      'http-large-goal'
+		title:                   'Large task graph'
+		authorized_repositories: [GoalRepository{
+			owner: 'veasel-labs'
+			name:  'veasel'
+			path:  '/work/veasel'
+		}]
+		acceptance_criteria:     [GoalCriterion{
+			id:           'test'
+			description:  'Verify projection'
+			verification: 'Review'
+		}]
+		deadline:                '2027-01-01T00:00:00Z'
+		budget:                  GoalBudget{
+			max_attempts:   1
+			wall_seconds:   60
+			provider_turns: 1
+		}
+		delivery_mode:           'report'
+		tasks:                   large_tasks
+	}
+	large_body := json2.encode(large_goal)
+	large_post := auth_test_request('POST', '/v1/goals', [...headers,
+		'Content-Length: ${large_body.len}'])
+	assert auth_test_status(auth_test_raw(port, large_post + large_body)).contains(' 201 ')
+	large_response := auth_test_raw(port, auth_test_request('GET', '/v1/goals/http-large-goal/tasks', headers))
+	assert auth_test_status(large_response).contains(' 200 ')
+	large_projection := json2.decode[GoalTasksProjection](large_response.all_after('\r\n\r\n')) or {
+		panic(err)
+	}
+	assert large_projection.tasks.len == 300
 }

@@ -1,28 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
-import { requireClient, useBackend } from '../data/backend';
+import { useBackend } from '../data/backend';
 import { useProjects } from '../data/projects';
-import { useMcpProviders } from '../data/catalog';
-import { useLoops } from '../data/loops';
-import { useSwarms } from '../data/swarms';
 import { useTerminalSessions } from '../data/terminal';
 import { setThemePreference } from '../design/theme';
-import { takeNextNeedsMe } from '../features/office/attention';
-import { useAttention } from '../features/office/useAttention';
 import { requestOnboardingReplay } from '../features/onboarding/complete';
 import { projectWorldCommands, resolveProjectWorldJump, resolveWorldJump } from '../features/world/worldJumps';
 import { Button, Dialog, Kbd, TextInput, VisuallyHidden } from '../ui';
-import {
-  filterCommands,
-  commandsForWorkspace,
-  loopScheduleCommands,
-  mcpProviderCommands,
-  personCommands,
-  recoverableSwarmCommands,
-  SHORTCUTS,
-  type PaletteCommand,
-} from './commands';
+import { PALETTE_COMMANDS, filterCommands, SHORTCUTS, type PaletteCommand } from './commands';
 import { DESTINATIONS } from './destinations';
 import { useSessionContext } from './useSessionContext';
 import styles from './shell.module.css';
@@ -51,36 +36,15 @@ export function CommandPalette() {
   const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
   const navigate = useNavigate();
   const { context, href } = useSessionContext();
-  const { client, restartBackend } = useBackend();
+  const { restartBackend } = useBackend();
   const terminals = useTerminalSessions();
-  const attention = useAttention();
   const projectsQuery = useProjects(context.workspace, { enabled: open });
-  const loopsQuery = useLoops();
-  const swarmsQuery = useSwarms();
-  const mcpProvidersQuery = useMcpProviders({ enabled: open, staleTime: 15_000 });
-  const peopleQuery = useQuery({
-    queryKey: ['people', context.workspace],
-    queryFn: () => requireClient(client).people(context.workspace),
-    enabled: client !== null && Boolean(context.workspace),
-    staleTime: 15_000,
-  });
 
   const projectCommands = useMemo((): readonly PaletteCommand[] => {
     if (!projectsQuery.isSuccess || !projectsQuery.data) return [];
     const names = projectsQuery.data.projects.map((row) => row.name);
     return projectWorldCommands(names);
   }, [projectsQuery.data, projectsQuery.isSuccess]);
-
-  const peoplePaletteCommands = useMemo(
-    () => personCommands(peopleQuery.data?.people ?? [], terminals.sessions),
-    [peopleQuery.data, terminals.sessions],
-  );
-  const loopCommands = useMemo(() => loopScheduleCommands(loopsQuery.data?.loops ?? []), [loopsQuery.data]);
-  const recoverableRuns = useMemo(() => recoverableSwarmCommands(swarmsQuery.data?.runs ?? []), [swarmsQuery.data]);
-  const mcpCommands = useMemo(
-    () => mcpProviderCommands(mcpProvidersQuery.data?.ok ? mcpProvidersQuery.data.providers : []),
-    [mcpProvidersQuery.data],
-  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -122,17 +86,7 @@ export function CommandPalette() {
     }
   }, [open]);
 
-  const catalog = useMemo(
-    () => [
-      ...commandsForWorkspace(Boolean(context.workspace)),
-      ...projectCommands,
-      ...peoplePaletteCommands,
-      ...mcpCommands,
-      ...loopCommands,
-      ...recoverableRuns,
-    ],
-    [context.workspace, loopCommands, mcpCommands, peoplePaletteCommands, projectCommands, recoverableRuns],
-  );
+  const catalog = useMemo(() => [...PALETTE_COMMANDS, ...projectCommands], [projectCommands]);
   const matches = useMemo(() => filterCommands(catalog, query), [catalog, query]);
   const active = matches[Math.min(selected, Math.max(matches.length - 1, 0))];
 
@@ -152,14 +106,7 @@ export function CommandPalette() {
       case 'navigate':
         navigate(href(action.path));
         return;
-      case 'workspace-switch':
-        navigate(href('/settings', { panel: 'harness' }));
-        return;
       case 'world-jump': {
-        if (action.target === 'world-knowledge') {
-          navigate(href('/library'));
-          return;
-        }
         const jump = resolveWorldJump(action.target);
         if (jump) navigate(href(jump.path, jump.extra));
         return;
@@ -169,54 +116,12 @@ export function CommandPalette() {
         if (jump) navigate(href(jump.path, jump.extra));
         return;
       }
-      case 'person': {
-        if (action.intent === 'start') {
-          navigate(href('/people', { person: action.personId, start: '1' }));
-        } else if (action.intent === 'session') {
-          const session = terminals.sessions.find(
-            (candidate) => candidate.personId === action.personId && candidate.exitCode === null,
-          );
-          navigate(session ? href('/terminal', { pty: session.id }) : href('/people', { person: action.personId }));
-        } else {
-          navigate(href('/people', { person: action.personId }));
-        }
-        return;
-      }
-      case 'people-workflow':
-        navigate(href('/people', { action: action.intent }));
-        return;
-      case 'library-workflow':
-        navigate(href('/library', { install_review: '1' }));
-        return;
-      case 'mcp-provider':
-        navigate(href('/library', { mcp_action: 'configure', mcp_provider: action.providerId }));
-        return;
-      case 'loop-schedule':
-        navigate(href('/operations', { loop: action.name, schedule: '1' }));
-        return;
-      case 'swarm-run':
-        navigate(href('/operations', { swarm: action.runId }));
-        return;
       case 'session':
         switch (action.intent) {
           case 'new-terminal':
             navigate(href('/terminal'));
             terminals.setCreating(true);
             return;
-          case 'start-job':
-            navigate(href('/operations', { dialog: 'start-job' }));
-            return;
-          case 'run-loop':
-            navigate(href('/operations', { dialog: 'run-loop' }));
-            return;
-          case 'start-swarm':
-            navigate(href('/operations', { dialog: 'start-swarm' }));
-            return;
-          case 'next-needs-me': {
-            const next = takeNextNeedsMe(attention.targets);
-            navigate(next ? next.href : href('/office'));
-            return;
-          }
           case 'restart-backend':
             setRestartConfirmOpen(true);
             return;

@@ -213,7 +213,9 @@ export function toFocusProviderId(veaselProvider: string | null | undefined): Fo
     veaselProvider === 'opencode' ||
     veaselProvider === 'muse' ||
     veaselProvider === 'cursor-agent'
-  ) return veaselProvider;
+  ) {
+    return veaselProvider;
+  }
   return 'unknown';
 }
 

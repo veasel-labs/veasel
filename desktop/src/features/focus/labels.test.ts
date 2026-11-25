@@ -38,7 +38,8 @@ describe('providerBlocker', () => {
   });
 
   it('surfaces the backend reason for a discovered but disabled runner', () => {
-    const reason = 'Cursor Agent is discovered but not launchable until ACP authentication and permission handling are verified.';
+    const reason =
+      'Cursor Agent is discovered but not launchable until ACP authentication and permission handling are verified.';
     expect(providerBlocker(provider({ id: 'cursor-agent', launchBlocker: reason }))).toBe(reason);
   });
 });

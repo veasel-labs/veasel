@@ -505,7 +505,8 @@ describe('veasel Focus bridge HTTP behavior', () => {
             session_resume_verified: false,
             usage_reporting: 'unknown',
             launchable: false,
-            launch_reason: 'Cursor Agent is discovered but not launchable: authenticate(cursor_login) and permission responses are unverified.',
+            launch_reason:
+              'Cursor Agent is discovered but not launchable: authenticate(cursor_login) and permission responses are unverified.',
           },
         ],
       }),

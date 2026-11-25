@@ -21,6 +21,18 @@ function field(input: unknown, key: string): unknown {
   return typeof input === 'object' && input !== null ? (input as Record<string, unknown>)[key] : undefined;
 }
 
+function targetPath(input: unknown): { label: string; value: string } | null {
+  for (const [key, label] of [
+    ['file_path', 'File'],
+    ['notebook_path', 'Notebook'],
+    ['path', 'Path'],
+  ] as const) {
+    const value = text(field(input, key));
+    if (value) return { label, value };
+  }
+  return null;
+}
+
 /** A before/after pair from an edit call, as removed and added lines. */
 function EditPreview({ before, after }: { before: string; after: string }) {
   return (
@@ -78,6 +90,7 @@ function changeList(input: unknown): Array<{ path: string; diff: string }> {
 export function ToolDetail({ item }: { item: ToolItem }) {
   const command = text(field(item.input, 'command'));
   const reason = text(field(item.input, 'reason'));
+  const target = targetPath(item.input);
   const before = text(field(item.input, 'old_string'));
   const after = text(field(item.input, 'new_string'));
   const content = text(field(item.input, 'content'));
@@ -86,6 +99,12 @@ export function ToolDetail({ item }: { item: ToolItem }) {
   return (
     <div className={styles.toolDetail}>
       {reason ? <p className={styles.toolReason}>{reason}</p> : null}
+      {target ? (
+        <p className={styles.toolPath} aria-label={`${target.label} path`}>
+          <span>{target.label}</span>
+          <code>{target.value}</code>
+        </p>
+      ) : null}
       {command ? <pre className={styles.toolCode}>{command}</pre> : null}
       {changes.map((change) => (
         <DiffText key={change.path} path={change.path} diff={change.diff} />

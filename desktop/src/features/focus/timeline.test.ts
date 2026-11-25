@@ -85,6 +85,43 @@ describe('buildTimeline', () => {
     expect(pendingApproval(done)).toBeNull();
   });
 
+  it('keeps the explicit target path from approval input when the tool event has only a diff', () => {
+    const turns = buildTimeline(
+      journal([
+        { type: 'turn.started', model: null },
+        {
+          type: 'tool.started',
+          itemId: 't1',
+          name: 'Edit',
+          kind: 'edit',
+          title: 'CONTRIBUTING.md',
+          input: { old_string: 'before', new_string: 'after' },
+          parentItemId: null,
+        },
+        {
+          type: 'approval.requested',
+          requestId: 'r1',
+          itemId: 't1',
+          tool: 'Edit',
+          kind: 'edit',
+          title: 'CONTRIBUTING.md',
+          input: { file_path: '/tmp/project/CONTRIBUTING.md' },
+          canAllowForSession: false,
+        },
+      ]),
+    );
+
+    expect(turns[0]?.items[0]).toMatchObject({
+      kind: 'tool',
+      input: {
+        file_path: '/tmp/project/CONTRIBUTING.md',
+        old_string: 'before',
+        new_string: 'after',
+      },
+      state: 'awaiting-approval',
+    });
+  });
+
   it('shows a denied call as denied even though the provider reports a tool error', () => {
     const turns = buildTimeline(
       journal([

@@ -128,6 +128,7 @@ describe('veasel Focus bridge mapping', () => {
       expect(event.requestId).toBe('a1');
       expect(event.kind).toBe('edit');
       expect(event.canAllowForSession).toBe(false);
+      expect(event.input).toEqual({ file_path: '/x/note.txt' });
     }
   });
 });

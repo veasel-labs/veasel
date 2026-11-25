@@ -47,6 +47,8 @@ export interface BackendState {
   binary: BackendBinaryInfo | null;
   rejected: RejectedBackendBinary[];
   problem: BackendProblem | null;
+  /** True when the shared server was started by the TUI or another Veasel client. */
+  attached?: boolean;
 }
 
 export interface HarnessRecentEntry {

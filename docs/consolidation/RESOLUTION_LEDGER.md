@@ -3,8 +3,88 @@
 Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
-Refreshed: **2026-11-24 22:09 UTC** from live GitHub state. Method: issue/PR
+Refreshed: **2026-11-25 00:57 UTC** from live GitHub state. Method: issue/PR
 queries, default-branch SHAs, latest exact-head CI, and release metadata.
+
+## Checkpoint 2026-11-25 00:57 UTC — Desktop runtime bridge and Focus acceptance
+
+A fresh GraphQL inventory after release propagation and merge of personal
+Toolkit PR #1849 found five open issues (all in Veasel) and one open PR (#816).
+This is not a zero-backlog or final acceptance claim. Veasel exact-main CI is
+still running on Windows; the personal Toolkit post-merge main CI has passed.
+PR #816's first Focus run exposed a renderer/backend readiness regression: the
+one-shot session load could run before the backend was ready. Hosted Focus
+journeys J1-J11 now pass on head `ab98496`. The final change also fail-closes
+when no proxy URL exists. Required platform checks on the current head remain
+in progress.
+
+| Repository | main SHA | Open issues | Open PRs | Latest evidence / note |
+| --- | --- | ---: | ---: | --- |
+| veasel-labs/veasel | `5f374635a82407b605f073d6a2c16f41f2122efb` | 5 (#549, #550, #673, #689, #693) | 1 (#816) | Exact-main run [45511878769](https://github.com/veasel-labs/veasel/actions/runs/45511878769): Windows remains in the native OS keychain round-trip step. PR #816 head `ab98496` has hosted Focus J1-J11 passing in [45521502963](https://github.com/veasel-labs/veasel/actions/runs/45521502963); required platform CI [45521503252](https://github.com/veasel-labs/veasel/actions/runs/45521503252) is running. |
+| veasel-labs/agent-toolkit | `416e7de7022a75249072a78971ded9a22fd1e9f3` | 0 | 0 | Registry validation [45406129549](https://github.com/veasel-labs/agent-toolkit/actions/runs/45406129549) passed. Owner-approved `veasel-essentials` exception is first-party only; PR #13 remains intentionally fail-closed pending independent permission review. |
+| veasel-labs/website | `eb88a30ae83052e2d301d4327d258db5b5aee3f3` | 0 | 0 | Website validation [45509223211](https://github.com/veasel-labs/website/actions/runs/45509223211) and deploy [45509222983](https://github.com/veasel-labs/website/actions/runs/45509222983) passed. Live product/download pages advertise verified v0.102.4 assets. |
+| veasel-labs/homebrew-tap | `4a8aa45aaad17dd4df3b2e7f7c6d0865f99f538d` | 0 | 0 | Exact-main CI [45509430347](https://github.com/veasel-labs/homebrew-tap/actions/runs/45509430347) passed. The formula/cask is CLI/TUI distribution; no Desktop cask is claimed. |
+| veasel-labs/aur-package | `f71aaf339ee9e05dbea0e069059f017a4ade52fc` | 0 | 0 | Post-merge package validation [45512841094](https://github.com/veasel-labs/aur-package/actions/runs/45512841094) passed. PKGBUILD source verification passed for v0.102.4; AUR description now explicitly says CLI/TUI, not Desktop. |
+| veasel-labs/.github | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | Existing validation [40167738112](https://github.com/veasel-labs/.github/actions/runs/40167738112) passed; no change required. |
+| ulises-jeremias/agent-toolkit | `ec7c10bb8623024b865261451a8bddb64a37f902` | 0 | 0 | PR #1849 merged; all PR checks passed across Linux/macOS/Windows and docs preview deployed. Exact-main validation [45517764139](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45517764139) passed. |
+| **Total** | | **5** | **1** | No unresolved Veasel issue is being closed to lower counts. |
+
+### Current release and installed-host evidence
+
+- Immutable Veasel release `v0.102.4-next.0` points to source SHA
+  `f01173f294830523d21d402318a1d191d70a76a7`. Website, Homebrew and AUR
+  consume that release; Linux AppImage/DEB, macOS ARM DMG, Windows x64 EXE,
+  CLI/TUI archives and manifest/checksum assets were verified. Installers are
+  unsigned; signing credentials remain unavailable.
+- User-level TUI/CLI and Desktop AppImage are installed at `0.102.4-next.0`.
+  The app launcher points to the new AppImage; the previous release and
+  symlinks remain backed up. `veasel tui` rendered in an isolated disposable
+  profile and exited cleanly. No coding prompt or paid-provider request was
+  sent. Desktop was not relaunched while the user was working in Muse.
+- The system AUR package is still **not installed**. The stale yay cache that
+  caused the user's checksum error was repaired against the current AUR
+  `master`, and `makepkg --verifysource` passed for the official archive. A
+  local privileged package-manager run is still needed to install the system
+  package; the user must run `yay -S --needed veasel-code-bin` in their own
+  terminal.
+- Claude Code native `auth status --json` verified a Claude.ai/MAX login;
+  Codex native `login status` verified a ChatGPT login. OpenCode and Muse
+  remain `unknown` because no supported non-billable authenticated probe was
+  confirmed. A credentials file is not treated as proof. The prior screenshot
+  used the old Desktop status text; Veasel PR #814 corrected native Claude and
+  Codex status reporting.
+- The user reported a live Muse session. It was not terminated, relaunched, or
+  used for a paid prompt. Packaged Desktop approval-dialog and Desktop↔visual
+  TUI same-session acceptance remain unverified on the installed host.
+
+### Newly merged product-positioning work
+
+Personal Toolkit PR [#1849](https://github.com/ulises-jeremias/agent-toolkit/pull/1849)
+merged at `ec7c10bb8623024b865261451a8bddb64a37f902`. The root README now
+centers portable skills/agents/workflows and labels the old Desktop captures
+as a historical archive. Its architecture diagram shows one Veasel backend
+shared by TUI and Desktop. Historical screenshots and PXL files were retained;
+no runtime source or user data was deleted.
+
+Veasel PR [#816](https://github.com/veasel-labs/veasel/pull/816), current head
+`ab9849624fd89b3fe2bcbafa7b040d11f97c17d7`, rewires Desktop runtime status,
+Focus URL, restart and workspace switching to the canonical V supervisor. It
+also preserves Desktop-encrypted MCP environment credentials for a backend
+Desktop owns, updates E2E backend selection and corrects the Desktop guide.
+Local type-check, lint, 576 unit tests, 29 targeted regression tests and
+`build:all` passed under resource-bounded `systemd-run`. GitHub required CI is
+still pending; the packaged UI and shared-session acceptance remain unverified.
+The first hosted Focus run failed J7; the trace showed direct backend-loopback
+requests and an empty session list after restart. The renderer now gets the
+protected proxy URL in backend events, and the readiness probe waits for the V
+supervisor's `ready` state before returning that URL. Hosted Focus J1-J11 all
+passed on head `ab98496` (run `45521502963`), including J7 persistence and J9
+Desktop/TUI API same-session continuity. The final fail-closed adjustment
+makes missing proxy URLs remain null in both startup and post-start IPC events.
+Four focused unit tests, TypeScript check, and lint pass under resource-bounded
+`systemd-run`; current-head platform validation remains in `45521503252`.
+The old Toolkit-specific MCP provider catalog API/UI remains a separate open
+migration item and is explicitly not claimed as completed by #816.
 
 ## Checkpoint 2026-11-24 22:09 UTC — post-merge verification
 

@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,23 +5,25 @@ import { _electron as electron, expect, type ElectronApplication, type Page } fr
 
 const APP_DIR = path.resolve(__dirname, '..', '..');
 const REPO_ROOT = path.resolve(APP_DIR, '..', '..');
-const packagedApp = process.env.ATK_E2E_APP_PATH;
+const packagedApp = process.env.VEASEL_E2E_APP_PATH ?? process.env.ATK_E2E_APP_PATH;
 
 /**
  * The real V backend. CI builds it into dist/; locally any binary works via
- * ATK_E2E_BACKEND_BIN. This suite never builds V.
+ * VEASEL_E2E_BACKEND_BIN. This suite never builds V.
  */
 function backendBinary(): string {
   const candidates = [
-    process.env.ATK_E2E_BACKEND_BIN,
-    packagedApp ? path.join(path.dirname(packagedApp), 'resources', 'bin', 'agent-toolkit') : undefined,
-    path.join(REPO_ROOT, 'dist', 'agent-toolkit'),
-    path.join(REPO_ROOT, 'build', 'agent-toolkit'),
+    process.env.VEASEL_E2E_BACKEND_BIN,
+    packagedApp
+      ? path.join(path.dirname(packagedApp), 'resources', 'bin', process.platform === 'win32' ? 'veasel.exe' : 'veasel')
+      : undefined,
+    path.join(REPO_ROOT, 'dist', process.platform === 'win32' ? 'veasel.exe' : 'veasel'),
+    path.join(REPO_ROOT, 'build', process.platform === 'win32' ? 'veasel.exe' : 'veasel'),
   ].filter((candidate): candidate is string => Boolean(candidate));
   const found = candidates.find((candidate) => fs.existsSync(candidate));
   if (!found) {
     throw new Error(
-      `No agent-toolkit backend binary. Build one into dist/ or set ATK_E2E_BACKEND_BIN. Looked in: ${candidates.join(', ')}`,
+      `No Veasel backend binary. Build one into dist/ or set VEASEL_E2E_BACKEND_BIN. Looked in: ${candidates.join(', ')}`,
     );
   }
   return found;
@@ -47,7 +48,7 @@ export interface Desktop {
   root: string;
   /** Scratch HOME; the default harness is `$HOME/.ai-workspace` when created. */
   home: string;
-  /** Scratch workspace scaffolded by the real CLI when `initWorkspace` is true. */
+  /** Scratch workspace directory created when `initWorkspace` is true. */
   workspace: string;
   /** Exact backend binary started by the Electron supervisor. */
   backendBin: string;
@@ -55,7 +56,7 @@ export interface Desktop {
 }
 
 export interface OpenDesktopOptions {
-  /** Scaffold ~/.ai-workspace with `workspace init`. Default true. */
+  /** Create ~/.ai-workspace. Default true. */
   initWorkspace?: boolean;
   /** Persist first-run complete so existing specs land on World. Default true. */
   skipOnboarding?: boolean;
@@ -105,10 +106,9 @@ export async function openDesktop(options: OpenDesktopOptions = {}): Promise<Des
   env['HOME'] = home;
   env['XDG_CONFIG_HOME'] = path.join(home, '.config');
   env['XDG_DATA_HOME'] = path.join(home, '.local', 'share');
-  // The Electron supervisor must launch the same binary used to scaffold and
-  // smoke this workspace. Otherwise a stale dist/ binary can win discovery
-  // and make the renderer appear to target an older API than the test setup.
-  env['ATK_BACKEND_BIN'] = backendBin;
+  // The Electron supervisor must launch this Veasel binary rather than an
+  // unrelated `veasel` earlier on PATH.
+  env['VEASEL_BACKEND_BIN'] = backendBin;
   const schedulerShim = process.env['ATK_E2E_SYSTEMCTL_SHIM'];
   env['PATH'] = [schedulerShim, path.dirname(backendBin), process.env.PATH]
     .filter((entry): entry is string => Boolean(entry))
@@ -120,10 +120,7 @@ export async function openDesktop(options: OpenDesktopOptions = {}): Promise<Des
   await options.prepare?.({ root, home, workspace });
 
   if (initWorkspace && !fs.existsSync(workspace)) {
-    execFileSync(backendBin, ['workspace', 'init', '--dir', workspace], {
-      env,
-      stdio: 'pipe',
-    });
+    fs.mkdirSync(workspace, { recursive: true });
   }
 
   const args = [
@@ -187,9 +184,7 @@ export async function waitForBackend(page: Page): Promise<void> {
         page.evaluate(async () => {
           const bridge = (window as unknown as { veaselDesktop?: { getBackendUrl?: () => Promise<unknown> } })
             .veaselDesktop;
-          const backendUrl = bridge?.getBackendUrl
-            ? await bridge.getBackendUrl().catch(() => null)
-            : null;
+          const backendUrl = bridge?.getBackendUrl ? await bridge.getBackendUrl().catch(() => null) : null;
           if (!backendUrl) return false;
           const health = await fetch('/v1/health')
             .then((r) => r.status)

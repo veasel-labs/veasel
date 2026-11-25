@@ -141,7 +141,7 @@ export function useLinkProject(workspace: string) {
     mutationKey: ['project', 'link', workspace],
     mutationFn: async () => {
       const bridge = typeof window !== 'undefined' ? window.atk : undefined;
-      if (!bridge) throw new Error('Linking a folder needs the Agent Toolkit Desktop app.');
+      if (!bridge) throw new Error('Linking a folder needs the Veasel Desktop app.');
       if (!workspace) throw new Error('The workspace is still starting. Try again in a moment.');
       const selected = await bridge.projectChooseDirectory(workspace);
       if (!selected) return null;

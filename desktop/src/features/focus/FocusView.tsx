@@ -348,9 +348,7 @@ export default function FocusView() {
           </p>
         ) : null}
         {!bridge ? (
-          <p className={styles.quiet}>
-            Sessions run inside the Agent Toolkit Desktop app. This preview has no session runtime.
-          </p>
+          <p className={styles.quiet}>Sessions run inside Veasel Code. This preview has no session runtime.</p>
         ) : active ? (
           <>
             <Header

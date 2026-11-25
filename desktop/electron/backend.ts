@@ -60,6 +60,8 @@ export interface BackendState {
   /** Candidates skipped by the last selection, with the reason for each. */
   rejected: RejectedBackendBinary[];
   problem: BackendProblem | null;
+  /** True when the shared server was started by the TUI or another Veasel client. */
+  attached?: boolean;
 }
 
 export interface BackendSupervisorOptions {

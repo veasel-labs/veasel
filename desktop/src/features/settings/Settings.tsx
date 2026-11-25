@@ -179,9 +179,9 @@ export default function Settings() {
           <Panel
             title="Backend"
             tone={backend?.problem === 'binary-rejected' || backend?.problem === 'no-backend' ? 'notice' : 'menu'}
-            meta="The agent-toolkit serve process this window talks to"
+            meta="The canonical Veasel V backend shared with the terminal client"
             actions={
-              window.atk ? (
+              window.atk && !backend?.attached ? (
                 <ButtonRow>
                   <ConfirmAction
                     label="Restart backend"
@@ -199,6 +199,9 @@ export default function Settings() {
               ) : null
             }
           >
+            {backend?.attached ? (
+              <p>This backend is shared with the terminal client. Close that client to restart it.</p>
+            ) : null}
             <KeyValue
               items={[
                 {

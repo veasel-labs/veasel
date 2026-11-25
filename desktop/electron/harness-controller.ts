@@ -142,6 +142,7 @@ export class HarnessController {
     }
     const supervisor = this.deps.getSupervisor();
     if (!supervisor) return { ok: false, error: 'unavailable', message: 'Backend supervisor is not running' };
+    const previousChoice = this.deps.store.current();
     this.switching = true;
     try {
       const before = supervisor.snapshot();
@@ -158,8 +159,26 @@ export class HarnessController {
       // Same directory = same serve; only the source label differs, so skip the restart.
       const unchanged = before.status === 'ready' && before.harness?.path === harness.path;
       if (unchanged) return { ok: true, restarted: false, harness, backend: before };
-      await supervisor.restart();
+      const restarted = await supervisor.restart();
       const backend = supervisor.snapshot();
+      if (!restarted) {
+        try {
+          this.deps.store.setCurrent(previousChoice);
+        } catch (error) {
+          return {
+            ok: false,
+            error: 'persist-failed',
+            message: `The backend did not restart and the previous workspace choice could not be restored: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+        return {
+          ok: false,
+          error: 'unavailable',
+          message: backend.attached
+            ? 'This Veasel backend is shared with the terminal client and cannot be restarted here. Close that client, then retry the workspace change.'
+            : `The Veasel backend did not restart successfully${backend.detail ? `: ${backend.detail}` : '.'}`,
+        };
+      }
       return { ok: true, restarted: true, harness: backend.harness ?? harness, backend };
     } finally {
       this.switching = false;

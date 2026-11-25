@@ -1,78 +1,76 @@
-# Agent Toolkit Desktop
+# Veasel Desktop
 
-Electron + React workstation over the canonical `agent-toolkit serve` backend.
-See [ADR-033](../../docs/adrs/ADR-033-electron-desktop.md) and the
-[Desktop UX architecture](../../docs/desktop/UX_ARCHITECTURE.md).
+Veasel Desktop is the graphical client for Veasel Code. It uses the same V
+backend, data directory, provider settings and persisted sessions as the
+`veasel` terminal client. There is one runtime; Electron owns window, secure
+loopback proxy, native dialogs and terminal transport only.
 
-Foundation: Create Awesome Node App `react-vite-starter` (React 19, Vite 8,
-TypeScript 6 strict, ESLint + jsx-a11y + Prettier). All package management
-with **pnpm** only — one canonical lockfile at the repo root.
+See [ADR-033](../../docs/adrs/ADR-033-electron-desktop.md), the
+[Desktop UX architecture](../../docs/desktop/UX_ARCHITECTURE.md), and the
+[Desktop guide](../../docs/desktop/README.md) for current product behavior and
+known limits.
 
 ## Architecture
 
-- **V is the backend.** Every destination reads/mutates through the typed
-  client in `src/lib/api/` (TanStack Query owns server state). No domain
-  logic in TypeScript, no CLI-output parsing, no Node backend.
-- **`electron/` is infrastructure only**: window lifecycle, supervising the
-  bundled `agent-toolkit serve --no-browser` on a dynamic localhost port
-  (health-gated, version-checked, crash-detected, clean shutdown), narrow
-  typed preload bridge (`contextIsolation`, no `nodeIntegration`), and the
-  node-pty terminal transport adapter.
-- Destinations: **World** (default home), Attention, Operations, Workspace,
-  Library, People, Insights, Terminal, Settings — domain actions use typed backend
-  endpoints. The journey ledger identifies behavior that still has limits.
-  Spatial contract:
-  [SEMANTIC_WORLD.md](../../docs/desktop/SEMANTIC_WORLD.md).
+- **Veasel V is the only backend.** The main process starts or securely attaches
+  to `veasel serve`. It serves the renderer through a same-origin loopback
+  proxy that injects the backend token without exposing it to renderer code.
+- **Focus and World are views over the same runtime.** Sessions and provider
+  configuration live in Veasel's canonical data directory and are shared with
+  the TUI.
+- **Electron is infrastructure.** Its narrow preload bridge handles backend
+  lifecycle, workspace selection, native project dialogs and node-pty
+  terminals. It does not run another agent engine.
+- **Portable capabilities remain in Agent Toolkit.** Skills, agents, context
+  packs and workflow assets can be used by Veasel or other supported coding
+  tools; the Toolkit Desktop is a legacy product and is not this application.
 
-Product behavior, real Electron captures and known gaps are indexed in the
-[Desktop guide](../../docs/desktop/README.md). It is the user-facing source for
-the world metaphor; [VISUAL_QA.md](../../docs/desktop/VISUAL_QA.md) is the
-engineering evidence log, not a promise that every open visual issue is solved.
+The interface includes Focus, World, Operations, Workspace, Library, People,
+Insights, Terminal and Settings. The workspace selector chooses the directory
+used when Desktop starts its own backend. If Desktop attaches to a backend
+started by the TUI, it does not stop or restart that process.
 
 ## Develop
 
+Run these commands from this directory; pnpm uses the repository lockfile.
+
 ```bash
-pnpm install                    # from repo root (builds electron, node-pty)
-pnpm --filter agent-toolkit-desktop dev          # renderer vs any backend
-pnpm --filter agent-toolkit-desktop dev:electron # build Electron main, then launch the shell
-pnpm --filter agent-toolkit-desktop gen:api      # regenerate from docs/surface/openapi.json
+pnpm install
+pnpm --filter veasel-desktop dev
+pnpm --filter veasel-desktop dev:electron
+pnpm --filter veasel-desktop gen:api
 ```
 
-Backend for renderer dev: `agent-toolkit serve --no-browser`, or set
-`VITE_ATK_BACKEND_URL` (default `http://127.0.0.1:3847`).
+For renderer development, `VITE_ATK_BACKEND_URL` can point at a Veasel backend
+(default `http://127.0.0.1:4097`). In Electron, Desktop uses its protected
+same-origin proxy instead.
 
 ## Gates
 
 ```bash
-pnpm --filter agent-toolkit-desktop lint
-pnpm --filter agent-toolkit-desktop type-check
-pnpm --filter agent-toolkit-desktop test
-pnpm --filter agent-toolkit-desktop build        # renderer
-pnpm --filter agent-toolkit-desktop build:all    # renderer + electron main
-pnpm --filter agent-toolkit-desktop test:e2e     # Playwright vs live backend
-pnpm --filter agent-toolkit-desktop dist:dir     # electron-builder, unpacked (Linux verified)
+pnpm --filter veasel-desktop lint
+pnpm --filter veasel-desktop type-check
+pnpm --filter veasel-desktop test
+pnpm --filter veasel-desktop build
+pnpm --filter veasel-desktop build:all
+pnpm --filter veasel-desktop test:e2e
+pnpm --filter veasel-desktop dist:dir
 ```
 
-For Electron acceptance against an already packaged app, set
-`ATK_E2E_APP_PATH` to its executable and `ATK_E2E_BACKEND_BIN` to the backend
-binary to use:
+For Electron E2E against a packaged app, set `VEASEL_E2E_APP_PATH` to its
+executable and `VEASEL_E2E_BACKEND_BIN` to a Veasel Code binary:
 
 ```bash
-ATK_E2E_APP_PATH=/path/to/agent-toolkit-desktop \
-ATK_E2E_BACKEND_BIN=/path/to/agent-toolkit \
-pnpm --filter agent-toolkit-desktop test:e2e --project=electron
+VEASEL_E2E_APP_PATH=/path/to/veasel-desktop \
+VEASEL_E2E_BACKEND_BIN=/path/to/veasel \
+pnpm --filter veasel-desktop test:e2e --project=electron
 ```
 
-Playwright then runs only Electron tests and skips the renderer build and Vite
-preview server; the packaged application serves its own renderer. The tests
-still create a throwaway HOME and workspace for every run.
+The suite uses a throwaway HOME and Veasel data directory. Never point its
+environment at personal provider credentials or a production workspace.
 
-## Decisions that differ from the template (documented, not accidental)
+## TypeScript and linting
 
-- `tsconfig.json` has no project `references`; renderer and electron/node
-  projects type-check independently (`tsc --noEmit && tsc -p tsconfig.node.json --noEmit`).
-- ESLint uses `tseslint.configs.recommended` (not type-checked) like the
-  template; strict safety comes from `tsc`. import-x uses the node resolver:
-  its TypeScript resolver does not support TS 6 yet.
-- `vite-plugin-eslint` types come from a local `vite-plugin-eslint.d.ts` shim
-  (the package's exports map breaks TS `bundler` resolution).
+Renderer and Electron main are checked independently by `type-check`; ESLint
+uses the repository's strict TypeScript and accessibility rules. The desktop
+package keeps its own scripts and shares the root V release/version workflow.

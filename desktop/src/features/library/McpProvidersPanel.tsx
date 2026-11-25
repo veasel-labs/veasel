@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useSubMutation } from '../../data/commands';
 import { useMcpProviders } from '../../data/catalog';
+import { useBackend } from '../../data/backend';
 import { envelopeText, errorMessage, type McpProviderInfo } from '../../lib/api';
 import {
   Button,
@@ -62,6 +63,7 @@ function actionDescription(action: ReviewAction, configPath: string) {
 }
 
 export function McpProvidersPanel() {
+  const { backend } = useBackend();
   const providers = useMcpProviders();
   const [searchParams, setSearchParams] = useSearchParams();
   const handledRequest = useRef('');
@@ -133,7 +135,9 @@ export function McpProvidersPanel() {
       setSecretValues((current) => ({ ...current, [name]: '' }));
       setPendingRestart(true);
       setSecretMessage(
-        `${name} was encrypted in ${secretStatus?.storage ?? 'the system credential store'}. Restart the backend to apply it.`,
+        backend?.attached
+          ? `${name} was encrypted in ${secretStatus?.storage ?? 'the system credential store'}. The shared terminal backend does not receive Desktop-only credentials; close it, then reopen Desktop so it can start with the saved value.`
+          : `${name} was encrypted in ${secretStatus?.storage ?? 'the system credential store'}. Restart the Veasel backend to apply it.`,
       );
       await refreshSecretStatus();
     } catch {
@@ -150,7 +154,13 @@ export function McpProvidersPanel() {
     try {
       const result = await window.atk.mcpSecretRemove(name);
       if (result.ok) setPendingRestart(true);
-      setSecretMessage(result.ok ? `${name} was removed. Restart the backend to apply the change.` : result.message);
+      setSecretMessage(
+        result.ok
+          ? backend?.attached
+            ? `${name} was removed from Desktop storage. The shared terminal backend is unaffected; restart it from its owner.`
+            : `${name} was removed. Restart the Veasel backend to apply the change.`
+          : result.message,
+      );
       await refreshSecretStatus();
     } catch {
       setSecretMessage('Could not update the encrypted credential store.');
@@ -161,6 +171,12 @@ export function McpProvidersPanel() {
 
   async function restartBackend() {
     if (!window.atk) return;
+    if (backend?.attached) {
+      setSecretMessage(
+        'This backend belongs to the terminal client. Desktop cannot restart or change its environment.',
+      );
+      return;
+    }
     setRestartBusy(true);
     setSecretMessage('');
     try {
@@ -176,7 +192,7 @@ export function McpProvidersPanel() {
       );
     } catch {
       setSecretMessage(
-        'Backend restart failed. Your encrypted credential remains saved; inspect Diagnostics before retrying.',
+        'Veasel backend restart failed. Your encrypted credential remains saved; inspect Diagnostics before retrying.',
       );
     } finally {
       setRestartBusy(false);
@@ -408,12 +424,18 @@ export function McpProvidersPanel() {
               <h3>Private credentials</h3>
               <p>
                 {secretStatus?.available
-                  ? `Values are encrypted with ${secretStatus.storage} and exposed only to the supervised Agent Toolkit backend after restart.`
-                  : 'Credential entry requires secure operating-system storage. Saved values are exposed only to the supervised Agent Toolkit backend after restart.'}{' '}
+                  ? `Values are encrypted with ${secretStatus.storage} and exposed only to a Veasel backend started by Desktop.`
+                  : 'Credential entry requires secure operating-system storage. Saved values are exposed only to a Veasel backend started by Desktop.'}{' '}
                 Values are never written to MCP configuration.
               </p>
             </div>
-            {secretStatus?.available && pendingRestart ? (
+            {secretStatus?.available && pendingRestart && backend?.attached ? (
+              <p role="status">
+                The terminal client owns this shared backend. Restart it from that client, or close it and reopen
+                Desktop.
+              </p>
+            ) : null}
+            {secretStatus?.available && pendingRestart && !backend?.attached ? (
               <Button size="sm" busy={restartBusy} busyLabel="Restarting…" onClick={() => setRestartReview(true)}>
                 Restart backend to apply
               </Button>

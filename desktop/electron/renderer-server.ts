@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 /**
  * Serve the packaged renderer from loopback and reverse-proxy `/api/*` to the
- * supervised `agent-toolkit serve`. Loading via file:// stamps Origin: null and
+ * supervised Veasel V backend. Loading via file:// stamps Origin: null and
  * strips X-Atk-Desktop; loading from a different loopback port trips CORS
  * because serve emits no Access-Control-Allow-Origin. Same-origin static+proxy
  * keeps the security model (no browser CORS) while Desktop works.
@@ -51,10 +51,7 @@ const TYPES: Record<string, string> = {
 
 const MAX_STATIC_PATH = 2048;
 
-type StaticKey =
-  | { kind: 'key'; key: string }
-  | { kind: 'forbidden' }
-  | { kind: 'too-long' };
+type StaticKey = { kind: 'key'; key: string } | { kind: 'forbidden' } | { kind: 'too-long' };
 
 /**
  * Turn a request target into a lookup key for the startup file index. The key

@@ -824,6 +824,6 @@ HUMAN BLOCKERS if certificates/accounts are absent — never claim signed.
   `45670879316` is still pending; PR #832 CI `45670205816` remains in progress.
 
 - 2026-11-25 18:21 UTC: ledger refresh PR #833 is open against Veasel main at
-  head `21f078afa84d749bb07afaf72fb227f320ba699a`; its required checks have
+  head `17246c02a19afc4f4e802d160e8e27c48443816e`; its required checks have
   started and are pending. The inventory now includes this PR, for eight open
   Veasel PRs and nine open PRs across the tracked repositories.

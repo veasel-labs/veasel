@@ -3,23 +3,25 @@
 Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
-Refreshed: **2026-11-25 00:38 UTC** from live GitHub state. Method: issue/PR
+Refreshed: **2026-11-25 00:45 UTC** from live GitHub state. Method: issue/PR
 queries, default-branch SHAs, latest exact-head CI, and release metadata.
 
-## Checkpoint 2026-11-25 00:38 UTC — Desktop runtime PR and Focus regression
+## Checkpoint 2026-11-25 00:45 UTC — Desktop runtime PR and Focus readiness regression
 
 A fresh GraphQL inventory after release propagation and merge of personal
 Toolkit PR #1849 found five open issues (all in Veasel) and one open PR (#816).
 This is not a zero-backlog or final acceptance claim. Veasel exact-main CI is
 still running on Windows; the personal Toolkit's post-merge main validation is
-also running. PR #816's Focus journey exposed a real renderer/backend boundary
-regression: a backend-state event sent the backend's direct loopback URL to the
-renderer, causing CORS failures and an empty session list after restart. A fix
-is prepared and its focused unit test passes; the fix has not yet been pushed.
+also running. PR #816's Focus journey exposed a renderer/backend readiness
+regression: the renderer received the proxy URL before its backend target was
+ready, so the one-shot initial session load could fail and leave an empty list
+after restart. A second fix now returns the proxy URL only after the backend
+supervisor reports ready. Focused tests, type-check, and lint pass locally; the
+fix has not yet been pushed.
 
 | Repository | main SHA | Open issues | Open PRs | Latest evidence / note |
 | --- | --- | ---: | ---: | --- |
-| veasel-labs/veasel | `5f374635a82407b605f073d6a2c16f41f2122efb` | 5 (#549, #550, #673, #689, #693) | 1 (#816) | Exact-main run [45511878769](https://github.com/veasel-labs/veasel/actions/runs/45511878769): Linux/macOS backend and other jobs passed; Windows backend remains in progress. PR #816 head `78db4dec` failed Focus journey J7 because a direct backend URL bypassed the renderer proxy; fix and regression test are prepared locally. |
+| veasel-labs/veasel | `5f374635a82407b605f073d6a2c16f41f2122efb` | 5 (#549, #550, #673, #689, #693) | 1 (#816) | Exact-main run [45511878769](https://github.com/veasel-labs/veasel/actions/runs/45511878769): only Windows backend remains in progress. PR #816 head `342adf1f` fixes direct backend URLs leaking to the renderer proxy and is running CI; its Focus J7 failed on the prior head due to startup readiness. A follow-up readiness fix is locally validated but not yet pushed. |
 | veasel-labs/agent-toolkit | `416e7de7022a75249072a78971ded9a22fd1e9f3` | 0 | 0 | Registry validation [45406129549](https://github.com/veasel-labs/agent-toolkit/actions/runs/45406129549) passed. Owner-approved `veasel-essentials` exception is first-party only; PR #13 remains intentionally fail-closed pending independent permission review. |
 | veasel-labs/website | `eb88a30ae83052e2d301d4327d258db5b5aee3f3` | 0 | 0 | Website validation [45509223211](https://github.com/veasel-labs/website/actions/runs/45509223211) and deploy [45509222983](https://github.com/veasel-labs/website/actions/runs/45509222983) passed. Live product/download pages advertise verified v0.102.4 assets. |
 | veasel-labs/homebrew-tap | `4a8aa45aaad17dd4df3b2e7f7c6d0865f99f538d` | 0 | 0 | Exact-main CI [45509430347](https://github.com/veasel-labs/homebrew-tap/actions/runs/45509430347) passed. The formula/cask is CLI/TUI distribution; no Desktop cask is claimed. |
@@ -73,11 +75,14 @@ Desktop owns, updates E2E backend selection and corrects the Desktop guide.
 Local type-check, lint, 576 unit tests, 29 targeted regression tests and
 `build:all` passed under resource-bounded `systemd-run`. GitHub required CI is
 still pending; the packaged UI and shared-session acceptance remain unverified.
-The first hosted Focus run failed J7: after restart, an `atk:backend-state`
-event exposed the backend's direct loopback URL, so requests escaped the
-same-origin proxy and the session list remained empty. The fix now projects the
-proxy URL in these events; a focused regression test passed locally under
-`systemd-run`. It is not yet pushed or hosted-validated.
+The first hosted Focus run failed J7. The trace showed requests using the
+backend's direct loopback URL; the first fix makes `atk:backend-state` project
+the protected same-origin proxy URL. Inspection then found the initial IPC
+readiness probe also returned that proxy before the supervisor started its
+backend, allowing the one-shot initial list read to race startup. A follow-up
+now returns the proxy URL only for `ready` state. Four focused unit tests,
+TypeScript check, and lint pass under resource-bounded `systemd-run`; the
+readiness follow-up is not yet pushed or hosted-validated.
 The old Toolkit-specific MCP provider catalog API/UI remains a separate open
 migration item and is explicitly not claimed as completed by #816.
 

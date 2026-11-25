@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { projectVeaselBackendState } from './backend-state';
+import { projectVeaselBackendState, veaselRendererBackendUrl } from './backend-state';
 
 describe('projectVeaselBackendState', () => {
   it('projects canonical backend status and workspace without legacy binary claims', () => {
@@ -42,5 +42,14 @@ describe('projectVeaselBackendState', () => {
     );
 
     expect(state.url).toBe('http://127.0.0.1:43123');
+  });
+
+  it('does not advertise the proxy before its backend has started', () => {
+    expect(veaselRendererBackendUrl({ status: 'starting', url: null, problem: null }, 'http://127.0.0.1:43123')).toBe(
+      null,
+    );
+    expect(
+      veaselRendererBackendUrl({ status: 'ready', url: 'http://127.0.0.1:4097', problem: null }, 'http://127.0.0.1:43123'),
+    ).toBe('http://127.0.0.1:43123');
   });
 });

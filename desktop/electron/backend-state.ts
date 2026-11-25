@@ -2,6 +2,11 @@ import type { BackendState } from './backend';
 import type { HarnessResolution } from './harness';
 import type { VeaselBackendState } from './veasel-backend';
 
+/** Report the renderer proxy only after the backend behind it is ready. */
+export function veaselRendererBackendUrl(state: VeaselBackendState | null, publicUrl: string | null): string | null {
+  return state?.status === 'ready' && state.url ? publicUrl : null;
+}
+
 /** Temporary renderer DTO retained for the existing Focus UI bridge. */
 export function projectVeaselBackendState(
   state: VeaselBackendState,

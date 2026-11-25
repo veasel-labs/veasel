@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { projectVeaselBackendState } from './backend-state';
+import { projectVeaselBackendState, veaselRendererBackendUrl } from './backend-state';
 import { VeaselBackendSupervisor } from './veasel-backend';
 import { HarnessController } from './harness-controller';
 import { HARNESS_STORE_FILE, HarnessStore } from './harness-store';
@@ -84,7 +84,9 @@ async function createWindow(): Promise<void> {
         ),
       );
     });
-    ipcMain.handle('veasel:backend-url', () => rendererServer?.url ?? null);
+    ipcMain.handle('veasel:backend-url', () =>
+      veaselRendererBackendUrl(veaselBackend?.snapshot() ?? null, rendererServer?.url ?? null),
+    );
   }
   // Singleflight: macOS `activate` re-enters createWindow. Rebuilding the
   // services would orphan the running backend/PTYs and re-registering IPC

@@ -44,6 +44,23 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ## Milestones and backlog
 
+### Installed daily-driver evidence (#550)
+
+- Linux preview `v0.103.2-next.0` reproduced a Desktop-first startup failure:
+  the AppImage started its backend on an ephemeral port, and the released TUI
+  launcher then tried to start another backend for the same locked data directory.
+  The Desktop startup fix uses the same loopback port as the launcher. A local
+  Desktop build attached to the released V backend and shared its PID with the
+  released TUI in both startup orders, using isolated profiles.
+- On the same Linux host, the released AppImage completed a real Claude Code
+  task with a file-edit approval in Focus. The released TUI completed a real
+  Codex task in explicit accept-edits mode. Both sessions edited only
+  `CONTRIBUTING.md` in separate disposable checkouts of the public Veasel Labs
+  community repository. Both diffs passed `git diff --check`.
+- Repeat on a published Desktop build containing the fix. Cancellation,
+  installed cross-platform recovery and full daily-driver acceptance remain
+  tracked in [#550](https://github.com/veasel-labs/veasel/issues/550).
+
 ### Milestone 1 — functional foundation (complete locally)
 
 - [x] Initialize the local product repository, license, agent contract, and

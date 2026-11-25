@@ -1,6 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -27,7 +26,7 @@ export interface VeaselBackendOptions {
   env?: NodeJS.ProcessEnv;
   /** Test seam; production uses the canonical Veasel data dir. */
   dataDir?: string;
-  /** Test seam; production uses the backend's conventional loopback URL. */
+  /** Test seam; production uses the same loopback port as the terminal launcher. */
   conventionalUrl?: string;
   /** Working directory for a newly spawned server; an attached server keeps its owner’s cwd. */
   workingDirectory?: () => string;
@@ -42,16 +41,12 @@ const STOP_GRACE_MS = 5_000;
 const KILL_GRACE_MS = 1_000;
 const GENERATED_API_TOKEN = /^[0-9a-f]{64}$/;
 
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : 0;
-      server.close(() => resolve(port));
-    });
-  });
+export function resolveVeaselBackendUrl(env: NodeJS.ProcessEnv): string {
+  const value = env.VEASEL_PORT?.trim();
+  const requested = value && /^\+?\d+$/.test(value) ? Number(value) : 0;
+  // Mirror main.v: unset, invalid, or out-of-range values use port 4097.
+  const port = requested > 0 && requested < 65536 ? requested : 4097;
+  return `http://127.0.0.1:${port}`;
 }
 
 export function veaselBackendBinaryCandidates(options: VeaselBackendOptions): string[] {
@@ -201,6 +196,7 @@ export async function probeVeaselBackend(url: string, apiToken?: string | null):
     // is only returned to a caller holding the token.
     const response = await fetch(`${url}/v1/health`, {
       headers: apiToken ? { authorization: `Bearer ${apiToken}` } : {},
+      signal: AbortSignal.timeout(1500),
     });
     if (response.status !== 200) return null;
     return veaselHealthIdentity(await response.json());
@@ -209,12 +205,9 @@ export async function probeVeaselBackend(url: string, apiToken?: string | null):
   }
 }
 
-async function isHealthy(url: string, apiToken: string | null): Promise<boolean> {
-  return (await probeVeaselBackend(url, apiToken)) !== null;
-}
-
 export class VeaselBackendSupervisor {
   private child: ChildProcess | null = null;
+  private starting: Promise<VeaselBackendState> | null = null;
   private attached = false;
   private state: VeaselBackendState = { status: 'stopped', url: null, problem: null };
   private readonly listeners = new Set<(state: VeaselBackendState) => void>();
@@ -231,6 +224,7 @@ export class VeaselBackendSupervisor {
 
   /** Restart only a child owned by Desktop. An attached TUI server is never stopped. */
   async restart(): Promise<boolean> {
+    if (this.starting) await this.starting;
     if (this.attached) return false;
     await this.stop();
     return (await this.start()).status === 'ready';
@@ -252,35 +246,24 @@ export class VeaselBackendSupervisor {
   }
 
   /** Attach to an already-running backend when possible, else spawn one. */
-  async start(): Promise<VeaselBackendState> {
-    if (this.state.status === 'ready' && this.state.url) return this.state;
+  start(): Promise<VeaselBackendState> {
+    if (this.starting) return this.starting;
+    if (this.state.status === 'ready' && this.state.url) return Promise.resolve(this.state);
     this.stopping = false;
-    this.setState({ status: 'starting', url: null, problem: null });
-    // Prefer the backend's conventional port so a TUI-started backend is
-    // attached to (one runtime, shared sessions) instead of duplicated;
-    // only spawn our own when nothing healthy answers there.
-    const conventional = this.options.conventionalUrl ?? 'http://127.0.0.1:4097';
-    const kind = await classifyVeaselBackend(conventional);
-    if (kind === 'legacy') {
-      // Never attach to (or spawn beside) a server that does not enforce
-      // authentication; block with an explicit recovery message instead.
-      const port = new URL(conventional).port || '80';
-      this.setState({
-        status: 'failed',
-        url: null,
-        problem: legacyBackendMessage(port, await legacyActiveOperations(conventional)),
+    this.starting = Promise.resolve()
+      .then(() => this.startOrAttach())
+      .finally(() => {
+        this.starting = null;
       });
-      return this.state;
-    }
-    if (kind === 'secure' && (await isHealthy(conventional, this.apiToken()))) {
-      this.attached = true;
-      this.setState({ status: 'ready', url: conventional, problem: null });
-      return this.state;
-    }
-    const port = await freePort();
-    const url = `http://127.0.0.1:${port}`;
-    // Same canonical store the TUI/CLI use: Desktop-first and TUI-first
-    // startups share sessions/profile instead of splitting SQLite stores.
+    return this.starting;
+  }
+
+  private async startOrAttach(): Promise<VeaselBackendState> {
+    if (this.stopping) return this.state;
+    this.setState({ status: 'starting', url: null, problem: null });
+    const url = this.options.conventionalUrl ?? resolveVeaselBackendUrl(this.options.env ?? process.env);
+    if (await this.useExistingBackend(url)) return this.state;
+    // The terminal discovers the backend on this same port in either start order.
     const dataDir = this.options.dataDir ?? canonicalVeaselDataDir(this.options.env ?? process.env);
     fs.mkdirSync(dataDir, { recursive: true });
     const env = {
@@ -289,7 +272,7 @@ export class VeaselBackendSupervisor {
         this.options.resolveEnvironmentSecrets?.() ?? {},
         this.options.resolveClearedEnvironmentSecretNames?.() ?? [],
       ),
-      VEASEL_PORT: String(port),
+      VEASEL_PORT: new URL(url).port || '80',
       VEASEL_DATA_DIR: dataDir,
       VEASEL_PLUGIN_DIR: path.join(dataDir, 'plugins'),
       // Desktop is an interactive client: CLI tool requests must surface as
@@ -310,16 +293,46 @@ export class VeaselBackendSupervisor {
         continue;
       }
       this.watchChild(this.child);
-      const started = await this.waitHealthy(url);
-      if (started) {
+      const started = await this.waitHealthy(url, this.child);
+      if (started && !this.stopping) {
         this.setState({ status: 'ready', url, problem: null });
         return this.state;
       }
       lastError = `backend did not become healthy at ${url}`;
       await this.killChild();
+      // A terminal launcher may have won the bind race in the meantime.
+      if (await this.useExistingBackend(url)) return this.state;
     }
     this.setState({ status: 'failed', url: null, problem: lastError ?? 'veasel backend unavailable' });
     return this.state;
+  }
+
+  private async useExistingBackend(url: string): Promise<boolean> {
+    if (this.stopping) return true;
+    const kind = await classifyVeaselBackend(url);
+    if (this.stopping) return true;
+    if (kind === 'absent') return false;
+    const port = new URL(url).port || '80';
+    if (kind === 'legacy') {
+      const active = await legacyActiveOperations(url);
+      if (!this.stopping) {
+        this.setState({ status: 'failed', url: null, problem: legacyBackendMessage(port, active) });
+      }
+      return true;
+    }
+    const identity = await probeVeaselBackend(url, this.apiToken());
+    if (this.stopping) return true;
+    if (identity) {
+      this.attached = true;
+      this.setState({ status: 'ready', url, problem: null });
+    } else {
+      this.setState({
+        status: 'failed',
+        url: null,
+        problem: `A Veasel backend at ${url} is using a different profile or credential. Use the same VEASEL_DATA_DIR and token as the terminal, or choose another VEASEL_PORT for a separate profile.`,
+      });
+    }
+    return true;
   }
 
   private stopping = false;
@@ -345,12 +358,17 @@ export class VeaselBackendSupervisor {
     });
   }
 
-  private async waitHealthy(url: string): Promise<boolean> {
+  private async waitHealthy(url: string, child: ChildProcess): Promise<boolean> {
     const deadline = Date.now() + HEALTH_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      if (this.childFailed) return false;
-      if (this.child && this.child.exitCode !== null) return false;
-      if (await isHealthy(url, this.apiToken())) return true;
+      if (this.stopping || this.childFailed || this.child !== child || child.exitCode !== null) return false;
+      const kind = await classifyVeaselBackend(url);
+      if (kind === 'secure') {
+        const identity = await probeVeaselBackend(url, this.apiToken());
+        if (identity) return identity.pid === child.pid && this.child === child;
+      } else if (kind === 'legacy') {
+        return false;
+      }
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     return false;
@@ -399,9 +417,10 @@ export class VeaselBackendSupervisor {
 
   async stop(): Promise<void> {
     this.stopping = true;
+    this.setState({ status: 'stopped', url: null, problem: null });
     // Never kill a backend we merely attached to (the TUI may own it).
     if (!this.attached) await this.killChild();
+    await this.starting?.catch(() => undefined);
     this.attached = false;
-    this.setState({ status: 'stopped', url: null, problem: null });
   }
 }

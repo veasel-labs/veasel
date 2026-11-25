@@ -1,5 +1,5 @@
 {
-  "classification": "PACKAGED LINUX SHARED-LISTENER STARTUP, VERIFIED",
+  "classification": "PACKAGED LINUX SHARED-LISTENER STARTUP, PRIOR RUN PASSED; CURRENT HARNESS RERUN FAILED",
   "date": "2026-11-25",
   "release": {
     "tag": "v0.103.3-next.0",
@@ -51,5 +51,10 @@
     "This checks backend reuse and startup order only; it does not create or continue a coding session, exercise provider auth, tool approvals, file edits, restart recovery, or native macOS/Windows behavior.",
     "The release source includes shared-listener PR #820 but predates exact-file approval PR #821."
   ],
-  "harness": "scripts/packaged-shared-listener-smoke.py"
+  "harness": {
+    "reproduction": "scripts/packaged-shared-listener-smoke.py",
+    "prior_pass": "Temporary predecessor with the same artifact, backend reuse, TUI, and Focus-route assertions; it ran before the checked-in child-environment allowlist was added. It made no provider request, but that run does not prove child environment isolation.",
+    "checked_in_harness_rerun": "failed",
+    "rerun_details": "On 2026-11-25 the AppImage-first attempt exited before the expected Focus route/readiness was observed. The TUI subsequently started a backend, so the run did not prove AppImage-first shared PID. Creation of the second-order profile then failed with Disk quota exceeded."
+  }
 }

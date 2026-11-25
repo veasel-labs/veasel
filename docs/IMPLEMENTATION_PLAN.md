@@ -61,6 +61,19 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   installed cross-platform recovery and full daily-driver acceptance remain
   tracked in [#550](https://github.com/veasel-labs/veasel/issues/550).
 
+### Durable goals and worker coordination
+
+- [x] Add Veasel-specific, authenticated admission, listing and manifest replay for portable goals.
+  Admission records preserve the declared scope and survive restart.
+- [ ] Verify local repository identity, canonical roots and base commits before
+  any dispatch. Resolve runner and verifier IDs against registered capabilities
+  and enforce policy ceilings and deadlines in V.
+- [ ] Store dependency and attempt transitions and link each claimed attempt to
+  the existing operation lifecycle. Recover interrupted attempts without
+  replaying uncertain effects.
+- [ ] Surface goals, review requests and evidence in TUI and Desktop. Run
+  progressive concurrency acceptance with live agents and independent review.
+
 ### Milestone 1 — functional foundation (complete locally)
 
 - [x] Initialize the local product repository, license, agent contract, and

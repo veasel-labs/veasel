@@ -430,6 +430,12 @@ fn test_every_declared_route_rejects_unauthenticated_requests_and_runs_no_handle
 	assert sessions.len == 0
 	assert read_token_file(api_token_path(data)) or { panic(err) } == token
 
+	assert 'POST /v1/goals' in routes
+	assert 'GET /v1/goals/canary' in routes
+	admission_rows := store.admitted_goals() or { panic(err) }
+	assert admission_rows.len == 0
+	auth_test_goal_round_trip(port, token)
+
 	// Truncated, extended, wrong-scheme, and query-string credentials.
 	for headers in [
 		['Authorization: Bearer ${token[..63]}'],
@@ -649,4 +655,21 @@ fn test_canary_handler_body_never_executes_without_valid_credentials() {
 	]))
 	assert auth_test_status(ok).contains(' 200 ')
 	assert os.exists(marker)
+}
+
+fn auth_test_goal_round_trip(port int, token string) {
+	headers := ['Authorization: Bearer ${token}', 'Content-Type: application/json']
+	body := '{"schema_version":1,"id":"http-goal","title":"HTTP goal","authorized_repositories":[{"owner":"veasel-labs","name":"veasel","path":"/work/veasel"}],"acceptance_criteria":[{"id":"test","description":"Verify the manifest","verification":"Review"}],"deadline":"2027-01-01T00:00:00Z","budget":{"max_attempts":1,"wall_seconds":60,"provider_turns":1},"delivery_mode":"report","tasks":[{"id":"check","title":"Check","repository":"veasel-labs/veasel","base_sha":"${'f'.repeat(40)}","paths":["docs"],"recipe":"research","runner":"local-v","verifier":"review"}]}'
+	for expected in [' 201 ', ' 200 '] {
+		request := auth_test_request('POST', '/v1/goals', [...headers, 'Content-Length: ${body.len}'])
+		response := auth_test_raw(port, request + body)
+		assert auth_test_status(response).contains(expected), auth_test_status(response)
+	}
+	changed := body.replace('HTTP goal', 'Changed goal')
+	request := auth_test_request('POST', '/v1/goals', [...headers, 'Content-Length: ${changed.len}'])
+	assert auth_test_status(auth_test_raw(port, request + changed)).contains(' 409 ')
+	response := auth_test_raw(port, auth_test_request('GET', '/v1/goals/http-goal', headers))
+	assert auth_test_status(response).contains(' 200 ')
+	assert response.contains('HTTP goal')
+	assert auth_test_status(auth_test_raw(port, auth_test_request('GET', '/v1/goals/missing', headers))).contains(' 404 ')
 }

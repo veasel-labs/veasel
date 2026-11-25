@@ -88,6 +88,17 @@
   outline: none;
 }
 
+/* Grounds are a finite diorama. Keep the area beyond the authored canvas as a
+   quiet dusk-green surround instead of repeating one grass tile to the edge of
+   the viewport; the framed map boundary then remains legible while panning. */
+.mapRegion[data-mode='grounds'] {
+  background-color: #1d3129;
+  background-image:
+    radial-gradient(ellipse at 50% 35%, rgb(74 112 82 / 22%), transparent 58%),
+    linear-gradient(180deg, #223b31 0%, #172720 100%);
+  background-size: auto;
+}
+
 /* Crossing a project doorway keeps the map in place while its real scene
    changes underneath it. A brief pixel-step dissolve makes the change legible
    without slowing down a work action or scaling the pixel art out of focus. */
@@ -180,6 +191,19 @@
   box-shadow:
     inset 0 0 0 4px var(--cw-wood-light),
     inset 0 0 0 7px var(--cw-gold-deep);
+}
+
+.mapWorld[data-mode='grounds']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border: max(6px, calc(var(--world-tile-size, 16px) * 0.18)) solid rgb(20 34 29 / 78%);
+  box-shadow:
+    inset 0 0 0 2px rgb(224 193 108 / 72%),
+    inset 0 0 0 5px rgb(58 84 64 / 88%),
+    0 0 0 4px rgb(10 17 15 / 55%);
 }
 
 .mapWorld :global(.worldTerrain) {

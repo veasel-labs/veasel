@@ -932,6 +932,49 @@ describe('layoutWorld', () => {
     expect(plan.cells.some(({ tile }) => tile.startsWith('flowers-'))).toBe(true);
   });
 
+  it('paints meadow beneath blocked place footprints without making them walkable', () => {
+    const layout = layoutWorld(
+      buildWorldModel(
+        baseInput({
+          projects: [{ name: 'solo', target: '/solo', status: 'ok' }],
+          memory: emptyMemory(true, []),
+          jobs: [],
+        }),
+      ),
+    );
+    const project = layout.entities.find((entity) => entity.id === 'place:project:solo')!;
+    const plan = paintTerrain(layout.entities, layout.cols, layout.rows);
+    const footprint = plan.cells.filter(
+      ({ x, y }) => x >= project.x && x < project.x + project.w && y >= project.y && y < project.y + project.h,
+    );
+    expect(footprint.length).toBe(project.w * project.h);
+    expect(footprint.every(({ tile }) => tile.startsWith('grass') || tile.startsWith('flowers'))).toBe(true);
+    expect(plan.collisionCells).toContain(`${project.x},${project.y}`);
+  });
+
+  it('gives civic and project districts a readable stone threshold', () => {
+    for (const projects of [[{ name: 'solo', target: '/solo', status: 'ok' as const }], []]) {
+      const layout = layoutWorld(buildWorldModel(baseInput({ projects, memory: emptyMemory(true, []) })));
+      const plan = paintTerrain(layout.entities, layout.cols, layout.rows);
+      const thresholds = layout.entities
+        .filter((entity) =>
+          projects.length > 0 ? entity.id === 'place:project:solo' : entity.id === 'place:projects-empty',
+        )
+        .map((entity) => ({
+          id: entity.id,
+          x: entity.x + Math.floor(entity.w / 2),
+          y: entity.y + entity.h,
+        }));
+      for (const threshold of thresholds) {
+        const plazaCells = plan.cells.filter(
+          ({ x, y, tile }) =>
+            tile.startsWith('plaza') && Math.abs(x - threshold.x) <= 4 && Math.abs(y - threshold.y) <= 2,
+        );
+        expect(plazaCells.length, `threshold at ${threshold.x},${threshold.y}`).toBeGreaterThanOrEqual(7);
+      }
+    }
+  });
+
   it('composes narrow connected footpaths and stable creek crossings', () => {
     const layout = layoutWorld(
       buildWorldModel(

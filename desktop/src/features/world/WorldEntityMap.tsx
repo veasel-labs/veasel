@@ -66,6 +66,11 @@ function activateEntity(
   if (entityHasInspector(entity)) onActivate(entity);
 }
 
+/** Keep the map quiet at overview scale while retaining signs for real rooms. */
+function isSignpostedPlace(entity: LaidOutEntity): boolean {
+  return entity.id.startsWith('place:');
+}
+
 /** Character sprite variant by stable entity hash (never runtime state). */
 function characterSprite(id: string, themeKey: string, durableSprite?: string, prefix = 'char-'): string {
   if (durableSprite) {
@@ -604,8 +609,11 @@ export function WorldEntityMap({
       ref={regionRef}
       className={styles.mapRegion}
       style={{
-        backgroundImage: `url('${theme.id === 'cyberpunk-city' ? '/world/cyber-asphalt-0.png' : '/world/grass-a.png'}')`,
-        backgroundSize: `${zoom}px ${zoom}px`,
+        backgroundImage:
+          mode === 'interior'
+            ? `url('${theme.id === 'cyberpunk-city' ? '/world/cyber-asphalt-0.png' : '/world/grass-a.png'}')`
+            : undefined,
+        backgroundSize: mode === 'interior' ? `${zoom}px ${zoom}px` : undefined,
       }}
       role="application"
       aria-label={ariaLabel}
@@ -696,7 +704,7 @@ export function WorldEntityMap({
           .filter(
             (entity) =>
               entity.kind !== 'character' &&
-              (entity.kind === 'place' ||
+              ((entity.kind === 'place' && isSignpostedPlace(entity)) ||
                 entity.id === selectedId ||
                 entity.id === hoveredId ||
                 entity.id === nearbyId),
@@ -711,7 +719,7 @@ export function WorldEntityMap({
                 data-entity-label-for={entity.id}
                 aria-hidden="true"
                 data-label-kind={entity.kind}
-                data-sign={entity.kind === 'place' && !isActive ? 'true' : undefined}
+                data-sign={isSignpostedPlace(entity) && !isActive ? 'true' : undefined}
                 data-nearby={isNearby ? 'true' : undefined}
                 data-selected={isActive ? 'true' : undefined}
                 style={{

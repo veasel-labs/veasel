@@ -40,6 +40,31 @@
   font-size: var(--text-sm);
 }
 
+/* A disconnected backend is actionable, but it is not a destructive provider
+   failure. Keep the truthful alert semantics from ErrorState while presenting
+   the room as a calm connection station instead of a wall of red. */
+.connectionState :global([data-tone='err']) {
+  position: relative;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--cw-gold-deep);
+  border-inline-start: 4px solid var(--cw-gold);
+  background: var(--surface-notice);
+  box-shadow: var(--shadow-chip);
+}
+
+.connectionState :global([data-tone='err'])::before {
+  content: '◆';
+  color: var(--accent-gold);
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.connectionState :global([data-tone='err']) button {
+  border-color: var(--cw-gold-deep);
+}
+
 .serverAction {
   margin-top: var(--space-2);
 }

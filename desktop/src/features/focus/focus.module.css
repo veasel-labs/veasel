@@ -25,8 +25,9 @@
   min-height: 0;
   padding: var(--space-3);
   overflow-y: auto;
-  border-right: 1px solid var(--border-subtle);
+  border-right: 2px solid var(--cw-menu-950);
   background: var(--surface-chrome-raised);
+  box-shadow: inset -1px 0 var(--cw-menu-700);
 }
 
 .threads ul {
@@ -68,6 +69,7 @@
 
 .thread[aria-current='page'] {
   background: var(--surface-chrome-selected);
+  box-shadow: inset 3px 0 var(--accent-gold);
 }
 
 .threadLamp {
@@ -805,22 +807,46 @@
 /* ---------- Start ---------- */
 
 .start {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
-  justify-content: center;
-  gap: var(--space-4);
-  width: min(100% - 2 * var(--space-5), 44rem);
+  justify-content: flex-start;
+  gap: var(--space-3);
+  width: min(100% - 2 * var(--space-5), 52rem);
   margin: 0 auto;
-  padding: var(--space-8) 0 var(--space-8);
+  padding: var(--space-5) var(--space-6) var(--space-3);
   min-height: 0;
   overflow-y: auto;
+  border: 2px solid var(--cw-wood-light);
+  background: linear-gradient(180deg, rgba(240, 189, 94, 0.055), transparent 10rem), var(--surface-panel);
+  box-shadow:
+    0 0 0 3px var(--cw-menu-950),
+    0 5px 0 var(--cw-wood-dark),
+    var(--shadow-raised);
 }
 
 .startTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
   font-size: var(--text-3xl);
   font-weight: 600;
   letter-spacing: -0.02em;
+}
+
+.startTitle::before {
+  content: '';
+  flex: none;
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid var(--cw-gold);
+  background: var(--cw-wood-light);
+  box-shadow:
+    inset 0 0 0 2px var(--cw-wood-dark),
+    2px 2px 0 var(--cw-menu-950);
+  image-rendering: pixelated;
 }
 
 .startTask {
@@ -828,16 +854,21 @@
   width: 100%;
   min-height: 8rem;
   padding: var(--space-3);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-lg);
-  background: var(--surface-panel);
+  border: 1px solid var(--cw-menu-700);
+  border-inline-start: 4px solid var(--cw-gold-deep);
+  border-radius: 0;
+  background: var(--surface-sunken);
+  box-shadow:
+    inset 0 2px 0 rgba(15, 12, 26, 0.5),
+    var(--shadow-chip);
   font-size: var(--text-lg);
   line-height: var(--leading-normal);
   resize: vertical;
 }
 
 .startTask:focus-visible {
-  border-color: var(--accent-gold);
+  border-color: var(--cw-gold-strong);
+  border-inline-start-color: var(--cw-gold-strong);
   outline: none;
   box-shadow: 0 0 0 3px var(--focus-halo);
 }
@@ -868,7 +899,7 @@
   min-height: var(--target-min);
   padding: 0 var(--space-2);
   border: 1px solid var(--border-control);
-  border-radius: var(--radius-md);
+  border-radius: 0;
   background: var(--surface-sunken);
 }
 
@@ -909,10 +940,11 @@
 
 .providers {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin: 0;
-  padding: 0;
+  padding: var(--space-2) 0 0;
   border: 0;
+  border-top: 2px solid var(--cw-menu-700);
 }
 
 .providers legend {
@@ -929,9 +961,15 @@
   gap: 0 var(--space-3);
   align-items: center;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--cw-menu-800);
+  border-radius: 0;
+  background: rgba(23, 26, 43, 0.34);
   cursor: pointer;
+}
+
+.provider:hover:not([data-blocked]) {
+  border-color: var(--cw-wood-light);
+  background: var(--surface-hover);
 }
 
 .provider input {
@@ -941,6 +979,7 @@
 
 .provider[data-selected] {
   border-color: var(--accent-gold);
+  box-shadow: inset 3px 0 var(--accent-gold);
   background: var(--surface-selected);
 }
 
@@ -981,8 +1020,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) 0;
-  background: var(--surface-canvas);
+  margin: var(--space-1) calc(-1 * var(--space-6)) calc(-1 * var(--space-3));
+  padding: var(--space-2) var(--space-6);
+  border-top: 1px solid var(--cw-menu-700);
+  background: var(--surface-chrome-raised);
 }
 
 /* ---------- Inspector ---------- */
@@ -1050,8 +1091,9 @@
 
   .start {
     justify-content: flex-start;
-    gap: var(--space-3);
-    padding: var(--space-4) 0 var(--space-2);
+    gap: var(--space-2);
+    width: min(100% - 2 * var(--space-3), 52rem);
+    padding: var(--space-3) var(--space-3) var(--space-2);
   }
 
   .startTitle {
@@ -1081,6 +1123,7 @@
   }
 
   .startActions {
-    margin-top: auto;
+    margin: var(--space-1) calc(-1 * var(--space-3)) calc(-1 * var(--space-2));
+    padding: var(--space-2) var(--space-3);
   }
 }

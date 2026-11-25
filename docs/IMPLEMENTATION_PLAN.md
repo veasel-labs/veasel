@@ -76,6 +76,10 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   replaying uncertain effects.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run
   progressive concurrency acceptance with live agents and independent review.
+- [ ] Integrate the authenticated deterministic task projection proposed in
+  PR #831. It returns dependency-ordered task metadata for admitted goals; it
+  does not schedule, launch, or recover workers. Runner/verifier resolution,
+  durable attempts, dispatch and UI remain separate milestones above.
 
 ### Milestone 1 — functional foundation (complete locally)
 

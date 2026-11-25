@@ -3,6 +3,16 @@ module main
 import json2
 import os
 import rand
+import time
+
+fn test_goal_preflight_git_command_respects_expired_request_deadline() {
+	_ := run_goal_git_command_output_until(os.temp_dir(), [], 1024,
+		time.now().add(-1 * time.second)) or {
+		assert err.msg() == 'local Git metadata check timed out'
+		return
+	}
+	assert false
+}
 
 struct GoalRepositoryIdentityFixture {
 	root    string

@@ -9,6 +9,7 @@ const max_goal_paths_per_task_to_verify = 64
 const max_goal_total_paths_to_verify = 128
 const max_goal_scope_checks_to_verify = 512
 const max_goal_git_output_bytes = 16 * 1024
+const max_goal_preflight_elapsed = 30 * time.second
 const max_goal_preflight_attempts = 128
 const max_goal_preflight_provider_turns = 128
 const max_goal_preflight_wall_seconds = 86_400
@@ -57,6 +58,7 @@ fn verify_goal_checkouts(goal GoalAdmission) !map[string]GoalVerifiedCheckout {
 }
 
 fn inspect_goal_checkouts(goal GoalAdmission) GoalCheckoutInspection {
+	deadline := time.now().add(max_goal_preflight_elapsed)
 	mut inspection := GoalCheckoutInspection{
 		checkouts: map[string]GoalVerifiedCheckout{}
 		report:    GoalPreflightReport{
@@ -128,7 +130,7 @@ fn inspect_goal_checkouts(goal GoalAdmission) GoalCheckoutInspection {
 			continue
 		}
 		key := '${repository.owner}/${repository.name}'.to_lower()
-		checkout := verify_goal_repository_checkout(repository, tasks) or {
+		checkout := verify_goal_repository_checkout_until(repository, tasks, deadline) or {
 			inspection.report.repositories << GoalPreflightRepository{
 				owner: repository.owner
 				name:  repository.name
@@ -170,6 +172,11 @@ fn validate_goal_preflight_budget(goal GoalAdmission) ! {
 }
 
 fn verify_goal_repository_checkout(repository GoalRepository, tasks []GoalTask) !GoalVerifiedCheckout {
+	return verify_goal_repository_checkout_until(repository, tasks,
+		time.now().add(max_goal_preflight_elapsed))
+}
+
+fn verify_goal_repository_checkout_until(repository GoalRepository, tasks []GoalTask, deadline time.Time) !GoalVerifiedCheckout {
 	if repository.path.len > 4096 || workspace_has_hidden_controls(repository.path)
 		|| !os.is_abs_path(repository.path) || !os.is_dir(repository.path) {
 		return error('Authorized repository path must be an existing absolute checkout root')
@@ -178,8 +185,8 @@ fn verify_goal_repository_checkout(repository GoalRepository, tasks []GoalTask) 
 	if repository.path.trim_right(os.path_separator) != canonical_path.trim_right(os.path_separator) {
 		return error('Authorized repository path must be canonical and must not traverse symlinks')
 	}
-	root_output := run_goal_git_command_output(canonical_path,
-		['--no-replace-objects', 'rev-parse', '--show-toplevel'], max_goal_git_output_bytes) or {
+	root_output := run_goal_git_command_output_until(canonical_path,
+		['--no-replace-objects', 'rev-parse', '--show-toplevel'], max_goal_git_output_bytes, deadline) or {
 		return error('Authorized repository path is not a readable Git checkout')
 	}
 	root_value := root_output.trim_space()
@@ -190,7 +197,7 @@ fn verify_goal_repository_checkout(repository GoalRepository, tasks []GoalTask) 
 	if git_root != canonical_path {
 		return error('Authorized repository path must name the Git checkout root')
 	}
-	verify_goal_remote_identity(canonical_path, repository)!
+	verify_goal_remote_identity(canonical_path, repository, deadline)!
 	mut checked_commits := map[string]bool{}
 	for task in tasks {
 		if task.paths.len == 0 || task.paths.len > max_goal_paths_per_task_to_verify {
@@ -200,10 +207,10 @@ fn verify_goal_repository_checkout(repository GoalRepository, tasks []GoalTask) 
 			return error('Goal task must pin a full Git commit ID')
 		}
 		if !checked_commits[task.base_sha] {
-			resolved := run_goal_git_command_output(canonical_path,
+			resolved := run_goal_git_command_output_until(canonical_path,
 				['--no-replace-objects', 'rev-parse', '--verify', '--end-of-options',
 					'${task.base_sha}^{commit}'],
-				max_goal_git_output_bytes) or {
+				max_goal_git_output_bytes, deadline) or {
 				return error('Goal task base commit does not exist in the authorized repository')
 			}
 			if resolved.trim_space() != task.base_sha {
@@ -212,7 +219,7 @@ fn verify_goal_repository_checkout(repository GoalRepository, tasks []GoalTask) 
 			checked_commits[task.base_sha] = true
 		}
 		for path in task.paths {
-			verify_goal_task_scope(canonical_path, task.base_sha, path)!
+			verify_goal_task_scope(canonical_path, task.base_sha, path, deadline)!
 		}
 	}
 	return GoalVerifiedCheckout{
@@ -222,31 +229,34 @@ fn verify_goal_repository_checkout(repository GoalRepository, tasks []GoalTask) 
 	}
 }
 
-fn verify_goal_remote_identity(root string, repository GoalRepository) ! {
-	raw_fetch_urls := run_goal_git_command_output(root,
-		['--no-replace-objects', 'config', '--local', '--no-includes', '--get-all', 'remote.origin.url'], max_goal_git_output_bytes) or {
+fn verify_goal_remote_identity(root string, repository GoalRepository, deadline time.Time) ! {
+	raw_fetch_urls := run_goal_git_command_output_until(root,
+		['--no-replace-objects', 'config', '--local', '--no-includes', '--get-all', 'remote.origin.url'], max_goal_git_output_bytes, deadline) or {
 		return error('Authorized repository must have a GitHub origin remote')
 	}
-	raw_push_urls := run_goal_git_command_output(root,
+	raw_push_urls := run_goal_git_command_output_until(root,
 		['--no-replace-objects', 'config', '--local', '--no-includes', '--get-all',
-			'remote.origin.pushurl'], max_goal_git_output_bytes) or { raw_fetch_urls }
+			'remote.origin.pushurl'], max_goal_git_output_bytes, deadline) or { raw_fetch_urls }
 	verify_goal_remote_urls(raw_fetch_urls, repository)!
 	verify_goal_remote_urls(raw_push_urls, repository)!
-	effective_fetch_urls := run_goal_git_command_output(root,
+	effective_fetch_urls := run_goal_git_command_output_until(root,
 		['--no-replace-objects', 'remote', 'get-url', '--all', 'origin'],
-		max_goal_git_output_bytes) or {
+		max_goal_git_output_bytes, deadline) or {
 		return error('Authorized repository must have a GitHub origin remote')
 	}
-	effective_push_urls := run_goal_git_command_output(root,
+	effective_push_urls := run_goal_git_command_output_until(root,
 		['--no-replace-objects', 'remote', 'get-url', '--push', '--all', 'origin'],
-		max_goal_git_output_bytes) or {
+		max_goal_git_output_bytes, deadline) or {
 		return error('Authorized repository must have a GitHub origin push remote')
 	}
 	verify_goal_remote_urls(effective_fetch_urls, repository)!
 	verify_goal_remote_urls(effective_push_urls, repository)!
 }
 
-fn run_goal_git_command_output(checkout string, args []string, max_output_bytes int) !string {
+fn run_goal_git_command_output_until(checkout string, args []string, max_output_bytes int, deadline time.Time) !string {
+	if time.now() >= deadline {
+		return error('local Git metadata check timed out')
+	}
 	git := os.find_abs_path_of_executable('git') or {
 		return error('git executable is not available')
 	}
@@ -286,7 +296,7 @@ fn run_goal_git_command_output(checkout string, args []string, max_output_bytes 
 				return error('local Git metadata output exceeds its size limit')
 			}
 		}
-		if time.since(started) > workspace_git_command_timeout {
+		if time.since(started) > workspace_git_command_timeout || time.now() >= deadline {
 			process.signal_kill()
 			process.wait()
 			process.close()
@@ -357,7 +367,7 @@ fn parse_goal_github_remote(remote string) !(string, string) {
 	return parts[0], parts[1]
 }
 
-fn verify_goal_task_scope(root string, commit string, path string) ! {
+fn verify_goal_task_scope(root string, commit string, path string, deadline time.Time) ! {
 	if path.len > 4096 || !valid_goal_relative_path(path) || workspace_has_hidden_controls(path) {
 		return error('Goal task path must be a printable relative path')
 	}
@@ -365,9 +375,9 @@ fn verify_goal_task_scope(root string, commit string, path string) ! {
 	mut prefix := ''
 	for index, segment in segments {
 		prefix = if prefix.len == 0 { segment } else { '${prefix}/${segment}' }
-		entry_output := run_goal_git_command_output(root,
+		entry_output := run_goal_git_command_output_until(root,
 			['--no-replace-objects', 'ls-tree', '-z', commit, '--', ':(literal)${prefix}'],
-			max_goal_git_output_bytes) or {
+			max_goal_git_output_bytes, deadline) or {
 			return error('Unable to inspect goal task path in its pinned commit')
 		}
 		if entry_output.len == 0 {

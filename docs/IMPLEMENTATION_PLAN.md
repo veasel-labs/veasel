@@ -108,21 +108,21 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 - [x] Add Veasel-specific, authenticated admission, listing and manifest replay for portable goals.
   Admission records preserve the declared scope and survive restart.
-- [ ] Verify local repository identity, canonical roots and base commits before
-  any dispatch. PR #830 implements an authenticated read-only preflight for
-  checkout identity and scoped paths; it remains a point-in-time diagnostic
-  until merged and must be revalidated by any future dispatcher. Resolve
-  runner and verifier IDs against registered capabilities and enforce policy
-  ceilings and deadlines in V.
+- [x] Add an authenticated read-only preflight for checkout identity and scoped
+  paths (#830). It is a point-in-time diagnostic, not dispatch authorization;
+  any future dispatcher must revalidate repository identity, canonical roots,
+  and base commits. Resolve runner and verifier IDs against registered
+  capabilities and enforce policy ceilings and deadlines in V.
 - [ ] Store dependency and attempt transitions and link each claimed attempt to
-  the existing operation lifecycle. Recover interrupted attempts without
-  replaying uncertain effects.
+  the existing operation lifecycle. PR #835 adds durable task-attempt state
+  and remains open while cross-platform CI runs. Recover interrupted attempts
+  without replaying uncertain effects.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run
   progressive concurrency acceptance with live agents and independent review.
-- [ ] Integrate the authenticated deterministic task projection proposed in
-  PR #831. It returns dependency-ordered task metadata for admitted goals; it
-  does not schedule, launch, or recover workers. Runner/verifier resolution,
-  durable attempts, dispatch and UI remain separate milestones above.
+- [x] Integrate the authenticated deterministic task projection (#831). It
+  returns dependency-ordered task metadata for admitted goals; it does not
+  schedule, launch, or recover workers. Runner/verifier resolution, durable
+  attempts, dispatch and UI remain separate milestones above.
 
 ### Milestone 1 — functional foundation (complete locally)
 

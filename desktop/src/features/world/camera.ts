@@ -15,7 +15,13 @@ export interface Point {
 /** Use the room's largest fitting pixel scale; grounds keep the player-first valley scale. */
 export function responsiveCameraZoom(mode: 'grounds' | 'interior', viewport: Point, tiles: Point): number {
   if (mode === 'interior') return fitCamera(viewport, tiles).zoom;
-  return viewport.x < 1280 ? 32 : viewport.x >= 1600 ? 64 : 48;
+  if (viewport.x >= 1600) return 64;
+  if (viewport.x >= 1280) return 48;
+  // On a tall, compact desktop window, move one crisp step closer to the
+  // player when the valley's short axis still fits. The camera follows real
+  // movement and can pan across the wider grounds; Fit world remains the
+  // one-click full-map overview.
+  return tiles.y * 48 <= viewport.y - 24 ? 48 : 32;
 }
 
 /** Largest crisp zoom with a 24px gutter, or edge-to-edge when that avoids halving scale. */

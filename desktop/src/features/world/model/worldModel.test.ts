@@ -88,6 +88,16 @@ describe('buildWorldModel', () => {
 
     expect(terminal?.hrefPath).toBe('/terminal');
     expect(terminal?.hrefExtra).toEqual({ create: 'terminal', cwd: '/home/me/bright-valley' });
+    expect(terminal?.state).toBe('launcher');
+  });
+
+  it('labels fixed destinations by what they open instead of claiming they are ready', () => {
+    const model = buildWorldModel(baseInput());
+    const destinations = model.entities.filter((entity) =>
+      ['object:terminal', 'object:files', 'object:operations', 'object:settings'].includes(entity.id),
+    );
+
+    expect(destinations.map(({ state }) => state)).not.toContain('ready');
   });
 
   it('opens a project terminal review in the resolved project folder', () => {
@@ -627,6 +637,20 @@ describe('buildWorldModel', () => {
     );
     expect(model.entities.filter((e) => e.kind === 'character')).toEqual([]);
     expect(model.entities.find((e) => e.id === 'place:project:only')?.activity).toBe('calm');
+  });
+
+  it('keeps project activity unknown when the job registry is unavailable', () => {
+    const model = buildWorldModel(
+      baseInput({
+        projects: [{ name: 'only', target: '/r', status: 'ok' }],
+        memory: emptyMemory(true, []),
+        jobsKnown: false,
+      }),
+    );
+    const project = model.entities.find((e) => e.id === 'place:project:only');
+    expect(project?.state).toBe('job state unknown');
+    expect(project?.activity).toBe('unknown');
+    expect(model.entities.filter((e) => e.kind === 'character')).toEqual([]);
   });
 
   it('locks house activity to real API job statuses', () => {

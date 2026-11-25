@@ -30,7 +30,7 @@ export type EntityKind = 'place' | 'object' | 'character' | 'marker';
 export type EntityAvailability = 'present' | 'empty' | 'unavailable' | 'omitted';
 
 /** House / place activity derived only from proven jobs (never invented). */
-export type PlaceActivity = 'calm' | 'working' | 'blocked';
+export type PlaceActivity = 'calm' | 'working' | 'blocked' | 'unknown';
 
 export interface SemanticEntity {
   /** Stable id for layout + a11y list (not a display name). */
@@ -151,6 +151,8 @@ export interface WorldDomainInput {
     status: string;
     workspace: string;
   }>;
+  /** False when the live job registry failed or has not loaded yet. */
+  jobsKnown?: boolean;
   personSessions?: ReadonlyArray<{
     id: string;
     personId: string;

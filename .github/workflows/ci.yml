@@ -452,6 +452,8 @@ jobs:
         env:
           VEASEL_SMOKE_TRACE_ARTIFACT: benchmark-results/atif-smoke.json
         run: |
+          python3 -m py_compile scripts/packaged-shared-listener-smoke.py scripts/test_packaged_shared_listener_smoke.py
+          python3 scripts/test_packaged_shared_listener_smoke.py -v
           python3 scripts/test-meta-mock-provider.py
           python3 scripts/test_mock_provider_session_system.py
           python3 scripts/test_mock_provider_acceptance_review.py

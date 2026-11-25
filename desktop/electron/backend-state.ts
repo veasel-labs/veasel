@@ -19,7 +19,7 @@ export function projectVeaselBackendState(
     // The renderer must use the same-origin capability-gated proxy. Exposing
     // the backend's direct loopback URL bypasses the proxy's bearer injection
     // and produces cross-origin requests from the Electron renderer.
-    url: state.url ? (publicUrl ?? state.url) : null,
+    url: state.url ? (publicUrl === undefined ? state.url : publicUrl) : null,
     version: null,
     detail: state.problem,
     restarts: 0,

@@ -230,7 +230,12 @@ async function createWindow(): Promise<void> {
   if (shuttingDown || window.isDestroyed() || veaselBackend !== supervisor) return;
   mainWindow?.webContents.send(
     'atk:backend-state',
-    projectVeaselBackendState(supervisor.snapshot(), harnessController.resolve(), supervisor.isAttached()),
+    projectVeaselBackendState(
+      supervisor.snapshot(),
+      harnessController.resolve(),
+      supervisor.isAttached(),
+      rendererServer?.url ?? null,
+    ),
   );
 }
 

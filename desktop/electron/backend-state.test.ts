@@ -42,6 +42,14 @@ describe('projectVeaselBackendState', () => {
     );
 
     expect(state.url).toBe('http://127.0.0.1:43123');
+    expect(
+      projectVeaselBackendState(
+        { status: 'ready', url: 'http://127.0.0.1:4097', problem: null },
+        null,
+        false,
+        null,
+      ).url,
+    ).toBeNull();
   });
 
   it('does not advertise the proxy before its backend has started', () => {

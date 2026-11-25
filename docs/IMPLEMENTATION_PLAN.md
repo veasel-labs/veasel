@@ -52,6 +52,14 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   The Desktop startup fix uses the same loopback port as the launcher. A local
   Desktop build attached to the released V backend and shared its PID with the
   released TUI in both startup orders, using isolated profiles.
+- Published Linux release `v0.103.3-next.0` was rechecked with both packaged
+  launchers in both orders (AppImage→TUI and TUI→AppImage). The artifacts were
+  matched to `release.json`; both runs kept one authenticated backend PID and
+  reached a TUI connected view plus the Desktop Focus route. The Desktop
+  renderer was inspected headlessly, so this proves startup/reuse only. The
+  release predates exact-file approval PR #821. Reproduction and exact artifact
+  hashes are in [`desktop/packaged-shared-listener-smoke.md`](desktop/packaged-shared-listener-smoke.md)
+  and [`desktop/evidence/shared-listener-v0.103.3-next.0.json`](desktop/evidence/shared-listener-v0.103.3-next.0.json).
 - On the same Linux host, the released AppImage completed a real Claude Code
   task with a file-edit approval in Focus. The released TUI completed a real
   Codex task in explicit accept-edits mode. Both sessions edited only

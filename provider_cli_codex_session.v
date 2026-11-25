@@ -120,8 +120,9 @@ pub fn run_codex_cli_turn_cancellable(command string, cwd string, permission_mod
 		if time.since(started).milliseconds() > timeout {
 			return error('installed CLI turn timed out after ${timeout}ms')
 		}
-		if process.is_pending(.stdout) {
-			buffer += process.stdout_read()
+		discard_cli_stderr(mut process)
+		buffer += process.stdout_read()
+		if buffer.contains('\n') {
 			for {
 				newline := buffer.index('\n') or { break }
 				line := buffer[..newline]
@@ -133,8 +134,13 @@ pub fn run_codex_cli_turn_cancellable(command string, cwd string, permission_mod
 				frame := json2.decode[map[string]json2.Any](trimmed) or { continue }
 				method := codex_cli_string(frame, 'method')
 				params := codex_cli_map(frame, 'params')
-				// JSON-RPC responses to our own requests drive the handshake.
+				// Advance only on the response that belongs to the outstanding
+				// request. Unrelated frames cannot move the handshake forward.
 				if method.len == 0 {
+					response_id := frame['id'] or { continue }
+					if phase == 3 || json2.encode(response_id) != (phase + 1).str() {
+						continue
+					}
 					result := codex_cli_map(frame, 'result')
 					if 'error' in frame {
 						err_obj := codex_cli_map(frame, 'error')
@@ -253,7 +259,14 @@ pub fn run_codex_cli_turn_cancellable(command string, cwd string, permission_mod
 			continue
 		}
 		if !process.is_alive() {
-			return error('installed CLI exited before a turn/completed frame')
+			// The exit can occur between the readiness check and waitpid.
+			// Read any frames already in the pipe before treating it as EOF.
+			tail := process.stdout_read()
+			if tail.len > 0 {
+				buffer += tail
+				continue
+			}
+			return error('installed CLI exited before a turn/completed frame (exit ${process.code}, handshake phase ${phase})')
 		}
 		time.sleep(5 * time.millisecond)
 	}

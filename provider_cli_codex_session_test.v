@@ -103,3 +103,36 @@ fn test_codex_deny_decision_respects_available_decisions() {
 	assert codex_deny_decision([]string{}) == 'decline'
 	assert codex_deny_decision(['cancel']) == 'cancel'
 }
+
+fn test_codex_handshake_drains_stderr_and_ignores_unrelated_response() {
+	shim := os.join_path(os.temp_dir(), 'veasel-codex-rpc-order-${os.getpid()}.sh')
+	defer { os.rm(shim) or {} }
+	os.write_file(shim, '#!/bin/sh
+IFS= read -r request
+dd if=/dev/zero bs=65536 count=4 1>&2 2>/dev/null
+printf \'%s\\n\' \'{"id":1,"result":{}}\' \'{"id":99,"result":{}}\'
+IFS= read -r notification
+IFS= read -r request
+printf \'%s\\n\' \'{"id":2,"result":{"thread":{"id":"parent"}}}\'
+IFS= read -r request
+printf \'%s\\n\' \'{"id":3,"result":{"turn":{"id":"turn"}}}\' \'{"method":"turn/completed","params":{"threadId":"parent","turn":{"id":"turn","status":"completed"}}}\'
+') or { panic(err) }
+	os.chmod(shim, 0o700) or { panic(err) }
+	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', 'scope', 5_000,
+		ignore_provider_text_delta, deny_all_cli_approvals) or { panic(err) }
+	assert turn.outcome == 'completed'
+	assert turn.thread_id == 'parent'
+}
+
+fn test_codex_handshake_explains_early_eof() {
+	shim := os.join_path(os.temp_dir(), 'veasel-codex-rpc-eof-${os.getpid()}.sh')
+	defer { os.rm(shim) or {} }
+	os.write_file(shim, '#!/bin/sh\nIFS= read -r request\nexit 7\n') or { panic(err) }
+	os.chmod(shim, 0o700) or { panic(err) }
+	run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', 'scope', 5_000,
+		ignore_provider_text_delta, deny_all_cli_approvals) or {
+		assert err.msg().contains('exit 7, handshake phase 0'), err.msg()
+		return
+	}
+	assert false, 'unexpected turn completion after native CLI exited'
+}

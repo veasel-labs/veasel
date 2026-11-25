@@ -2294,12 +2294,44 @@ function render(sprite) {
   return encodePng(w, h, out);
 }
 
-function dimensions(png, name) {
+function validatePng(png, name) {
   const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   if (png.length < 24 || !png.subarray(0, 8).equals(signature) || png.toString('ascii', 12, 16) !== 'IHDR') {
     throw new Error(`invalid PNG source for ${name}`);
   }
-  return { w: png.readUInt32BE(16), h: png.readUInt32BE(20) };
+  let offset = 8;
+  let size;
+  const idat = [];
+  let sawIend = false;
+  while (offset < png.length) {
+    if (offset + 12 > png.length) throw new Error(`truncated PNG chunk for ${name}`);
+    const length = png.readUInt32BE(offset);
+    const chunkEnd = offset + 12 + length;
+    if (chunkEnd > png.length) throw new Error(`truncated PNG data for ${name}`);
+    const type = png.subarray(offset + 4, offset + 8);
+    const data = png.subarray(offset + 8, offset + 8 + length);
+    const expectedCrc = png.readUInt32BE(offset + 8 + length);
+    const actualCrc = crc32(Buffer.concat([type, data]));
+    if (expectedCrc !== actualCrc) throw new Error(`invalid PNG chunk checksum for ${name} (${type.toString('ascii')})`);
+    if (type.toString('ascii') === 'IHDR') {
+      if (length !== 13 || size) throw new Error(`invalid PNG header for ${name}`);
+      size = { w: png.readUInt32BE(offset + 8), h: png.readUInt32BE(offset + 12) };
+    } else if (type.toString('ascii') === 'IDAT') {
+      idat.push(data);
+    } else if (type.toString('ascii') === 'IEND') {
+      if (length !== 0 || chunkEnd !== png.length) throw new Error(`invalid PNG trailer for ${name}`);
+      sawIend = true;
+      break;
+    }
+    offset = chunkEnd;
+  }
+  if (!size || !idat.length || !sawIend) throw new Error(`incomplete PNG for ${name}`);
+  try {
+    zlib.inflateSync(Buffer.concat(idat));
+  } catch (error) {
+    throw new Error(`invalid PNG image data for ${name}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return size;
 }
 
 function main() {
@@ -2312,7 +2344,8 @@ function main() {
     const originalPath = path.join(WORLD_ART, `${name}.png`);
     const originalPng = ORIGINAL_PIXEL_ASSETS.has(name) ? fs.readFileSync(originalPath) : null;
     const png = originalPng ?? render(sprite);
-    const size = originalPng ? dimensions(originalPng, name) : { w: sprite.img.w, h: sprite.img.h };
+    const validatedSize = validatePng(png, name);
+    const size = originalPng ? validatedSize : { w: sprite.img.w, h: sprite.img.h };
     manifest[name] = {
       file: `${name}.png`,
       w: size.w,

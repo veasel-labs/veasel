@@ -91,6 +91,9 @@ class Painter {
   blocked = new Set<string>();
   waterReservations = new Set<string>();
   projectLots: LaidOutEntity[] = [];
+  /** Visual courtyard footprint; presentation only, never a route/collision source. */
+  courtyardGrounds = new Set<string>();
+  courtyardAnchors = new Set<string>();
   cols: number;
   rows: number;
 
@@ -147,7 +150,11 @@ class Painter {
 function baseGround(p: Painter) {
   for (let y = 0; y < p.rows; y++) {
     for (let x = 0; x < p.cols; x++) {
-      if (p.isBlocked(x, y)) continue;
+      // Entity footprints remain collision-blocked, but their sprites are
+      // transparent around roofs, windows, and roots. Paint the visual ground
+      // underneath those footprints so the finite valley never reveals the
+      // outer viewport surround through an authored place.
+      const blocked = p.isBlocked(x, y);
       // Let the low-frequency fields span enough of the palette to produce
       // visibly different meadow biomes even on a compact empty workspace.
       // Broad, overlapping moisture bands make whole clearings feel like
@@ -160,13 +167,13 @@ function baseGround(p: Painter) {
       const bloom = meadowField(x, y, 6, 19);
       const roll = h2(x, y, 1) % 23;
       if (bloom > 0.8 && roll < 12) {
-        p.set(x, y, ['flowers-poppy', 'flowers-daisy', 'flowers-lavender', 'flowers-gold'][h2(x, y, 12) % 4]!);
+        p.set(x, y, ['flowers-poppy', 'flowers-daisy', 'flowers-lavender', 'flowers-gold'][h2(x, y, 12) % 4]!, blocked);
       } else {
         const grass = Math.max(0, Math.min(5, Math.floor((moisture - 0.22) * 9)));
         // Each moisture band has four authored tile patterns. Spatially
         // seeded choice breaks up repeated 16px stamps without adding noise.
         const texture = Math.min(3, Math.floor(meadowField(x, y, 5, 59) * 4));
-        p.set(x, y, `grass-${grass * 4 + texture}`);
+        p.set(x, y, `grass-${grass * 4 + texture}`, blocked);
       }
     }
   }
@@ -1431,6 +1438,84 @@ function plazaCore(p: Painter, hall: LaidOutEntity | undefined, commons: readonl
   }
 }
 
+/**
+ * Give each district one readable ground plane at overview zoom. The authored
+ * landmark sprites are small against a 28×30 valley; a compact stone apron
+ * makes the workspace and project porch read as places with a threshold while
+ * leaving the surrounding meadow, creek and paths intact. This is scenery only
+ * and never represents a session, job, or agent state.
+ */
+function districtCourtyards(p: Painter, projects: readonly LaidOutEntity[], marker: LaidOutEntity | undefined) {
+  const anchors = [
+    projects[0]
+      ? { x: projects[0].x + Math.floor(projects[0].w / 2), y: projects[0].y + projects[0].h }
+      : marker
+        ? { x: marker.x + Math.floor(marker.w / 2), y: marker.y + marker.h }
+        : undefined,
+  ].filter((anchor): anchor is { x: number; y: number } => Boolean(anchor));
+
+  for (const anchor of anchors) {
+    p.courtyardAnchors.add(key(anchor.x, anchor.y));
+    // Ensure the real doorway is the single logical bridge from the apron to
+    // the existing street. The surrounding stone remains presentation-only.
+    if (!p.paths.has(key(anchor.x, anchor.y))) connectEntrance(p, anchor.x, anchor.y, p.paths, false);
+    for (let dy = -1; dy <= 5; dy += 1) {
+      for (let dx = -4; dx <= 4; dx += 1) {
+        const x = anchor.x + dx;
+        const y = anchor.y + dy;
+        if (p.isBlocked(x, y) || p.get(x, y) === 'water') continue;
+        // Keep a broad, forward-facing threshold oval; its corners stay meadow
+        // so the stone apron dissolves into the authored glades.
+        const ellipse = (dx * dx) / 18 + ((dy - 1.5) * (dy - 1.5)) / 12;
+        if (ellipse > 1.15) continue;
+        const at = key(x, y);
+        const ground = p.get(x, y);
+        // Preserve the authored footpath topology. This is a visual apron, not
+        // a second logical route network; doors and trails remain untouched.
+        if (!ground.startsWith('grass') || p.paths.has(at)) continue;
+        p.courtyardGrounds.add(at);
+      }
+    }
+  }
+}
+
+/** Overlay the authored stone finish after path masks have been resolved. */
+function renderCourtyardStones(p: Painter) {
+  const connected = new Set<string>();
+  const neighbors = (x: number, y: number) => [`${x},${y - 1}`, `${x - 1},${y}`, `${x + 1},${y}`, `${x},${y + 1}`];
+  for (const at of p.courtyardGrounds) {
+    const [x = 0, y = 0] = at.split(',').map(Number);
+    if (
+      neighbors(x, y).some((next) => p.paths.has(next)) ||
+      neighbors(x, y).some((next) => p.courtyardAnchors.has(next))
+    ) {
+      connected.add(at);
+    }
+  }
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const at of p.courtyardGrounds) {
+      if (connected.has(at)) continue;
+      const [x = 0, y = 0] = at.split(',').map(Number);
+      if (neighbors(x, y).some((next) => connected.has(next))) {
+        connected.add(at);
+        expanded = true;
+      }
+    }
+  }
+  for (const at of connected) {
+    const [xs, ys] = at.split(',');
+    const x = Number(xs);
+    const y = Number(ys);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const ground = p.get(x, y);
+    if (!ground.startsWith('grass') && !ground.startsWith('flowers') && !ground.startsWith('trail')) continue;
+    if (p.decor.some((decor) => decor.sprite === 'mote' && decor.x === x && decor.y === y)) continue;
+    p.set(x, y, (x + y) % 4 === 0 ? 'plaza-b' : 'plaza', true);
+  }
+}
+
 /** One hornero perched near the hall + butterflies over flower beds. */
 function wildlife(p: Painter, hall: LaidOutEntity | undefined) {
   if (hall) {
@@ -1638,6 +1723,7 @@ export function paintTerrain(entities: readonly LaidOutEntity[], cols: number, r
       connectEntrance(p, doorX, doorY, street, false);
     }
   }
+  districtCourtyards(p, projects, marker);
   connectPathIslands(p);
   renderPaths(p);
   softenPathVerge(p);
@@ -1651,6 +1737,7 @@ export function paintTerrain(entities: readonly LaidOutEntity[], cols: number, r
   forest(p, projects.length === 0);
   flowerPatchSprites(p);
   wildlife(p, hall);
+  renderCourtyardStones(p);
 
   return {
     cells: cellsToArray(p),

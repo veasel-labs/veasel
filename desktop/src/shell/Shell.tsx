@@ -5,7 +5,7 @@ import { FocusProvider } from '../data/focus';
 import { useVeaselFocusStore } from '../data/veasel-focus';
 import { LiveProvider } from '../data/live';
 import { TerminalProvider } from '../data/terminal';
-import { DestinationBoundary, LoadingState, ReceiptsProvider } from '../ui';
+import { DestinationBoundary, LoadingState, PixelIcon, ReceiptsProvider, type PixelIconName } from '../ui';
 import { DESTINATIONS } from './destinations';
 import { HOME_PATH } from './home';
 import { useSessionContext } from './useSessionContext';
@@ -13,6 +13,12 @@ import styles from './shell.module.css';
 
 function NavCount(_props: { path: string }) {
   return null;
+}
+
+function destinationIcon(path: string): PixelIconName {
+  if (path === '/world') return 'world';
+  if (path === '/providers') return 'projects';
+  return 'focus';
 }
 
 function Hud() {
@@ -28,6 +34,7 @@ function Hud() {
           V
         </span>
         <span className={styles.brandName}>Veasel</span>
+        <span className={styles.brandTagline}>workshop</span>
       </div>
       <ul className={styles.navList}>
         {DESTINATIONS.map((destination) => (
@@ -38,6 +45,9 @@ function Hud() {
               title={destination.question}
               aria-current={location.pathname === destination.path ? 'page' : undefined}
             >
+              <span className={styles.navIcon} aria-hidden="true">
+                <PixelIcon name={destinationIcon(destination.path)} size={12} />
+              </span>
               <span>{destination.label}</span>
               <NavCount path={destination.path} />
             </Link>

@@ -3,10 +3,10 @@
 Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
-Refreshed: **2026-11-25 00:52 UTC** from live GitHub state. Method: issue/PR
+Refreshed: **2026-11-25 00:57 UTC** from live GitHub state. Method: issue/PR
 queries, default-branch SHAs, latest exact-head CI, and release metadata.
 
-## Checkpoint 2026-11-25 00:52 UTC — Desktop runtime bridge and Focus acceptance
+## Checkpoint 2026-11-25 00:57 UTC — Desktop runtime bridge and Focus acceptance
 
 A fresh GraphQL inventory after release propagation and merge of personal
 Toolkit PR #1849 found five open issues (all in Veasel) and one open PR (#816).
@@ -14,13 +14,13 @@ This is not a zero-backlog or final acceptance claim. Veasel exact-main CI is
 still running on Windows; the personal Toolkit post-merge main CI has passed.
 PR #816's first Focus run exposed a renderer/backend readiness regression: the
 one-shot session load could run before the backend was ready. Hosted Focus
-journeys J1-J11 now pass on head `8a5610b`. A final fail-closed adjustment to
-the ready-state IPC and the post-start event is locally validated but not yet
-pushed; required platform checks on the current head remain in progress.
+journeys J1-J11 now pass on head `ab98496`. The final change also fail-closes
+when no proxy URL exists. Required platform checks on the current head remain
+in progress.
 
 | Repository | main SHA | Open issues | Open PRs | Latest evidence / note |
 | --- | --- | ---: | ---: | --- |
-| veasel-labs/veasel | `5f374635a82407b605f073d6a2c16f41f2122efb` | 5 (#549, #550, #673, #689, #693) | 1 (#816) | Exact-main run [45511878769](https://github.com/veasel-labs/veasel/actions/runs/45511878769): only Windows backend remains in progress. PR #816 head `8a5610b8` has hosted Focus J1-J11 passing in [45520255180](https://github.com/veasel-labs/veasel/actions/runs/45520255180); platform CI [45520255402](https://github.com/veasel-labs/veasel/actions/runs/45520255402) remains in progress. A final fail-closed proxy URL adjustment is locally validated but not yet pushed. |
+| veasel-labs/veasel | `5f374635a82407b605f073d6a2c16f41f2122efb` | 5 (#549, #550, #673, #689, #693) | 1 (#816) | Exact-main run [45511878769](https://github.com/veasel-labs/veasel/actions/runs/45511878769): Windows remains in the native OS keychain round-trip step. PR #816 head `ab98496` has hosted Focus J1-J11 passing in [45521502963](https://github.com/veasel-labs/veasel/actions/runs/45521502963); required platform CI [45521503252](https://github.com/veasel-labs/veasel/actions/runs/45521503252) is running. |
 | veasel-labs/agent-toolkit | `416e7de7022a75249072a78971ded9a22fd1e9f3` | 0 | 0 | Registry validation [45406129549](https://github.com/veasel-labs/agent-toolkit/actions/runs/45406129549) passed. Owner-approved `veasel-essentials` exception is first-party only; PR #13 remains intentionally fail-closed pending independent permission review. |
 | veasel-labs/website | `eb88a30ae83052e2d301d4327d258db5b5aee3f3` | 0 | 0 | Website validation [45509223211](https://github.com/veasel-labs/website/actions/runs/45509223211) and deploy [45509222983](https://github.com/veasel-labs/website/actions/runs/45509222983) passed. Live product/download pages advertise verified v0.102.4 assets. |
 | veasel-labs/homebrew-tap | `4a8aa45aaad17dd4df3b2e7f7c6d0865f99f538d` | 0 | 0 | Exact-main CI [45509430347](https://github.com/veasel-labs/homebrew-tap/actions/runs/45509430347) passed. The formula/cask is CLI/TUI distribution; no Desktop cask is claimed. |
@@ -66,8 +66,8 @@ as a historical archive. Its architecture diagram shows one Veasel backend
 shared by TUI and Desktop. Historical screenshots and PXL files were retained;
 no runtime source or user data was deleted.
 
-Veasel PR [#816](https://github.com/veasel-labs/veasel/pull/816), head
-`78db4decf4b8688b5a56560ed445d4fad3131401`, rewires Desktop runtime status,
+Veasel PR [#816](https://github.com/veasel-labs/veasel/pull/816), current head
+`ab9849624fd89b3fe2bcbafa7b040d11f97c17d7`, rewires Desktop runtime status,
 Focus URL, restart and workspace switching to the canonical V supervisor. It
 also preserves Desktop-encrypted MCP environment credentials for a backend
 Desktop owns, updates E2E backend selection and corrects the Desktop guide.
@@ -78,11 +78,11 @@ The first hosted Focus run failed J7; the trace showed direct backend-loopback
 requests and an empty session list after restart. The renderer now gets the
 protected proxy URL in backend events, and the readiness probe waits for the V
 supervisor's `ready` state before returning that URL. Hosted Focus J1-J11 all
-passed on head `8a5610b` (run `45520255180`), including J7 persistence and J9
-Desktop/TUI API same-session continuity. A final fail-closed change makes
-missing proxy URLs remain null in both startup and post-start IPC events; its
-four focused unit tests, TypeScript check, and lint pass under
-resource-bounded `systemd-run`, but it still needs hosted validation.
+passed on head `ab98496` (run `45521502963`), including J7 persistence and J9
+Desktop/TUI API same-session continuity. The final fail-closed adjustment
+makes missing proxy URLs remain null in both startup and post-start IPC events.
+Four focused unit tests, TypeScript check, and lint pass under resource-bounded
+`systemd-run`; current-head platform validation remains in `45521503252`.
 The old Toolkit-specific MCP provider catalog API/UI remains a separate open
 migration item and is explicitly not claimed as completed by #816.
 

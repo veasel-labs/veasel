@@ -4,11 +4,12 @@ Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
 This is an append-only record of dated checkpoints. The opening inventory is
-historical (**2026-11-25 00:57 UTC**); the latest live-state checkpoint is
-**2026-11-25 18:21 UTC** below. Method: GitHub issue/PR queries, default-branch
+historical (**2026-11-25 00:57 UTC**); the 18:21 inventory below is also
+historical and superseded by the later checkpoint log. Do not use either table
+for current backlog counts. Method: GitHub issue/PR queries, default-branch
 SHAs, latest exact-head CI, release metadata, and host acceptance artifacts.
 
-## Latest live state — 2026-11-25 18:21 UTC
+## Historical snapshot — 2026-11-25 18:21 UTC
 
 | Repository | main SHA | Open issues | Open PRs | Current evidence |
 | --- | --- | ---: | ---: | --- |
@@ -938,3 +939,29 @@ HUMAN BLOCKERS if certificates/accounts are absent — never claim signed.
   The exact hashes and local Arch build/install/uninstall acceptance are in
   the PR body. No AUR publisher workflow, AUR RPC write, or first Desktop
   package publication has occurred.
+
+- 2026-11-25 20:45 UTC: Distribution state reconciled. AUR package PR #81
+  merged as `3c41c7046abfe6c7dcf9b0d4be963c6bad6b6961`; publisher run
+  `45695024912` succeeded and AUR RPC reports `veasel-desktop-bin
+  0.103.3.next.0-1`. Homebrew main CI run `45693669062` failed because the
+  cask lacked `depends_on :macos`; fix PR #75 (`401cfeda`) passed its macOS
+  cask CI and merged at `6ef7575145e6433b5fddad35c4d1848abd13cf8e`.
+
+- 2026-11-25 20:45 UTC: Veasel PR #831 (deterministic goal task projection)
+  merged as `7fc47928`; pixel-art workshop PR #834 merged as `bd4a8adc`.
+  PR #834's preview screenshots are not installed Desktop acceptance. New PR
+  #835 adds durable task/attempt state after #831; Luna static review found
+  and verified fixes for unverifiable process identity, typed lifecycle
+  states, and atomic state/attempt completion. The pinned-compiler CI is
+  pending; local V 0.5.2 cannot parse existing `provider.v` syntax and is not
+  the pinned compiler. Personal Agent Toolkit PR #1855 adds explicit `fixture`
+  evidence mode; four JSON Schema checks and focused Goal V tests passed
+  locally, with full PR CI pending. The seven existing
+  `~/.ai-workspace/loops` definitions and scheduler state were not modified.
+
+- 2026-11-25 20:48 UTC: Website fallback generator advanced the verified
+  download metadata to `v0.104.0-next.0` after validating the remote release,
+  checksums, manifest, and asset digests. Website PR #235 contains only the
+  generated fallback and is awaiting CI. Homebrew fix PR #75 merged after its
+  cask check passed. Keep `agent-toolkit.io` on the personal Toolkit portable
+  capabilities track; this website sync only refreshes the Veasel downloads.

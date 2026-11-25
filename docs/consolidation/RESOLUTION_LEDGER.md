@@ -827,3 +827,93 @@ HUMAN BLOCKERS if certificates/accounts are absent — never claim signed.
   head `17246c02a19afc4f4e802d160e8e27c48443816e`; its required checks have
   started and are pending. The inventory now includes this PR, for eight open
   Veasel PRs and nine open PRs across the tracked repositories.
+
+- 2026-11-25 19:59 UTC: reconciled the user-approved 24-agent workflow plan
+  with the current Veasel plan and the read-only `~/.ai-workspace` inventory.
+  The ownership boundary is: Veasel owns runtime, persistence, scheduling,
+  workers, GitHub reconciliation and evidence; personal Agent Toolkit owns
+  portable contracts, validators and playbooks; `~/.ai-workspace` owns its
+  existing seven loop definitions and histories; `agentic-workstation` and
+  HorneroOS keep privileged desktop/OS actions; the Veasel Labs Toolkit is a
+  reference-based plugin marketplace, not another runtime. Website, Homebrew,
+  AUR and `.github` remain distribution and governance surfaces.
+
+  Local loop evidence is preserved in
+  `~/.ai-workspace/docs/LOCAL_LOOP_HANDOFF_INVENTORY.md`,
+  `~/.ai-workspace/loops-scope.md`, the seven source `loop.yaml` files and
+  `~/.ai-workspace/goals/veasel-release-sync-pilot.yaml`. The inventory found
+  no active matching user timer and proposes Veasel read/report-only for the
+  new Veasel-Labs scope of six loops, with OSS triage draft-only. Original loops
+  retain their existing permissions for existing scopes until separately
+  migrated. The pasted plan reports an orphaned user systemd link whose service
+  is `not-found`; the inventory does not establish this, so do not remove any
+  timer/link until ownership and other schedulers are checked. The broad
+  `loops-scope.md` repository list differs from the three OSS loop YAML scopes;
+  each future goal/adapter must carry an explicit repository and
+  `(repository, effect)` ownership manifest enforced by the executor. Cover
+  issue/PR create and update, assignment, labels, comments, commit, push, close,
+  merge, and release publication. No loop definition, state, report, pack,
+  policy or trigger was modified. Old tier notes conflict with current loop
+  YAML; current YAML and the dated inventory remain authoritative. Keep any
+  private name-to-role mapping in a restricted local record, not this public
+  ledger.
+
+  The existing release-sync goal is report-only and names four public
+  checkouts. Their base SHAs were pinned when the manifest was created but may
+  now be stale; perform current repository preflight and revalidation before
+  dispatch. Keep it intact; #550's packaged Linux Claude Code/Codex
+  product journey needs a separate product-pilot manifest with its own
+  permissions and evidence. Treat the pasted #819 baseline as unverified
+  until installed and executed versions, source/workspace SHAs, session,
+  permissions and receipts match. Do not close #550, #673 or #689 from plan
+  text alone. Session-turn persistence and the deterministic task projection
+  remain distinct from a scheduler, leases, evidence receipts, dispatch or a
+  GitHub publisher; those remain incomplete.
+
+  The user workflow adds these acceptance gates: Toolkit v1 offline
+  validation/planning and five portable playbooks with Swarm compatibility;
+  a distinct V goal scheduler and API/CLI/TUI/Focus surfaces; independent
+  verifier receipts tied to exact candidate SHA and artifact digest; GitHub
+  App intake separated from an idempotent draft publisher; local draft-only
+  pilots before remote Linux workers; authenticated SSH tunnels, rootless
+  disposable worktrees, resource limits, and publication credentials isolated
+  from workers; recovery, cancellation, duplicate-effect and rollback tests;
+  staged 8/12/16/24-worker runs; and a real 24-worker run with live processes
+  and leases. A merge canary must verify the exact SHA, required checks,
+  merge-queue candidate where applicable and post-merge `main` before widening
+  automation. The existing TUI queue is not this scheduler.
+
+  Pstack's overnight guide is a workflow reference, not a code dependency:
+  earn autonomy through watched runs and checkable finish conditions, isolate
+  worktrees, log each decision with evidence, pause with a resume checkpoint,
+  and use an independent reviewer on a different model family. A standing
+  coordinator delegates and verifies but does not implement task code. The
+  complete staged checklist now lives in `docs/IMPLEMENTATION_PLAN.md`.
+
+  `ulises-jeremias/agent-toolkit` and `veasel-labs/agent-toolkit` remain
+  distinct repositories: the former owns portable tools and the latter owns
+  the official marketplace registry. Personal PR #1854 remains open pending
+  independent human review; no release/tag was published. Optional Desktop
+  cask and `veasel-desktop-bin` work remains local-only and unverified. Existing
+  CLI/TUI AUR publication is recorded in the earlier package entry; no Desktop
+  package registration or publication has occurred. The Visual workshop design
+  PR #834 is still gated on exact-head backend CI; screenshots reviewed so far
+  came from a local frontend preview, not the installed app.
+
+- 2026-11-25 20:12 UTC: optional Desktop distribution work reached local
+  acceptance in both consumer repos, but remains uncommitted/unpublished and is
+  awaiting independent review. Homebrew branch `codex/optional-desktop-installers`
+  verifies the real DMG against the official release manifest/API and cask
+  digest; 11 unit tests, Python compilation, workflow YAML/shell checks, and
+  `git diff --check` pass. This host has no Homebrew/Ruby, so `brew style` and
+  local cask install remain for macOS CI. AUR branch `codex/aur-desktop-option`
+  passes 25 tests, Python/YAML/shell checks, exact `.SRCINFO` generation, and
+  an Arch Docker build/install/uninstall acceptance for CLI/TUI and optional
+  Desktop. No commit, push, PR, or AUR write has happened. The Desktop package
+  is not registered in AUR; the prior CLI/TUI AUR publication remains as
+  recorded above.
+
+- 2026-11-25 20:17 UTC: PR #830 merged to Veasel main as `acece001`. Earlier
+  ledger entries that still describe #830 as open are historical snapshots
+  from before the merge. Its exact-main CI run `45683259590` remains pending;
+  this records the merge and does not claim current main CI is green.

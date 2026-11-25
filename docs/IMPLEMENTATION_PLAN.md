@@ -44,7 +44,7 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ## Milestones and backlog
 
-### Installed daily-driver evidence (#550)
+### Historical installed daily-driver evidence (#550; repeat on current package)
 
 - Linux preview `v0.103.2-next.0` reproduced a Desktop-first startup failure:
   the AppImage started its backend on an ephemeral port, and the released TUI
@@ -60,17 +60,21 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - Repeat on a published Desktop build containing the fix. Cancellation,
   installed cross-platform recovery and full daily-driver acceptance remain
   tracked in [#550](https://github.com/veasel-labs/veasel/issues/550).
+  These runs used the `v0.103.2-next.0` preview and are historical evidence,
+  not acceptance of the current `v0.103.3-next.0` package. Attach the exact
+  installed/executed version, source and workspace SHAs, session, permissions,
+  and receipts for any repeat.
 
 ### Durable goals and worker coordination
 
 - [x] Add Veasel-specific, authenticated admission, listing and manifest replay for portable goals.
   Admission records preserve the declared scope and survive restart.
 - [ ] Verify local repository identity, canonical roots and base commits before
-  any dispatch. PR #830 implements an authenticated read-only preflight for
-  checkout identity and scoped paths; it remains a point-in-time diagnostic
-  until merged and must be revalidated by any future dispatcher. Resolve
-  runner and verifier IDs against registered capabilities and enforce policy
-  ceilings and deadlines in V.
+  any dispatch. PR #830 merged as `acece001` and adds an authenticated
+  read-only preflight for checkout identity and scoped paths. It remains a
+  point-in-time diagnostic and must be revalidated by any future dispatcher.
+  Resolve runner and verifier IDs against registered capabilities and enforce
+  policy ceilings and deadlines in V.
 - [ ] Store dependency and attempt transitions and link each claimed attempt to
   the existing operation lifecycle. Recover interrupted attempts without
   replaying uncertain effects.
@@ -872,3 +876,153 @@ honoring its license and attribution.
 - Production composer defaults to an empty Skill catalog instead of demo entries. LiveApp discovers Skills through the versioned plugin API when a draft first contains a Skill token.
 - Discovery uses the active session project, clears old entries on context changes, and discards superseded responses. Loading, empty, and failure states are visible; retry by re-entering the token or opening `/skills`.
 - Loopback HTTP/component tests cover real catalog insertion, project query parameters, discovery failure, and retry. Live provider calls are not required.
+
+## Fleet orchestration and portable workflow handoff (incomplete)
+
+The existing session-turn queue, merged Goal v1 admission/preflight work, and
+the open #831 task-projection PR are not an objective scheduler. `veasel-labs/veasel`
+must own execution, persistence, scheduling, workers, GitHub reconciliation,
+evidence, and the versioned API. `ulises-jeremias/agent-toolkit` owns portable
+goal/task/evidence contracts, validators, playbooks, and workflow recipes;
+`veasel-labs/agent-toolkit` is the reference-based plugin marketplace, with no
+separate runtime. `~/.ai-workspace` remains the owner of its seven existing
+loop definitions, histories, reports, packs, policies, and scheduler artifacts
+until a per-loop handoff is reviewed and accepted. HorneroOS and
+`agentic-workstation` retain privileged desktop and OS actions; Veasel must not
+duplicate those capabilities.
+
+- [ ] Publish a versioned Toolkit goal/task/evidence contract with an offline
+  validator and planner; require authorized repositories, observable finish
+  conditions, playbook, deadline, budget, permissions, delivery mode, DAG,
+  base SHA, paths, runner, verifier, and evidence. Start with research, bug,
+  feature, migration, and release playbooks, reusing loop validators and
+  handoff formats where they match. Preserve current Swarm commands and states.
+  Add an optional pstack-inspired pack with provenance and compatibility
+  metadata; do not copy external playbook sources into the marketplace.
+- [ ] Keep the official `veasel-labs/agent-toolkit` marketplace reference-based:
+  pin plugin versions, record provenance/compatibility/permissions, and retain
+  trust review before installation. Keep `agent-toolkit.io` focused on the
+  portable capabilities in `ulises-jeremias/agent-toolkit`, not its retired
+  Desktop.
+- [ ] Build an objective scheduler in V and SQLite, separate from session-turn
+  operations. Persist tasks, attempts, leases/generations, evidence, decisions,
+  and audit events transactionally. Validate DAGs, repository identity, base
+  commits, runner/verifier capabilities, policy ceilings, and paths before
+  dispatch. Writers acquire leases for overlapping paths; revalidate actual
+  diffs before any external publication. Persist a claim and its generation
+  atomically, use stable automation branch identities, record cancellation
+  before confirming process termination, and pause by stopping new assignments
+  while preserving visible in-flight work.
+- [ ] Define goal states separately from session operation states, including
+  `queued`, `leased`, `building`, `verifying`, `draft_ready`, `accepted`,
+  `blocked`, `uncertain`, `failed`, and `cancelled`. Remote leases heartbeat at
+  20 seconds and expire at 90 seconds; an expired or ambiguous effect becomes
+  `uncertain` and is never replayed without reconciliation. A stale attempt
+  cannot publish after losing its generation.
+- [ ] Bind independent verification receipts to repository, base and candidate
+  SHAs, task attempt, verifier/version, environment, modality, result, artifact
+  digest, and source links. Label fixture, simulated, and real runs distinctly;
+  any push invalidates evidence for the previous candidate SHA.
+- [ ] Require an owner agent and a separate verifier for every PR. The owner
+  cannot approve its own work. Run the verifier swarm against the code-ready
+  SHA; a later rebase or narrow fix gets a fresh verifier, while new behavior
+  or a substantially larger diff triggers full re-review. Only a clean verdict
+  on the exact merge candidate may authorize automatic merge.
+- [ ] Add versioned goals/tasks/attempts/evidence/decisions API and the CLI
+  commands `veasel goals plan`, `veasel goals start`, `veasel goals list`,
+  `veasel goals status --json`, `veasel goals watch`, `veasel goals pause`,
+  `veasel goals resume`, `veasel goals cancel`, and `veasel goals report`.
+  Add capability discovery for registered agents, models, runners, and
+  verifiers. TUI and Focus consume the same API, show pending decisions with
+  reasons and evidence, resume event streams by cursor, and fetch a snapshot
+  when a cursor expires. Keep loopback binding as the default. World may
+  visualize this real shared activity only after
+  TUI and Focus parity is proven; it must never simulate productivity.
+  Herdr remains a way to open supported runner terminals, not another runtime.
+  Until goal dispatch and remote authentication ship, describe the integration
+  as on-host session work only; do not claim remote execution is supported.
+- [ ] Keep GitHub intake and publication separate. Begin with authenticated,
+  cursor-based, deduplicated GitHub App reads that propose reviewable work.
+  Intake signals are issues with an explicit intake label, failed checks on
+  enabled branches, and release observations; install the GitHub App only on
+  explicitly enabled repositories.
+  A publisher with repository-scoped credentials creates or updates drafts,
+  first recovering an existing PR idempotently. Workers never receive
+  publication credentials. Support separate delivery modes: stack produces
+  independently verified drafts for human merge; full may merge only after the
+  exact-SHA verifier, required checks, branch/merge-queue eligibility, and
+  post-merge `main` check pass. During pilots, all outcomes are drafts and all
+  external writes remain explicitly gated.
+- [ ] Preserve all seven current loops. Veasel's initial view is read/report
+  only for the new Veasel-Labs integration scope for six, with OSS triage
+  draft-only. Original loops retain their existing permissions for their
+  existing scopes until separately migrated. Define a local `(repository,
+  effect)` owner manifest covering issue/PR create and update, assignment,
+  labels, comments, commit, push, close, merge, and release publication;
+  enforce it in the executor and with scoped credentials.
+  Compare the same event in both paths and prove that at most one external
+  effect occurs. Do not change loop YAML, histories, reports, or triggers until
+  ownership is confirmed on other hosts/schedulers and a one-loop rollback is
+  documented. Existing loop output stays local by default.
+- [ ] Maintain two distinct local pilot goals: (1) the packaged Linux Claude
+  Code and Codex daily-driver journey tracked by #550, and (2) the existing
+  four-repository release-sync report goal. Add a separate product-pilot
+  manifest; do not broaden or overwrite the release-sync manifest. Record the
+  exact installed/executed binary versions, repository/workspace SHAs, session,
+  permissions, cancellation/recovery outcome, verifier, and evidence. Keep
+  distribution checksums and per-channel evidence separate.
+  Limit the first local plan to two goals and eight tasks, at most four provider
+  turns and two concurrent writers, while reserving capacity for independent
+  verification and operator decisions. Before cutover, run both paths for two
+  nights with at least ten real tasks, one induced restart, evidence on every
+  draft, and proof that the same event caused no duplicate external effect.
+- [ ] Drive website downloads, Homebrew and AUR from one verified Veasel
+  release manifest with asset hashes and platform metadata. Publish real
+  screenshots of the installed TUI and Desktop only after the corresponding
+  packaged flows have been exercised; keep CLI/TUI and optional Desktop install
+  paths clear on each platform.
+  Complete packaged TUI/Desktop workdays on macOS and Windows before claiming
+  cross-platform daily-driver parity.
+- [ ] After local recovery and cancellation are proven, add the persistent
+  Linux coordinator and remote workers. Use authenticated SSH tunnels to the
+  loopback coordinator, rootless disposable checkouts, CPU/RAM/disk limits,
+  no container socket, dedicated API credentials in the runner only, and
+  tested backup/restore. Reconcile refs, PRs, releases, and process state before
+  retrying any uncertain effect.
+  Before remote admission, reconcile live process identity and query the
+  canonical ref, PR, or release; an ambiguous effect stays `uncertain` until
+  that check resolves it. Preflight versions, authentication, coordinator
+  connection, and typed-action permissions in `agentic-workstation`/HorneroOS.
+- [ ] Test recovery and cancellation after coordinator, host, provider, and
+  publisher failures; prove duplicate-event and expired-lease behavior. Stage
+  concurrency at 8, 12, 16, then 24 active workers, preserving capacity for
+  independent verification and operator decisions. A 24-worker claim requires
+  a real run with live processes and valid leases, not a simulation. Run a
+  documented 32-task failure simulation first.
+  Certify OpenCode, Muse, Copilot, and Pi through the same provider/runner
+  matrix before adding them to rotation. Display backlog, workers with live
+  leases, and active provider turns separately. Unknown provider cost remains
+  unknown and still obeys explicit turn/time limits.
+- [ ] Evaluate 12–20 frozen historical cases with held-out final cases and the
+  same model/version/budget as the manual baseline. Measure accepted goals per
+  operator-attention hour, available cost per goal, p95 wait, reopens, and
+  duplicate effects. The pilot target is a 25% reduction in attention time;
+  review failures before raising concurrency.
+- [ ] Enable merge only after draft delivery, human-reviewed merge, and a
+  documentation-only canary pass in order. Verify the exact eligible SHA,
+  required checks and merge-queue candidate where used, then verify `main`
+  after merge. Keep immediate pause/drain, retained receipts, and per-repository
+  rollback available. Releases, credentials, CI permissions, and destructive
+  effects remain human-approved.
+- [ ] Apply the operational lessons of the
+  [pstack overnight guide](https://github.com/lgs/lauren-plugins/blob/main/pstack/docs/guide/07-overnight.md)
+  without copying its implementation: earn autonomy through watched runs,
+  checkable finish conditions, isolated worktrees, stop conditions, independent
+  reviewers on a different model family, and a decision log with evidence.
+  Each iteration makes one justified change, verifies the real artifact, and
+  records one decision; pause/resume keeps a checkpoint and resume note. A
+  standing coordinator delegates and verifies but does not write task code.
+- [ ] Keep `docs/consolidation/RESOLUTION_LEDGER.md` synchronized with exact
+  repository owners, issue/PR heads, releases, and acceptance evidence. Do not
+  close #550, #673, or #689 or claim the 24-worker objective complete until the
+  corresponding real acceptance evidence is attached and reviewed.

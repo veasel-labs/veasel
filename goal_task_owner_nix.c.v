@@ -78,7 +78,7 @@ fn goal_task_owner_status(pid int) GoalTaskOwnerStatus {
 			return GoalTaskOwnerStatus{}
 		}
 		return GoalTaskOwnerStatus{
-			alive: true
+			alive:    true
 			identity: 'linux-start:${fields[19]}'
 		}
 	}
@@ -94,7 +94,7 @@ fn goal_task_owner_status(pid int) GoalTaskOwnerStatus {
 			return GoalTaskOwnerStatus{}
 		}
 		return GoalTaskOwnerStatus{
-			alive: true
+			alive:    true
 			identity: 'macos-start:${info.start_tvsec}:${info.start_tvusec}'
 		}
 	}

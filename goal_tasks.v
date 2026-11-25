@@ -30,23 +30,23 @@ fn project_goal_task_graph(goal GoalAdmission) !GoalTasksProjection {
 	ordered := ordered_goal_tasks(goal.tasks)!
 	return GoalTasksProjection{
 		goal_id: goal.id
-		status: 'admitted'
-		tasks: ordered.map(goal_task_projection_item(it))
+		status:  'admitted'
+		tasks:   ordered.map(goal_task_projection_item(it))
 	}
 }
 
 fn goal_task_projection_item(task GoalTask) GoalTaskProjectionItem {
 	return GoalTaskProjectionItem{
-		id: task.id
-		title: task.title
+		id:         task.id
+		title:      task.title
 		repository: task.repository
-		base_sha: task.base_sha
-		paths: task.paths.clone()
+		base_sha:   task.base_sha
+		paths:      task.paths.clone()
 		depends_on: task.depends_on.clone()
-		recipe: task.recipe
-		runner: task.runner
-		verifier: task.verifier
-		status: 'pending'
+		recipe:     task.recipe
+		runner:     task.runner
+		verifier:   task.verifier
+		status:     'pending'
 	}
 }
 
@@ -78,9 +78,9 @@ pub fn (app &App) get_admitted_goal_tasks(mut ctx Context, id string) veb.Result
 		}
 		tasks[i] = GoalTaskProjectionItem{
 			...task
-			status: state.status
+			status:        state.status
 			attempt_count: state.attempt_count
-			attempts: state.attempts
+			attempts:      state.attempts
 		}
 	}
 	current := GoalTasksProjection{

@@ -5,49 +5,49 @@ import rand
 
 fn test_goal_task_projection_is_stable_topological_order() {
 	goal := GoalAdmission{
-		id: 'graph'
+		id:    'graph'
 		tasks: [
 			GoalTask{
-				id: 'z-final'
-				title: 'Final task'
+				id:         'z-final'
+				title:      'Final task'
 				repository: 'owner/repo'
-				base_sha: 'a'.repeat(40)
-				paths: ['src']
+				base_sha:   'a'.repeat(40)
+				paths:      ['src']
 				depends_on: ['m-middle', 'a-start']
-				recipe: 'feature'
-				runner: 'local-v'
-				verifier: 'review'
+				recipe:     'feature'
+				runner:     'local-v'
+				verifier:   'review'
 			},
 			GoalTask{
-				id: 'm-middle'
-				title: 'Middle task'
+				id:         'm-middle'
+				title:      'Middle task'
 				repository: 'owner/repo'
-				base_sha: 'a'.repeat(40)
-				paths: ['src']
+				base_sha:   'a'.repeat(40)
+				paths:      ['src']
 				depends_on: ['a-start']
-				recipe: 'feature'
-				runner: 'local-v'
-				verifier: 'review'
+				recipe:     'feature'
+				runner:     'local-v'
+				verifier:   'review'
 			},
 			GoalTask{
-				id: 'b-independent'
-				title: 'Independent task'
+				id:         'b-independent'
+				title:      'Independent task'
 				repository: 'owner/repo'
-				base_sha: 'a'.repeat(40)
-				paths: ['docs']
-				recipe: 'research'
-				runner: 'local-v'
-				verifier: 'review'
+				base_sha:   'a'.repeat(40)
+				paths:      ['docs']
+				recipe:     'research'
+				runner:     'local-v'
+				verifier:   'review'
 			},
 			GoalTask{
-				id: 'a-start'
-				title: 'Start task'
+				id:         'a-start'
+				title:      'Start task'
 				repository: 'owner/repo'
-				base_sha: 'a'.repeat(40)
-				paths: ['src']
-				recipe: 'feature'
-				runner: 'local-v'
-				verifier: 'review'
+				base_sha:   'a'.repeat(40)
+				paths:      ['src']
+				recipe:     'feature'
+				runner:     'local-v'
+				verifier:   'review'
 			},
 		]
 	}
@@ -63,22 +63,22 @@ fn test_goal_task_projection_is_stable_topological_order() {
 
 fn test_goal_task_projection_rejects_cycles_and_preserves_large_admitted_graphs() {
 	cycle := GoalAdmission{
-		id: 'cycle'
+		id:    'cycle'
 		tasks: [
 			GoalTask{
-				id: 'a'
-				title: 'A'
+				id:         'a'
+				title:      'A'
 				repository: 'owner/repo'
-				base_sha: 'a'.repeat(40)
-				paths: ['src']
+				base_sha:   'a'.repeat(40)
+				paths:      ['src']
 				depends_on: ['b']
 			},
 			GoalTask{
-				id: 'b'
-				title: 'B'
+				id:         'b'
+				title:      'B'
 				repository: 'owner/repo'
-				base_sha: 'a'.repeat(40)
-				paths: ['src']
+				base_sha:   'a'.repeat(40)
+				paths:      ['src']
 				depends_on: ['a']
 			},
 		]
@@ -93,18 +93,18 @@ fn test_goal_task_projection_rejects_cycles_and_preserves_large_admitted_graphs(
 	mut large_tasks := []GoalTask{cap: 300}
 	for i in 0 .. 300 {
 		large_tasks << GoalTask{
-			id: 'task-${i:03}'
-			title: 'Task ${i}'
+			id:         'task-${i:03}'
+			title:      'Task ${i}'
 			repository: 'owner/repo'
-			base_sha: 'a'.repeat(40)
-			paths: ['src']
-			recipe: 'feature'
-			runner: 'local-v'
-			verifier: 'review'
+			base_sha:   'a'.repeat(40)
+			paths:      ['src']
+			recipe:     'feature'
+			runner:     'local-v'
+			verifier:   'review'
 		}
 	}
 	large_graph := GoalAdmission{
-		id: 'large-graph'
+		id:    'large-graph'
 		tasks: large_tasks
 	}
 	large_projection := project_goal_task_graph(large_graph) or { panic(err) }
@@ -149,7 +149,13 @@ fn test_goal_task_state_is_seeded_idempotently_and_recovery_never_replays_runnin
 	$if linux {
 		mut previous_owner := os.new_process('/bin/sleep')
 		previous_owner.set_args(['30'])
-		previous_owner.run() or { panic(err) }
+		previous_owner.run()
+		defer {
+			if previous_owner.status == .running {
+				previous_owner.signal_kill()
+			}
+			previous_owner.wait()
+		}
 		previous_pid := previous_owner.pid
 		previous_identity := goal_task_owner_status(previous_pid)
 		assert previous_identity.alive
@@ -202,29 +208,29 @@ fn test_goal_task_claim_gates_dependencies_and_enforces_attempt_budget() {
 	defer { store.close() or {} }
 	goal := GoalAdmission{
 		...goal_task_test_admission()
-		id: 'dependency-budget'
+		id:     'dependency-budget'
 		budget: GoalBudget{ max_attempts: 3, wall_seconds: 300, provider_turns: 4 }
-		tasks: [
+		tasks:  [
 			GoalTask{
-				id: 'first'
-				title: 'First'
+				id:         'first'
+				title:      'First'
 				repository: 'veasel-labs/veasel'
-				base_sha: 'e4b1a73e1573293d01e7f0b821a9c61161f165f3'
-				paths: ['docs']
-				recipe: 'feature'
-				runner: 'local-v'
-				verifier: 'independent-review'
+				base_sha:   'e4b1a73e1573293d01e7f0b821a9c61161f165f3'
+				paths:      ['docs']
+				recipe:     'feature'
+				runner:     'local-v'
+				verifier:   'independent-review'
 			},
 			GoalTask{
-				id: 'second'
-				title: 'Second'
+				id:         'second'
+				title:      'Second'
 				repository: 'veasel-labs/veasel'
-				base_sha: 'e4b1a73e1573293d01e7f0b821a9c61161f165f3'
-				paths: ['docs']
+				base_sha:   'e4b1a73e1573293d01e7f0b821a9c61161f165f3'
+				paths:      ['docs']
 				depends_on: ['first']
-				recipe: 'feature'
-				runner: 'local-v'
-				verifier: 'independent-review'
+				recipe:     'feature'
+				runner:     'local-v'
+				verifier:   'independent-review'
 			},
 		]
 	}
@@ -349,8 +355,8 @@ fn test_goal_task_claim_is_atomic_across_store_connections() {
 	mut store := open_store(path) or { panic(err) }
 	_ = store.admit_goal(goal) or { panic(err) }
 	store.close() or { panic(err) }
-	start := chan bool{ cap: 2 }
-	results := chan bool{ cap: 2 }
+	start := chan bool{cap: 2}
+	results := chan bool{cap: 2}
 	spawn claim_goal_task_concurrently(path, goal.id, 'prepare', start, results)
 	spawn claim_goal_task_concurrently(path, goal.id, 'prepare', start, results)
 	start <- true
@@ -363,18 +369,18 @@ fn test_goal_task_claim_is_atomic_across_store_connections() {
 fn goal_task_test_admission() GoalAdmission {
 	return GoalAdmission{
 		schema_version: 1
-		id: 'goal-task-test'
-		title: 'Test durable goal task state'
-		budget: GoalBudget{ max_attempts: 2, wall_seconds: 60, provider_turns: 4 }
-		tasks: [GoalTask{
-			id: 'prepare'
-			title: 'Prepare'
+		id:             'goal-task-test'
+		title:          'Test durable goal task state'
+		budget:         GoalBudget{ max_attempts: 2, wall_seconds: 60, provider_turns: 4 }
+		tasks:          [GoalTask{
+			id:         'prepare'
+			title:      'Prepare'
 			repository: 'owner/repo'
-			base_sha: 'a'.repeat(40)
-			paths: ['src']
-			recipe: 'feature'
-			runner: 'test-runner'
-			verifier: 'test-verifier'
+			base_sha:   'a'.repeat(40)
+			paths:      ['src']
+			recipe:     'feature'
+			runner:     'test-runner'
+			verifier:   'test-verifier'
 		}]
 	}
 }

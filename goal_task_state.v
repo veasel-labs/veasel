@@ -174,16 +174,16 @@ fn (mut store Store) goal_task_state(goal_id string, task_id string) !GoalTaskPr
 	mut attempts := []GoalTaskAttemptProjection{}
 	for row in attempt_rows {
 		attempts << GoalTaskAttemptProjection{
-			attempt: row.val(0).int()
-			status: goal_task_attempt_status_from_db(row.val(1))!.str()
+			attempt:    row.val(0).int()
+			status:     goal_task_attempt_status_from_db(row.val(1))!.str()
 			started_at: row.val(2)
-			ended_at: row.val(3)
+			ended_at:   row.val(3)
 		}
 	}
 	return GoalTaskProjectionState{
-		status: goal_task_status_from_db(state.val(0))!.str()
+		status:        goal_task_status_from_db(state.val(0))!.str()
 		attempt_count: state.val(1).int()
-		attempts: attempts
+		attempts:      attempts
 	}
 }
 
@@ -204,16 +204,16 @@ fn (mut store Store) goal_task_states_for_goal(goal_id string) !map[string]GoalT
 		mut attempts := []GoalTaskAttemptProjection{}
 		for attempt_row in attempt_rows {
 			attempts << GoalTaskAttemptProjection{
-				attempt: attempt_row.val(0).int()
-				status: goal_task_attempt_status_from_db(attempt_row.val(1))!.str()
+				attempt:    attempt_row.val(0).int()
+				status:     goal_task_attempt_status_from_db(attempt_row.val(1))!.str()
 				started_at: attempt_row.val(2)
-				ended_at: attempt_row.val(3)
+				ended_at:   attempt_row.val(3)
 			}
 		}
 		states[row.val(0)] = GoalTaskProjectionState{
-			status: goal_task_status_from_db(row.val(1))!.str()
+			status:        goal_task_status_from_db(row.val(1))!.str()
 			attempt_count: row.val(2).int()
-			attempts: attempts
+			attempts:      attempts
 		}
 	}
 	store.db.commit()!
@@ -358,15 +358,15 @@ fn (mut store Store) goal_task_state_unlocked(goal_id string, task_id string) !G
 	mut attempts := []GoalTaskAttemptProjection{}
 	for row in attempt_rows {
 		attempts << GoalTaskAttemptProjection{
-			attempt: row.val(0).int()
-			status: goal_task_attempt_status_from_db(row.val(1))!.str()
+			attempt:    row.val(0).int()
+			status:     goal_task_attempt_status_from_db(row.val(1))!.str()
 			started_at: row.val(2)
-			ended_at: row.val(3)
+			ended_at:   row.val(3)
 		}
 	}
 	return GoalTaskProjectionState{
-		status: goal_task_status_from_db(state.val(0))!.str()
+		status:        goal_task_status_from_db(state.val(0))!.str()
 		attempt_count: state.val(1).int()
-		attempts: attempts
+		attempts:      attempts
 	}
 }

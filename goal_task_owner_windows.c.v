@@ -65,7 +65,7 @@ fn goal_task_owner_status(pid int) GoalTaskOwnerStatus {
 		}
 	}
 	return GoalTaskOwnerStatus{
-		alive: true
+		alive:    true
 		identity: 'windows-start:${created.dwHighDateTime}:${created.dwLowDateTime}'
 	}
 }

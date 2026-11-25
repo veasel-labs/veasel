@@ -12,16 +12,16 @@ fn C.OpenProcess(access u32, inherit_handle i32, process_id u32) voidptr
 
 fn C.GetProcessTimes(process_handle voidptr, creation &C.FILETIME, exit &C.FILETIME, kernel &C.FILETIME, user &C.FILETIME) i32
 
-fn C.WaitForSingleObject(handle voidptr, milliseconds u32) u32
+fn C.WaitForSingleObject(handle voidptr, milliseconds i32) i32
 
-fn C.CloseHandle(handle voidptr) i32
+fn C.CloseHandle(handle voidptr) bool
 
 fn C.GetLastError() u32
 
 const goal_task_process_query_limited_information = u32(0x1000)
 const goal_task_synchronize = u32(0x00100000)
-const goal_task_wait_object_0 = u32(0)
-const goal_task_wait_timeout = u32(258)
+const goal_task_wait_object_0 = i32(0)
+const goal_task_wait_timeout = i32(258)
 const goal_task_access_denied = u32(5)
 
 fn goal_task_owner_status(pid int) GoalTaskOwnerStatus {

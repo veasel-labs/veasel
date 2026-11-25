@@ -20,8 +20,7 @@ fn C.proc_pidinfo(pid int, flavor int, arg u64, info voidptr, size int) int
 
 const macos_process_zombie = u32(5) // XNU SZOMB process status.
 
-@[typedef]
-struct C.GoalTaskProcBsdInfo {
+struct GoalTaskProcBsdInfo {
 	flags        u32
 	status       u32
 	xstatus      u32
@@ -83,7 +82,7 @@ fn goal_task_owner_status(pid int) GoalTaskOwnerStatus {
 		}
 	}
 	$if macos {
-		mut info := C.GoalTaskProcBsdInfo{}
+		mut info := GoalTaskProcBsdInfo{}
 		bytes := C.proc_pidinfo(i32(pid), 3, 0, &info, int(sizeof(info)))
 		if bytes < int(sizeof(info)) {
 			return GoalTaskOwnerStatus{

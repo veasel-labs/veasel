@@ -534,6 +534,23 @@
   color: var(--text-primary);
 }
 
+.toolPath {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.toolPath span {
+  color: var(--text-muted);
+}
+
+.toolPath code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .diffFile {
   margin: 0;
 }

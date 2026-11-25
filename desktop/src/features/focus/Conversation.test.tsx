@@ -143,6 +143,40 @@ describe('Conversation', () => {
     expect(api.respondApproval).toHaveBeenLastCalledWith('th_test000001', 'r1', 'deny');
   });
 
+  it('shows the approval target path beside the structured edit preview', async () => {
+    setup(
+      thread({ status: 'awaiting-approval' }),
+      journal([
+        { type: 'turn.started', model: null },
+        {
+          type: 'tool.started',
+          itemId: 't1',
+          name: 'Edit',
+          kind: 'edit',
+          title: 'CONTRIBUTING.md',
+          input: { old_string: 'before', new_string: 'after' },
+          parentItemId: null,
+        },
+        {
+          type: 'approval.requested',
+          requestId: 'r1',
+          itemId: 't1',
+          tool: 'Edit',
+          kind: 'edit',
+          title: 'CONTRIBUTING.md',
+          input: { file_path: '/tmp/project/CONTRIBUTING.md' },
+          canAllowForSession: false,
+        },
+      ]),
+    );
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Approval needed' });
+    expect(dialog).toHaveTextContent('/tmp/project/CONTRIBUTING.md');
+    expect(screen.getByLabelText('Change preview')).toHaveTextContent('- before');
+    expect(screen.getByLabelText('Change preview')).toHaveTextContent('+ after');
+    expect(screen.getByRole('button', { name: 'Allow once' })).toBeInTheDocument();
+  });
+
   it('announces OpenCode questions and collects answers without persisting private values', async () => {
     const { api, store, user } = setup(
       thread({ provider: 'opencode', status: 'awaiting-input' }),

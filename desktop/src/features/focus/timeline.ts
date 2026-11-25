@@ -71,6 +71,26 @@ export interface TimelineTurn {
   items: TimelineItem[];
 }
 
+const APPROVAL_TARGET_PATH_FIELDS = ['file_path', 'notebook_path', 'path'] as const;
+
+function structuredObject(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function mergeApprovalTargetPaths(input: unknown, approvalInput: unknown): unknown {
+  const approval = structuredObject(approvalInput);
+  if (!approval) return input;
+  const paths = Object.fromEntries(
+    APPROVAL_TARGET_PATH_FIELDS.flatMap((key) =>
+      typeof approval[key] === 'string' && approval[key].length > 0 ? [[key, approval[key]]] : [],
+    ),
+  );
+  if (Object.keys(paths).length === 0) return input;
+  return { ...(structuredObject(input) ?? {}), ...paths };
+}
+
 export function buildTimeline(
   events: readonly FocusEvent[],
   live: Readonly<Record<string, LiveText>> = {},
@@ -152,6 +172,11 @@ export function buildTimeline(
           };
           tools.set(item.itemId, item);
           turn.items.push(item);
+        } else {
+          // The durable approval input is the exact operation awaiting the
+          // user's decision. Preserve only its explicit target path fields;
+          // tool.started may carry the diff while omitting the target path.
+          item.input = mergeApprovalTargetPaths(item.input, event.input);
         }
         item.approval = {
           requestId: event.requestId,

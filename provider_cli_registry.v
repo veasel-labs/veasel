@@ -3,8 +3,9 @@ module main
 // Installed-CLI provider registry for #691/#638: declarative capability
 // data for the dual provider plane (ADR-0001 decision 2). Capability
 // fields Hornero/Veasel have not verified against a live CLI are recorded
-// as unverified rather than guessed; auth detection is file-presence
-// only and credential contents are never read. This registry is data for
+// as unverified rather than guessed; credential file presence is only a
+// hint, and native authentication is verified only for CLIs with a supported
+// status contract. Credential contents are never read. This registry is data for
 // the pre-launch capability validation (#638): selecting a provider whose
 // permission mode or protocol is unsupported must fail closed.
 
@@ -14,7 +15,7 @@ pub:
 	name                    string
 	exec                    string
 	protocol                string   // stream-json|app-server|acp|unknown
-	auth_probe_path         string   // '~/...' presence-only probe, '' if none
+	auth_probe_path         string   // '~/...' presence hint, '' if none; contents are never read
 	auth_status_args        []string // provider-owned, non-mutating local auth check
 	auth_status_kind        string   // claude-json|codex-text|'' when unsupported
 	permission_modes        []string

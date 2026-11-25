@@ -33,6 +33,7 @@ pub:
 struct ProviderCliStatusCommandResult {
 	code   int
 	stdout string
+	stderr string
 }
 
 struct ClaudeAuthStatusResponse {
@@ -127,18 +128,18 @@ fn provider_cli_auth_result(spec ProviderCliSpec, exit_code int, output string) 
 		}
 		'codex-text' {
 			line := output.trim_space().to_lower()
-			if line == 'not logged in' || line.starts_with('not logged in ') {
+			if line == 'not logged in' {
 				return ProviderCliAuthResult{
 					state: 'signed-out'
 				}
 			}
-			if line.starts_with('logged in using chatgpt') {
+			if line == 'logged in using chatgpt' {
 				return ProviderCliAuthResult{
 					state:  'verified'
 					method: 'chatgpt'
 				}
 			}
-			if line.starts_with('logged in using api key') {
+			if line == 'logged in using api key' {
 				return ProviderCliAuthResult{
 					state:  'verified'
 					method: 'api-key'
@@ -156,9 +157,20 @@ fn provider_cli_auth_result(spec ProviderCliSpec, exit_code int, output string) 
 	}
 }
 
+// Codex CLI 0.172.0 writes its non-interactive `login status` result to
+// stderr. Only fall back to stderr when stdout is empty; auth parsing still
+// accepts exact, allowlisted phrases only.
+fn provider_cli_auth_output(spec ProviderCliSpec, result ProviderCliStatusCommandResult) string {
+	if spec.auth_status_kind == 'codex-text' && result.stdout.trim_space().len == 0 {
+		return result.stderr
+	}
+	return result.stdout
+}
+
 // Run only the literal provider-owned status argv in the registry. It has no
 // shell, no prompt input, a strict deadline/output cap, and kills the whole
-// process group on timeout. Stderr and unrecognized stdout are discarded.
+// process group on timeout. Output is retained only in memory long enough to
+// parse a recognized status; raw text is never returned, logged, or persisted.
 fn run_provider_cli_status_command(executable string, args []string) !ProviderCliStatusCommandResult {
 	mut process := os.new_process(executable)
 	process.set_args(args)
@@ -180,15 +192,19 @@ fn run_provider_cli_status_command(executable string, args []string) !ProviderCl
 	}
 	started := time.now()
 	mut output := ''
+	mut error_output := ''
 	for process.is_alive() {
 		if process.is_pending(.stdout) {
 			output += process.stdout_read()
-			if output.len > provider_cli_status_output_limit {
+			if output.len + error_output.len > provider_cli_status_output_limit {
 				return error('status command output limit exceeded')
 			}
 		}
 		if process.is_pending(.stderr) {
-			_ = process.stderr_read()
+			error_output += process.stderr_read()
+			if output.len + error_output.len > provider_cli_status_output_limit {
+				return error('status command output limit exceeded')
+			}
 		}
 		if time.since(started).milliseconds() > provider_cli_status_timeout_ms {
 			return error('status command timed out')
@@ -197,23 +213,27 @@ fn run_provider_cli_status_command(executable string, args []string) !ProviderCl
 	}
 	for process.is_pending(.stdout) {
 		output += process.stdout_read()
-		if output.len > provider_cli_status_output_limit {
+		if output.len + error_output.len > provider_cli_status_output_limit {
 			return error('status command output limit exceeded')
 		}
 	}
 	for process.is_pending(.stderr) {
-		_ = process.stderr_read()
+		error_output += process.stderr_read()
+		if output.len + error_output.len > provider_cli_status_output_limit {
+			return error('status command output limit exceeded')
+		}
 	}
 	process.wait()
 	code := process.code
 	process.close()
 	closed = true
-	if output.len > provider_cli_status_output_limit {
+	if output.len + error_output.len > provider_cli_status_output_limit {
 		return error('status command output limit exceeded')
 	}
 	return ProviderCliStatusCommandResult{
 		code:   code
 		stdout: output
+		stderr: error_output
 	}
 }
 
@@ -248,7 +268,7 @@ fn provider_cli_probe(spec ProviderCliSpec) ProviderCliStatus {
 			}
 			return provider_cli_status_with_auth(spec, installed_path, version, auth_present, auth)
 		}
-		auth = provider_cli_auth_result(spec, result.code, result.stdout)
+		auth = provider_cli_auth_result(spec, result.code, provider_cli_auth_output(spec, result))
 	}
 	return provider_cli_status_with_auth(spec, installed_path, version, auth_present, auth)
 }

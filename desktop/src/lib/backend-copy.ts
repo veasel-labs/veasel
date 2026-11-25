@@ -6,9 +6,7 @@ import type { BackendState } from '../types/electron';
  */
 export function backendBannerCopy(backend: BackendState): string {
   if (backend.status === 'starting') {
-    return backend.detail
-      ? `Starting the Agent Toolkit backend… ${backend.detail}`
-      : 'Starting the Agent Toolkit backend…';
+    return backend.detail ? `Starting the Veasel backend… ${backend.detail}` : 'Starting the Veasel backend…';
   }
   if (backend.detail) return backend.detail;
   switch (backend.status) {
@@ -36,7 +34,7 @@ export function backendCanRestart(backend: BackendState): boolean {
 export function backendProblemCopy(backend: BackendState): string | null {
   switch (backend.problem) {
     case 'no-backend':
-      return 'No agent-toolkit binary was found. Stage or install one, or set ATK_BACKEND_BIN.';
+      return 'No Veasel backend binary was found. Install Veasel Code or use a package that includes its backend.';
     case 'binary-rejected':
       return 'Candidates existed but none passed the serve probe. Desktop did not spawn a stale binary.';
     case 'spawn-error':

@@ -21,15 +21,12 @@ export function createQueryClient(): QueryClient {
 
 /**
  * Resolve the backend base URL. Inside Electron the main process owns the
- * supervised `agent-toolkit serve`; in plain-browser dev the URL comes from
+ * supervised Veasel V backend; in plain-browser dev the URL comes from
  * VITE_ATK_BACKEND_URL (default 127.0.0.1:3847).
  */
 export async function resolveBackendUrl(): Promise<string> {
-  const bridge = window.atk;
-  if (bridge) {
-    const state = await bridge.backendStatus();
-    if (state?.url) return state.url;
-  }
+  const desktopUrl = await window.veaselDesktop?.getBackendUrl();
+  if (desktopUrl) return desktopUrl;
   const fromEnv = import.meta.env.VITE_ATK_BACKEND_URL as string | undefined;
   return normalizeLoopback(fromEnv ?? 'http://127.0.0.1:3847');
 }

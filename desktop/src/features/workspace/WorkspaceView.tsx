@@ -80,7 +80,7 @@ export default function WorkspaceView() {
       return;
     }
     if (!window.atk) {
-      setPickerError('The native folder picker is available in Agent Toolkit Desktop.');
+      setPickerError('The native folder picker is available in Veasel Desktop.');
       return;
     }
     try {

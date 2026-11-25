@@ -57,7 +57,7 @@ describe('backendBannerCopy', () => {
 
   it('keeps a starting prefix and a stopped fallback', () => {
     expect(backendBannerCopy({ ...base, status: 'starting', detail: 'selecting backend binary' })).toBe(
-      'Starting the Agent Toolkit backend… selecting backend binary',
+      'Starting the Veasel backend… selecting backend binary',
     );
     expect(backendBannerCopy({ ...base, status: 'stopped' })).toBe('Backend is stopped.');
   });
@@ -77,7 +77,7 @@ describe('backendCanRestart', () => {
 describe('backendProblemCopy', () => {
   it('names binary-rejected separately from a crash', () => {
     expect(backendProblemCopy({ ...base, problem: 'binary-rejected' })).toMatch(/stale binary/);
-    expect(backendProblemCopy({ ...base, problem: 'no-backend' })).toMatch(/No agent-toolkit binary/);
+    expect(backendProblemCopy({ ...base, problem: 'no-backend' })).toMatch(/No Veasel backend binary/);
     expect(backendProblemCopy({ ...base, problem: null })).toBeNull();
   });
 });

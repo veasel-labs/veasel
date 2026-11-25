@@ -210,9 +210,7 @@ export async function launchFocusDesktop(options: LaunchOptions = {}): Promise<{
   const fresh = options.existing === undefined;
   const root = options.existing?.root ?? fs.mkdtempSync(path.join(os.tmpdir(), 'veasel-focus-journeys-'));
   const env = options.existing ?? planJourneyEnv(root);
-  // The legacy Agent Toolkit backend is disabled in Desktop (#728): no `workspace init`, and the binary the shared
-  // fixture insists on is only a placeholder.
-  process.env['ATK_E2E_BACKEND_BIN'] ??= backendBin;
+  process.env['VEASEL_E2E_BACKEND_BIN'] ??= backendBin;
   const desktop = await openDesktop({
     initWorkspace: false,
     root,

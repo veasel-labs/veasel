@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { BackendSupervisor, type BackendState } from './backend';
+import { projectVeaselBackendState } from './backend-state';
 import { VeaselBackendSupervisor } from './veasel-backend';
 import { HarnessController } from './harness-controller';
 import { HARNESS_STORE_FILE, HarnessStore } from './harness-store';
@@ -11,7 +11,6 @@ import { PROXY_TOKEN_HEADER, startRendererServer, type RendererServer } from './
 import { TerminalService } from './terminal';
 
 let mainWindow: BrowserWindow | null = null;
-let backend: BackendSupervisor | null = null;
 let veaselBackend: VeaselBackendSupervisor | null = null;
 let terminals: TerminalService | null = null;
 let harness: HarnessController | null = null;
@@ -65,13 +64,41 @@ async function resolveRendererUrl(): Promise<string> {
 
 async function createWindow(): Promise<void> {
   if (shuttingDown) return;
+  if (!veaselBackend) {
+    veaselBackend = new VeaselBackendSupervisor({
+      userDataDir: app.getPath('userData'),
+      resourcesDir: process.resourcesPath,
+      workingDirectory: () => harness?.resolve().path ?? process.cwd(),
+      resolveEnvironmentSecrets: () => mcpSecrets?.environment() ?? {},
+      resolveClearedEnvironmentSecretNames: () => mcpSecrets?.managedNames() ?? [],
+    });
+    veaselBackend.onState((state) => {
+      rendererServer?.setBackendTarget(state.url);
+      mainWindow?.webContents.send(
+        'atk:backend-state',
+        projectVeaselBackendState(state, harness?.resolve() ?? null, veaselBackend?.isAttached()),
+      );
+    });
+    ipcMain.handle('veasel:backend-url', () => rendererServer?.url ?? null);
+  }
   // Singleflight: macOS `activate` re-enters createWindow. Rebuilding the
   // services would orphan the running backend/PTYs and re-registering IPC
   // handlers throws. Reuse what exists.
   if (!harness) {
     harness = new HarnessController({
       store: new HarnessStore(path.join(app.getPath('userData'), HARNESS_STORE_FILE)),
-      getSupervisor: () => backend,
+      getSupervisor: () =>
+        veaselBackend
+          ? {
+              restart: () => veaselBackend!.restart(),
+              snapshot: () =>
+                projectVeaselBackendState(
+                  veaselBackend!.snapshot(),
+                  harness?.resolve() ?? null,
+                  veaselBackend!.isAttached(),
+                ),
+            }
+          : null,
       fallbackDirectory: path.join(app.getPath('userData'), 'bootstrap'),
       chooseDirectory: chooseHarnessDirectory,
     });
@@ -85,24 +112,11 @@ async function createWindow(): Promise<void> {
       ),
     );
   }
-  const secretStore = mcpSecrets;
-  if (!backend) {
-    backend = new BackendSupervisor({
-      resolveHarness: () => harnessController.resolve(),
-      resolveEnvironmentSecrets: () => secretStore.environment(),
-      resolveClearedEnvironmentSecretNames: () => secretStore.managedNames(),
-      // One runtime (ADR-0001): the legacy Agent Toolkit supervisor is
-      // wired for IPC/status compatibility only and must never spawn a
-      // second engine in Veasel Desktop.
-      disabledReason:
-        'The legacy Agent Toolkit backend is disabled in Veasel Desktop; the Veasel V backend is the only runtime.',
-    });
-  }
-  const supervisor = backend;
+  const supervisor = veaselBackend;
   if (!terminals) {
     // New shells open where serve runs; before the first start, where it will run.
     terminals = new TerminalService({
-      defaultCwd: () => supervisor.snapshot().harness?.path ?? harnessController.resolve().path,
+      defaultCwd: () => harnessController.resolve().path,
     });
   }
 
@@ -145,20 +159,20 @@ async function createWindow(): Promise<void> {
     mainWindow = null;
   });
 
-  if (!veaselBackend) {
-    veaselBackend = new VeaselBackendSupervisor({
-      userDataDir: app.getPath('userData'),
-      resourcesDir: process.resourcesPath,
-    });
-    // Same-origin proxy target for /v1/* (renderer never fetches the
-    // backend cross-origin).
-    veaselBackend.onState((veaselState) => rendererServer?.setBackendTarget(veaselState.url));
-    ipcMain.handle('veasel:backend-url', () => veaselBackend?.snapshot().url ?? null);
-  }
-
   if (!ipcRegistered) {
     registerIpc({
-      getBackend: () => backend,
+      getBackend: () =>
+        veaselBackend
+          ? {
+              restart: () => veaselBackend!.restart(),
+              snapshot: () =>
+                projectVeaselBackendState(
+                  veaselBackend!.snapshot(),
+                  harness?.resolve() ?? null,
+                  veaselBackend!.isAttached(),
+                ),
+            }
+          : null,
       getTerminals: () => terminals,
       getWindow: () => mainWindow,
       getHarness: () => harness,
@@ -192,33 +206,25 @@ async function createWindow(): Promise<void> {
     return { action: 'deny' };
   });
 
-  const onBackendState = (state: BackendState): void => {
-    // The renderer proxy target is owned solely by the Veasel backend
-    // supervisor. Legacy ATK state is forwarded for status display only;
-    // it must never retarget /api or /v1 traffic to a second engine.
-    mainWindow?.webContents.send('atk:backend-state', state);
-  };
-  backend.onState(onBackendState);
-
   try {
     await window.loadURL(`${url}/`);
   } catch (error) {
     if (shuttingDown || window.isDestroyed()) return;
     throw error;
   }
-  if (shuttingDown || window.isDestroyed() || backend !== supervisor) return;
+  if (shuttingDown || window.isDestroyed() || veaselBackend !== supervisor) return;
 
-  // Start the Veasel V backend (the only runtime) after the window
-  // exists so failures are visible. The legacy ATK supervisor is
-  // constructed for IPC compatibility but never started in Veasel
-  // Desktop; its destinations stay inert until wired or removed.
+  // Start the canonical Veasel V backend after the window exists so failures are visible.
   const startupHarness = harnessController.resolve();
   if (startupHarness.source === 'fallback') {
     fs.mkdirSync(startupHarness.path, { recursive: true });
   }
   if (veaselBackend) await veaselBackend.start();
-  if (shuttingDown || window.isDestroyed() || backend !== supervisor) return;
-  onBackendState(supervisor.snapshot());
+  if (shuttingDown || window.isDestroyed() || veaselBackend !== supervisor) return;
+  mainWindow?.webContents.send(
+    'atk:backend-state',
+    projectVeaselBackendState(supervisor.snapshot(), harnessController.resolve(), supervisor.isAttached()),
+  );
 }
 
 void app.whenReady().then(createWindow);
@@ -245,7 +251,7 @@ app.on('before-quit', (event) => {
       app.quit();
     },
     (error: unknown) => {
-      console.error('Agent Toolkit Desktop shutdown failed:', error);
+      console.error('Veasel Desktop shutdown failed:', error);
       shutdownComplete = true;
       app.exit(1);
     },
@@ -259,9 +265,6 @@ async function shutdown(): Promise<void> {
     terminals = null;
     if (veaselBackend) await veaselBackend.stop();
     veaselBackend = null;
-    const activeBackend = backend;
-    backend = null;
-    if (activeBackend) await activeBackend.stop();
     await closeRendererServer();
   })();
   return shutdownTask;

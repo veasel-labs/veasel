@@ -11,6 +11,7 @@ import { HarnessStore } from './harness-store';
 /** Records the restart sequence and reports the harness the controller would spawn in. */
 class FakeSupervisor implements HarnessSupervisor {
   calls: string[] = [];
+  restartResult = true;
   state: BackendState = {
     status: 'ready',
     url: 'http://127.0.0.1:1',
@@ -28,6 +29,10 @@ class FakeSupervisor implements HarnessSupervisor {
 
   async restart(): Promise<boolean> {
     this.calls.push('stop');
+    if (!this.restartResult) {
+      this.state = { ...this.state, attached: true, detail: 'shared backend' };
+      return false;
+    }
     await this.gate;
     const harness = this.resolve();
     this.calls.push(`start:${harness.path}`);
@@ -112,6 +117,21 @@ describe('HarnessController', () => {
     expect(supervisor.calls).toEqual(['stop', `start:${target}`]);
     expect(new HarnessStore(store.path).current()).toBe(target);
     expect(controller.recent()).toEqual([{ path: target, exists: true, current: true }]);
+  });
+
+  it('does not persist a workspace switch when the shared backend cannot be restarted', async () => {
+    const original = path.join(root, 'original');
+    const target = path.join(root, 'other');
+    fs.mkdirSync(original);
+    fs.mkdirSync(target);
+    store.setCurrent(original);
+    supervisor.restartResult = false;
+
+    const result = await controller.set(target);
+
+    expect(result).toMatchObject({ ok: false, error: 'unavailable' });
+    expect((result as { message?: string }).message).toContain('shared with the terminal client');
+    expect(store.current()).toBe(original);
   });
 
   it('accepts ~ paths and does not restart when the harness is unchanged', async () => {

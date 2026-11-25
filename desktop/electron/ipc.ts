@@ -1,12 +1,12 @@
 import { ipcMain, type BrowserWindow } from 'electron';
-import type { BackendSupervisor } from './backend';
+import type { BackendState } from './backend';
 import { createDefaultHarnessFromProcess, isDefaultHarnessPath } from './harness';
 import type { HarnessController, HarnessSwitchResult } from './harness-controller';
 import type { McpSecretStore } from './mcp-secrets';
 import { TerminalCwdError, type TerminalService } from './terminal';
 
 export interface IpcDeps {
-  getBackend: () => BackendSupervisor | null;
+  getBackend: () => { restart: () => Promise<boolean>; snapshot: () => BackendState } | null;
   getTerminals: () => TerminalService | null;
   getWindow: () => BrowserWindow | null;
   getHarness: () => HarnessController | null;

@@ -28,8 +28,12 @@ describe('providerBlocker', () => {
   it('still blocks providers that are missing or signed out', () => {
     expect(providerBlocker(provider({ installed: false }))).toMatch(/Not installed/);
     expect(providerBlocker(provider({ auth: 'signed-out' }))).toMatch(/login command/);
-    expect(providerBlocker(provider({ capabilities: { sessions: false, approvals: true, interrupt: true, resume: true, modelSwitch: false } }))).toMatch(
-      /not available/,
-    );
+    expect(
+      providerBlocker(
+        provider({
+          capabilities: { sessions: false, approvals: true, interrupt: true, resume: true, modelSwitch: false },
+        }),
+      ),
+    ).toMatch(/not available/);
   });
 });

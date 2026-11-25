@@ -11,6 +11,7 @@ import {
   classifyVeaselBackend,
   probeVeaselBackend,
   readBackendApiToken,
+  veaselBackendEnvironment,
   veaselHealthIdentity,
 } from './veasel-backend';
 
@@ -36,10 +37,20 @@ describe('veaselHealthIdentity', () => {
 
 describe('canonicalVeaselDataDir', () => {
   it('mirrors the V default_data_dir contract', () => {
-    expect(canonicalVeaselDataDir({}, '/home/tester')).toBe(
-      path.join('/home/tester', '.local', 'share', 'veasel'),
-    );
+    expect(canonicalVeaselDataDir({}, '/home/tester')).toBe(path.join('/home/tester', '.local', 'share', 'veasel'));
     expect(canonicalVeaselDataDir({ VEASEL_DATA_DIR: '/tmp/custom' }, '/home/tester')).toBe('/tmp/custom');
+  });
+});
+
+describe('veaselBackendEnvironment', () => {
+  it('injects only explicitly stored secrets and removes deleted secret names', () => {
+    expect(
+      veaselBackendEnvironment(
+        { PATH: '/usr/bin', MCP_OLD_TOKEN: 'stale-inherited-value' },
+        { MCP_API_TOKEN: 'encrypted-store-value' },
+        ['MCP_OLD_TOKEN'],
+      ),
+    ).toEqual({ PATH: '/usr/bin', MCP_API_TOKEN: 'encrypted-store-value' });
   });
 });
 
@@ -113,7 +124,8 @@ describe('readBackendApiToken', () => {
     const seen: Array<string | undefined> = [];
     const server = http.createServer((req, res) => {
       seen.push(req.headers.authorization);
-      const body = req.headers.authorization === 'Bearer t0k' ? { healthy: true, version: '1.0.0', pid: 7 } : { healthy: true };
+      const body =
+        req.headers.authorization === 'Bearer t0k' ? { healthy: true, version: '1.0.0', pid: 7 } : { healthy: true };
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
     });
@@ -199,10 +211,18 @@ describe('legacy backend negotiation', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'veasel-secure-'));
     fs.writeFileSync(path.join(dir, 'api-token'), `${T1}\n`, { mode: 0o600 });
     try {
-      const supervisor = new VeaselBackendSupervisor({ userDataDir: dir, dataDir: dir, env: {}, conventionalUrl: secure.url });
+      const supervisor = new VeaselBackendSupervisor({
+        userDataDir: dir,
+        dataDir: dir,
+        env: {},
+        conventionalUrl: secure.url,
+      });
       const state = await supervisor.start();
       expect(state.status).toBe('ready');
       expect(state.url).toBe(secure.url);
+      expect(supervisor.isAttached()).toBe(true);
+      await expect(supervisor.restart()).resolves.toBe(false);
+      expect(supervisor.snapshot().status).toBe('ready');
       expect(secure.authSeen.slice(0, 2)).toEqual([undefined, undefined]);
       expect(secure.authSeen).toContain(`Bearer ${T1}`);
     } finally {

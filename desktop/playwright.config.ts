@@ -2,7 +2,7 @@ import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 
 const APP_DIR = path.resolve(__dirname);
-const packagedApp = Boolean(process.env.ATK_E2E_APP_PATH);
+const packagedApp = Boolean(process.env.VEASEL_E2E_APP_PATH ?? process.env.ATK_E2E_APP_PATH);
 // Avoid colliding with sibling worktrees that reuse :3000 (reuseExistingServer
 // would then smoke-test a different Office).
 const PORT = process.env.PORT ?? '3177';

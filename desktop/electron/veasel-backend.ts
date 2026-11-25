@@ -29,9 +29,17 @@ export interface VeaselBackendOptions {
   dataDir?: string;
   /** Test seam; production uses the backend's conventional loopback URL. */
   conventionalUrl?: string;
+  /** Working directory for a newly spawned server; an attached server keeps its owner’s cwd. */
+  workingDirectory?: () => string;
+  /** Secure Desktop-owned MCP credentials, decrypted only for the child process environment. */
+  resolveEnvironmentSecrets?: () => Record<string, string>;
+  /** Previously managed names removed from the secure store; strip stale inherited values. */
+  resolveClearedEnvironmentSecretNames?: () => string[];
 }
 
 const HEALTH_TIMEOUT_MS = 30_000;
+const STOP_GRACE_MS = 5_000;
+const KILL_GRACE_MS = 1_000;
 const GENERATED_API_TOKEN = /^[0-9a-f]{64}$/;
 
 function freePort(): Promise<number> {
@@ -69,6 +77,16 @@ export interface VeaselBackendIdentity {
  */
 export function canonicalVeaselDataDir(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
   return env.VEASEL_DATA_DIR ?? path.join(homeDir, '.local', 'share', 'veasel');
+}
+
+export function veaselBackendEnvironment(
+  inherited: NodeJS.ProcessEnv,
+  secrets: Record<string, string>,
+  clearedNames: string[],
+): NodeJS.ProcessEnv {
+  const environment = { ...inherited };
+  for (const name of clearedNames) delete environment[name];
+  return { ...environment, ...secrets };
 }
 
 /** Identity is proven only by the Veasel health payload, never a bare 200. */
@@ -207,6 +225,17 @@ export class VeaselBackendSupervisor {
     return this.state;
   }
 
+  isAttached(): boolean {
+    return this.attached;
+  }
+
+  /** Restart only a child owned by Desktop. An attached TUI server is never stopped. */
+  async restart(): Promise<boolean> {
+    if (this.attached) return false;
+    await this.stop();
+    return (await this.start()).status === 'ready';
+  }
+
   /** Current backend token (re-read so `veasel token rotate` is honoured). */
   apiToken(): string | null {
     const env = this.options.env ?? process.env;
@@ -225,6 +254,7 @@ export class VeaselBackendSupervisor {
   /** Attach to an already-running backend when possible, else spawn one. */
   async start(): Promise<VeaselBackendState> {
     if (this.state.status === 'ready' && this.state.url) return this.state;
+    this.stopping = false;
     this.setState({ status: 'starting', url: null, problem: null });
     // Prefer the backend's conventional port so a TUI-started backend is
     // attached to (one runtime, shared sessions) instead of duplicated;
@@ -254,7 +284,11 @@ export class VeaselBackendSupervisor {
     const dataDir = this.options.dataDir ?? canonicalVeaselDataDir(this.options.env ?? process.env);
     fs.mkdirSync(dataDir, { recursive: true });
     const env = {
-      ...(this.options.env ?? process.env),
+      ...veaselBackendEnvironment(
+        this.options.env ?? process.env,
+        this.options.resolveEnvironmentSecrets?.() ?? {},
+        this.options.resolveClearedEnvironmentSecretNames?.() ?? [],
+      ),
       VEASEL_PORT: String(port),
       VEASEL_DATA_DIR: dataDir,
       VEASEL_PLUGIN_DIR: path.join(dataDir, 'plugins'),
@@ -267,6 +301,7 @@ export class VeaselBackendSupervisor {
       try {
         this.child = spawn(candidate, ['serve'], {
           env,
+          cwd: this.options.workingDirectory?.(),
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
         });
@@ -281,7 +316,7 @@ export class VeaselBackendSupervisor {
         return this.state;
       }
       lastError = `backend did not become healthy at ${url}`;
-      this.killChild();
+      await this.killChild();
     }
     this.setState({ status: 'failed', url: null, problem: lastError ?? 'veasel backend unavailable' });
     return this.state;
@@ -321,15 +356,51 @@ export class VeaselBackendSupervisor {
     return false;
   }
 
-  private killChild(): void {
-    if (this.child && this.child.exitCode === null) this.child.kill('SIGTERM');
+  private async killChild(): Promise<void> {
+    const child = this.child;
     this.child = null;
+    if (!child || child.exitCode !== null || child.signalCode !== null) return;
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      let killTimer: ReturnType<typeof setTimeout> | undefined;
+      let graceTimer: ReturnType<typeof setTimeout> | undefined;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (graceTimer) clearTimeout(graceTimer);
+        if (killTimer) clearTimeout(killTimer);
+        child.removeListener('exit', onExit);
+        child.removeListener('error', onError);
+        resolve();
+      };
+      const onExit = () => finish();
+      const onError = () => finish();
+      child.once('exit', onExit);
+      child.once('error', onError);
+      if (child.exitCode !== null || child.signalCode !== null) {
+        finish();
+        return;
+      }
+      killTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // already gone
+        }
+        graceTimer = setTimeout(finish, KILL_GRACE_MS);
+      }, STOP_GRACE_MS);
+      try {
+        if (!child.kill('SIGTERM')) finish();
+      } catch {
+        finish();
+      }
+    });
   }
 
   async stop(): Promise<void> {
     this.stopping = true;
     // Never kill a backend we merely attached to (the TUI may own it).
-    if (!this.attached) this.killChild();
+    if (!this.attached) await this.killChild();
     this.attached = false;
     this.setState({ status: 'stopped', url: null, problem: null });
   }

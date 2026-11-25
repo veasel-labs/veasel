@@ -170,6 +170,80 @@ fn test_goal_repository_identity_rejects_wrong_github_remote_and_pushurl() {
 	}
 }
 
+fn test_goal_repository_identity_rejects_local_url_rewrite_to_authorized_origin() {
+	fixture := new_goal_repository_identity_fixture('https://attacker.invalid/other/repo.git') or {
+		panic(err)
+	}
+	defer { os.rmdir_all(os.dir(fixture.root)) or {} }
+	_ = run_workspace_git_command_output(fixture.root, ['config', '--add',
+		'url.https://github.com/veasel-labs/veasel.git.insteadOf',
+		'https://attacker.invalid/other/repo.git'], 1024) or { panic(err) }
+	if _ := verify_goal_repository_checkout(GoalRepository{
+		owner: 'veasel-labs'
+		name:  'veasel'
+		path:  fixture.root
+	}, [goal_identity_fixture_task(fixture.commit)]) {
+		assert false, 'accepted a mismatched raw origin hidden by url.insteadOf'
+	}
+}
+
+fn test_goal_repository_identity_rejects_local_push_instead_of_rewrite() {
+	fixture := new_goal_repository_identity_fixture('https://github.com/veasel-labs/veasel.git') or {
+		panic(err)
+	}
+	defer { os.rmdir_all(os.dir(fixture.root)) or {} }
+	_ = run_workspace_git_command_output(fixture.root, ['config', '--add',
+		'url.https://attacker.invalid/other/repo.git.pushInsteadOf',
+		'https://github.com/veasel-labs/veasel.git'], 1024) or { panic(err) }
+	if _ := verify_goal_repository_checkout(GoalRepository{
+		owner: 'veasel-labs'
+		name:  'veasel'
+		path:  fixture.root
+	}, [goal_identity_fixture_task(fixture.commit)]) {
+		assert false, 'accepted a pushInsteadOf rewrite to a different repository'
+	}
+}
+
+fn test_goal_git_runner_ignores_inherited_git_environment_overrides() {
+	fixture := new_goal_repository_identity_fixture('https://github.com/veasel-labs/veasel.git') or {
+		panic(err)
+	}
+	defer { os.rmdir_all(os.dir(fixture.root)) or {} }
+	names := ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0',
+		'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_SSH_COMMAND']
+	mut previous := map[string]string{}
+	mut previously_set := map[string]bool{}
+	for name in names {
+		if value := os.getenv_opt(name) {
+			previously_set[name] = true
+			previous[name] = value
+		}
+	}
+	defer {
+		for name in names {
+			if previously_set[name] {
+				os.setenv(name, previous[name], true)
+			} else {
+				os.unsetenv(name)
+			}
+		}
+	}
+	os.setenv('GIT_DIR', fixture.outside, true)
+	os.setenv('GIT_WORK_TREE', fixture.outside, true)
+	os.setenv('GIT_CONFIG_COUNT', '1', true)
+	os.setenv('GIT_CONFIG_KEY_0', 'url.https://attacker.invalid/other/repo.git.insteadOf', true)
+	os.setenv('GIT_CONFIG_VALUE_0', 'https://github.com/veasel-labs/veasel.git', true)
+	os.setenv('GIT_CONFIG_GLOBAL', fixture.outside, true)
+	os.setenv('GIT_CONFIG_SYSTEM', fixture.outside, true)
+	os.setenv('GIT_SSH_COMMAND', 'touch /tmp/veasel-goal-preflight-ssh-was-run', true)
+	verified := verify_goal_repository_checkout(GoalRepository{
+		owner: 'veasel-labs'
+		name:  'veasel'
+		path:  fixture.root
+	}, [goal_identity_fixture_task(fixture.commit)]) or { panic(err) }
+	assert verified.path == os.real_path(fixture.root)
+}
+
 fn test_goal_repository_identity_requires_exact_full_commit_object() {
 	fixture := new_goal_repository_identity_fixture('ssh://git@github.com/veasel-labs/veasel.git') or {
 		panic(err)

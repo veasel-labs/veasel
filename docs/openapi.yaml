@@ -68,17 +68,22 @@ paths:
         GitHub origin fetch and push owner/name, exact full base commit IDs,
         and task paths against pinned-tree and working-tree symlink escapes.
         It makes no provider requests, does not access the network, and does
-        not create worktrees or change repository state. Results contain only
+        not create worktrees or change repository state. The response is a
+        point-in-time diagnostic, never durable dispatch authorization. An
+        executor must revalidate immediately before creating a task worktree
+        and verify the resulting worktree root before passing it to a worker.
+        Results contain only
         owner/name, counts, and bounded diagnostics; local paths, remotes, and
         credentials are never returned. It rejects elapsed deadlines, more
         than 128 attempts, more than 128 provider turns, or more than 86400
         wall seconds. It validates checkouts only: runner/verifier identifiers
         are not resolved, and a successful result does not authorize dispatch.
-        The host must start the server without Git environment overrides,
-        including GIT_CONFIG_COUNT, GIT_CONFIG_PARAMETERS, GIT_DIR, or
-        GIT_WORK_TREE. Desktop hosts that inject GIT_CONFIG_COUNT should
-        remove that variable in the server launch environment; the endpoint
-        never changes the parent process environment. Verification is bounded
+        Git subprocesses receive an isolated environment that ignores
+        inherited Git directory and configuration overrides, disables system
+        and global Git configuration, and disallows SSH and non-file transport.
+        Both raw and effective origin fetch/push URLs must identify the
+        authorized GitHub repository. The endpoint never changes the parent
+        process environment. Verification is bounded
         to 64 tasks, 64 paths per task, 128 total task paths, and 512 path
         components per goal.
         A 200 response may have checkouts_validated=false.
@@ -2558,7 +2563,7 @@ components:
             properties:
               code:
                 type: string
-                enum: [manifest_invalid, deadline_elapsed, budget_limit, verification_limit, git_environment_unsafe, repository_has_no_tasks, repository_not_ready]
+                enum: [manifest_invalid, deadline_elapsed, budget_limit, verification_limit, repository_has_no_tasks, repository_not_ready]
               message: { type: string, maxLength: 256 }
               repository: { type: string, maxLength: 201 }
     Health:

@@ -108,13 +108,6 @@ fn inspect_goal_checkouts(goal GoalAdmission) GoalCheckoutInspection {
 			}
 		}
 	}
-	verify_goal_git_environment() or {
-		inspection.report.diagnostics << GoalPreflightDiagnostic{
-			code:    'git_environment_unsafe'
-			message: err.msg()
-		}
-		return inspection
-	}
 	for repository in goal.authorized_repositories {
 		mut tasks := []GoalTask{}
 		for task in goal.tasks {
@@ -185,7 +178,7 @@ fn verify_goal_repository_checkout(repository GoalRepository, tasks []GoalTask) 
 	if repository.path.trim_right(os.path_separator) != canonical_path.trim_right(os.path_separator) {
 		return error('Authorized repository path must be canonical and must not traverse symlinks')
 	}
-	root_output := run_workspace_git_command_output(canonical_path,
+	root_output := run_goal_git_command_output(canonical_path,
 		['--no-replace-objects', 'rev-parse', '--show-toplevel'], max_goal_git_output_bytes) or {
 		return error('Authorized repository path is not a readable Git checkout')
 	}
@@ -197,18 +190,7 @@ fn verify_goal_repository_checkout(repository GoalRepository, tasks []GoalTask) 
 	if git_root != canonical_path {
 		return error('Authorized repository path must name the Git checkout root')
 	}
-	fetch_urls := run_workspace_git_command_output(canonical_path,
-		['--no-replace-objects', 'remote', 'get-url', '--all', 'origin'],
-		max_goal_git_output_bytes) or {
-		return error('Authorized repository must have a GitHub origin remote')
-	}
-	push_urls := run_workspace_git_command_output(canonical_path,
-		['--no-replace-objects', 'remote', 'get-url', '--push', '--all', 'origin'],
-		max_goal_git_output_bytes) or {
-		return error('Authorized repository must have a GitHub origin push remote')
-	}
-	verify_goal_remote_urls(fetch_urls, repository)!
-	verify_goal_remote_urls(push_urls, repository)!
+	verify_goal_remote_identity(canonical_path, repository)!
 	mut checked_commits := map[string]bool{}
 	for task in tasks {
 		if task.paths.len == 0 || task.paths.len > max_goal_paths_per_task_to_verify {
@@ -218,7 +200,7 @@ fn verify_goal_repository_checkout(repository GoalRepository, tasks []GoalTask) 
 			return error('Goal task must pin a full Git commit ID')
 		}
 		if !checked_commits[task.base_sha] {
-			resolved := run_workspace_git_command_output(canonical_path,
+			resolved := run_goal_git_command_output(canonical_path,
 				['--no-replace-objects', 'rev-parse', '--verify', '--end-of-options',
 					'${task.base_sha}^{commit}'],
 				max_goal_git_output_bytes) or {
@@ -240,41 +222,100 @@ fn verify_goal_repository_checkout(repository GoalRepository, tasks []GoalTask) 
 	}
 }
 
-fn verify_goal_git_environment() ! {
-	for name in [
-		'GIT_DIR',
-		'GIT_WORK_TREE',
-		'GIT_COMMON_DIR',
-		'GIT_INDEX_FILE',
-		'GIT_OBJECT_DIRECTORY',
-		'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-		'GIT_CONFIG',
-		'GIT_CONFIG_COUNT',
-		'GIT_CONFIG_PARAMETERS',
-		'GIT_CONFIG_SYSTEM',
-		'GIT_CONFIG_GLOBAL',
-		'GIT_REPLACE_REF_BASE',
-		'GIT_SHALLOW_FILE',
-		'GIT_CEILING_DIRECTORIES',
-		'GIT_DISCOVERY_ACROSS_FILESYSTEM',
-		'GIT_NAMESPACE',
-		'GIT_OPTIONAL_LOCKS',
-		'GIT_TRACE',
-		'GIT_TRACE_SETUP',
-		'GIT_TRACE_PERFORMANCE',
-		'GIT_TRACE_PACKET',
-		'GIT_TRACE_PACK_ACCESS',
-		'GIT_TRACE_CURL',
-		'GIT_TRACE_CURL_NO_DATA',
-		'GIT_TRACE_REDACT',
-		'GIT_TRACE2',
-		'GIT_TRACE2_EVENT',
-		'GIT_TRACE2_PERF',
-	] {
-		if os.getenv(name).len > 0 {
-			return error('Git environment overrides are not allowed during goal checkout verification')
+fn verify_goal_remote_identity(root string, repository GoalRepository) ! {
+	raw_fetch_urls := run_goal_git_command_output(root,
+		['--no-replace-objects', 'config', '--local', '--no-includes', '--get-all', 'remote.origin.url'], max_goal_git_output_bytes) or {
+		return error('Authorized repository must have a GitHub origin remote')
+	}
+	raw_push_urls := run_goal_git_command_output(root,
+		['--no-replace-objects', 'config', '--local', '--no-includes', '--get-all',
+			'remote.origin.pushurl'], max_goal_git_output_bytes) or { raw_fetch_urls }
+	verify_goal_remote_urls(raw_fetch_urls, repository)!
+	verify_goal_remote_urls(raw_push_urls, repository)!
+	effective_fetch_urls := run_goal_git_command_output(root,
+		['--no-replace-objects', 'remote', 'get-url', '--all', 'origin'],
+		max_goal_git_output_bytes) or {
+		return error('Authorized repository must have a GitHub origin remote')
+	}
+	effective_push_urls := run_goal_git_command_output(root,
+		['--no-replace-objects', 'remote', 'get-url', '--push', '--all', 'origin'],
+		max_goal_git_output_bytes) or {
+		return error('Authorized repository must have a GitHub origin push remote')
+	}
+	verify_goal_remote_urls(effective_fetch_urls, repository)!
+	verify_goal_remote_urls(effective_push_urls, repository)!
+}
+
+fn run_goal_git_command_output(checkout string, args []string, max_output_bytes int) !string {
+	git := os.find_abs_path_of_executable('git') or {
+		return error('git executable is not available')
+	}
+	mut environment := workspace_git_untrusted_env()
+	environment['GIT_SSH_COMMAND'] = 'false'
+	environment['GIT_ALLOW_PROTOCOL'] = 'file'
+	mut process := os.new_process(git)
+	process.set_args(args)
+	process.set_work_folder(checkout)
+	process.set_environment(environment)
+	process.set_redirect_stdio()
+	process.run()
+	if process.status != .running {
+		process.close()
+		return error('unable to start local Git metadata check')
+	}
+	started := time.now()
+	mut stdout := []u8{cap: 4096}
+	mut stderr_len := 0
+	for process.is_alive() {
+		if process.is_pending(.stdout) {
+			chunk := process.stdout_read()
+			if stdout.len + chunk.len > max_output_bytes {
+				process.signal_kill()
+				process.wait()
+				process.close()
+				return error('local Git metadata output exceeds its size limit')
+			}
+			stdout << chunk.bytes()
+		}
+		if process.is_pending(.stderr) {
+			stderr_len += process.stderr_read().len
+			if stdout.len + stderr_len > max_output_bytes {
+				process.signal_kill()
+				process.wait()
+				process.close()
+				return error('local Git metadata output exceeds its size limit')
+			}
+		}
+		if time.since(started) > workspace_git_command_timeout {
+			process.signal_kill()
+			process.wait()
+			process.close()
+			return error('local Git metadata check timed out')
+		}
+		time.sleep(10 * time.millisecond)
+	}
+	for process.is_pending(.stdout) {
+		chunk := process.stdout_read()
+		if stdout.len + chunk.len > max_output_bytes {
+			process.close()
+			return error('local Git metadata output exceeds its size limit')
+		}
+		stdout << chunk.bytes()
+	}
+	for process.is_pending(.stderr) {
+		stderr_len += process.stderr_read().len
+		if stdout.len + stderr_len > max_output_bytes {
+			process.close()
+			return error('local Git metadata output exceeds its size limit')
 		}
 	}
+	process.wait()
+	code := process.code
+	process.close()
+	if code != 0 {
+		return error('local Git metadata check failed')
+	}
+	return stdout.bytestr()
 }
 
 fn verify_goal_remote_urls(url_output string, repository GoalRepository) ! {
@@ -324,7 +365,7 @@ fn verify_goal_task_scope(root string, commit string, path string) ! {
 	mut prefix := ''
 	for index, segment in segments {
 		prefix = if prefix.len == 0 { segment } else { '${prefix}/${segment}' }
-		entry_output := run_workspace_git_command_output(root,
+		entry_output := run_goal_git_command_output(root,
 			['--no-replace-objects', 'ls-tree', '-z', commit, '--', ':(literal)${prefix}'],
 			max_goal_git_output_bytes) or {
 			return error('Unable to inspect goal task path in its pinned commit')

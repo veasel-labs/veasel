@@ -5,14 +5,14 @@ Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
 This is an append-only record of dated checkpoints. The opening inventory is
 historical (**2026-11-25 00:57 UTC**); the latest live-state checkpoint is
-**2026-11-25 18:17 UTC** below. Method: GitHub issue/PR queries, default-branch
+**2026-11-25 18:21 UTC** below. Method: GitHub issue/PR queries, default-branch
 SHAs, latest exact-head CI, release metadata, and host acceptance artifacts.
 
-## Latest live state — 2026-11-25 18:17 UTC
+## Latest live state — 2026-11-25 18:21 UTC
 
 | Repository | main SHA | Open issues | Open PRs | Current evidence |
 | --- | --- | ---: | ---: | --- |
-| veasel-labs/veasel | `9d59d61697730e95b63c8fbf7adaef038e79935d` | 5 | 7 | #828 palette route fix merged; exact-main CI `45670879316` is pending; #829–831 and #832 remain open. |
+| veasel-labs/veasel | `9d59d61697730e95b63c8fbf7adaef038e79935d` | 5 | 8 | #828 palette route fix merged; #829–833 and older #823/#826/#827 remain open; exact-main CI `45670879316` is in progress. |
 | veasel-labs/agent-toolkit | `16eb93b22e2d1df44fbfcd88e3662321163c1743` | 0 | 0 | Marketplace governance issue #10 resolved; community plugin entries still await independent review. |
 | veasel-labs/website | `4a708170ace9612171bbc8168d47574786a544c1` | 0 | 0 | Release metadata updated; build/deploy workflows green; live `/downloads/` shows v0.103.3-next.0 and unsigned status. |
 | veasel-labs/homebrew-tap | `37ad7cfe0bb2b3d680d562ebca4108ef7bb31159` | 0 | 0 | Release cask merged; post-merge CI green. |
@@ -20,7 +20,7 @@ SHAs, latest exact-head CI, release metadata, and host acceptance artifacts.
 | veasel-labs/.github | `6c20f546bdf7768d7563a1f8e7f324205dea0eac` | 0 | 0 | No pending governance changes. |
 | ulises-jeremias/agent-toolkit | `d3a8586362f684ca24f423384c65f7f753c6e3f2` | 0 | 1 | Release 1.51.0 PR #1854 (`f802ae5`): generated-bundle check passes; core CI is queued and some ancillary checks are pending. Live agent-toolkit.io promotes portable capabilities across agents. |
 | ulises-jeremias/my-ai-workspace | `220d4750e9985248eddf7667671c32c60177cf5a` | 0 | 0 | Goal-loop handoff #14 and CI-reference correction #15 merged; post-merge CI is running. |
-| **Total** | | **5** | **8** | Open work remains in Veasel and the Toolkit 1.51.0 release-prep PR. |
+| **Total** | | **5** | **9** | Open work remains in Veasel and the Toolkit 1.51.0 release-prep PR. |
 
 The immutable Veasel release `v0.103.3-next.0` and its consumers are now
 synchronized. The host's packaged shared-listener startup passed in both
@@ -822,3 +822,8 @@ HUMAN BLOCKERS if certificates/accounts are absent — never claim signed.
   The log does not establish whether runner timing or product state caused it;
   rerun exact-head CI before changing product behavior. Main CI run
   `45670879316` is still pending; PR #832 CI `45670205816` remains in progress.
+
+- 2026-11-25 18:21 UTC: ledger refresh PR #833 is open against Veasel main at
+  head `21f078afa84d749bb07afaf72fb227f320ba699a`; its required checks have
+  started and are pending. The inventory now includes this PR, for eight open
+  Veasel PRs and nine open PRs across the tracked repositories.

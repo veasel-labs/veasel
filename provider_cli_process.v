@@ -50,3 +50,10 @@ fn cli_terminate_process(mut process os.Process) {
 		process.close()
 	}
 }
+
+// The native agent may log warnings to its separate pipe before writing a
+// protocol response. Leave the bytes out of the journal and keep draining so
+// that a full stderr pipe cannot block protocol and cancellation progress.
+fn discard_cli_stderr(mut process os.Process) {
+	_ = process.stderr_read()
+}

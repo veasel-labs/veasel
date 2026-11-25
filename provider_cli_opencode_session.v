@@ -211,6 +211,7 @@ pub fn run_acp_cli_turn_cancellable_with_env(command string, spawn_args []string
 		if time.since(started).milliseconds() > timeout {
 			return error('installed CLI turn timed out after ${timeout}ms')
 		}
+		discard_cli_stderr(mut process)
 		if process.is_pending(.stdout) {
 			buffer += process.stdout_read()
 			for {

@@ -159,6 +159,7 @@ pub fn run_claude_cli_turn_observed(command string, cwd string, permission_mode 
 		if time.since(started).milliseconds() > timeout {
 			return error('installed CLI turn timed out after ${timeout}ms')
 		}
+		discard_cli_stderr(mut process)
 		if process.is_pending(.stdout) {
 			buffer += process.stdout_read()
 			for {

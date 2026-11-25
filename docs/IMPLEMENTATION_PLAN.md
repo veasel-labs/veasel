@@ -82,11 +82,12 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   separate isolated profile also opened the World with real temporary sessions.
   Screenshots are retained under `/home/ulisesjcf/.cache/veasel-validation/`.
 - The packaged World currently projects the real Focus session list and
-  destinations. PR #836 adds existing memory, detected-tool, and job sources,
-  makes project job state explicitly unknown when that source is unavailable,
-  and labels retained data after a backend disconnect. It also replaces fixed
-  “ready” claims with destination descriptions and improves the camera framing
-  for tall compact windows while keeping Fit World as the complete overview.
+  destinations. PR #836 projects data from the existing memory, tools, and jobs
+  APIs, makes project job state explicitly unknown when that source is
+  unavailable, and labels retained data after a backend disconnect. It also
+  replaces fixed “ready” claims with destination descriptions and improves
+  camera framing for tall compact windows while keeping Fit World as the
+  complete overview.
   This is an open PR, not a released behavior; its regression suite and CI must
   pass before the change is considered shipped.
 - The World remains optional and is not evidence of daily-driver completion.

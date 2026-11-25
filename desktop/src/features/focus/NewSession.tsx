@@ -147,7 +147,24 @@ export function NewSession({
       .finally(() => setLinking(false));
   };
 
-  const canStart = Boolean(bridge && activeProject && activeProvider && task.trim()) && !starting;
+  const startBlocker = starting
+    ? 'Starting session…'
+    : !bridge
+      ? 'Veasel backend is not connected.'
+      : !activeProject
+        ? project
+          ? 'The selected repository is unavailable. Choose an available project.'
+          : 'Choose a repository folder to start.'
+        : !activeProvider
+          ? providersLoading
+            ? 'Checking installed agents…'
+            : providers.length > 0
+              ? 'Sign in to an agent to start.'
+              : 'Install a supported coding agent to start.'
+          : !task.trim()
+            ? 'Enter a task to start.'
+            : null;
+  const canStart = startBlocker === null;
 
   return (
     <form className={styles.start} onSubmit={(event) => void submit(event)} aria-labelledby="focus-start-title">
@@ -164,7 +181,7 @@ export function NewSession({
         rows={3}
         value={task}
         ref={taskRef}
-        placeholder="Fix the failing test in src/math.test.js"
+        placeholder="Describe the task you want Veasel to work on…"
         onChange={(event) => setTask(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) void submit(event);
@@ -316,15 +333,11 @@ export function NewSession({
         <span
           id="focus-start-hint"
           className={styles.startHint}
-          data-danger={(!activeProvider && !providersLoading) || undefined}
+          data-danger={!bridge || (!activeProvider && !providersLoading) || undefined}
+          role="status"
+          aria-live="polite"
         >
-          {providersLoading
-            ? 'Checking agents…'
-            : activeProvider
-              ? 'Ctrl + Enter'
-              : providers.length > 0
-                ? 'Sign in to an agent to start'
-                : 'Install a supported coding agent to start'}
+          {startBlocker ?? 'Ctrl + Enter'}
         </span>
       </div>
       {permissionGuard.dialog}

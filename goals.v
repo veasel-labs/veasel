@@ -63,7 +63,7 @@ enum GoalAdmissionResult {
 fn migrate_goal_admissions(mut db sqlite.DB) ! {
 	db.begin()!
 	defer { db.rollback() or {} }
-	db.exec('CREATE TABLE goal_admissions (
+	db.exec('CREATE TABLE IF NOT EXISTS goal_admissions (
 		id TEXT PRIMARY KEY NOT NULL,
 		title TEXT NOT NULL,
 		manifest TEXT NOT NULL,

@@ -69,3 +69,14 @@ fn example_goal_admission() GoalAdmission {
 		}]
 	}
 }
+
+fn test_headless_goals_builds_only_scoped_requests() {
+	show := parse_headless_goal_args(['show', 'release.1']) or { panic(err) }
+	assert show.method == .get
+	assert show.path == '/v1/goals/release.1'
+	admit := parse_headless_goal_args(['admit', 'goal.json']) or { panic(err) }
+	assert admit.method == .post
+	assert admit.file == 'goal.json'
+	parse_headless_goal_args(['show', '../sessions']) or { return }
+	assert false, 'accepted goal id that can change the API path'
+}

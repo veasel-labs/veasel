@@ -66,8 +66,11 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Add Veasel-specific, authenticated admission, listing and manifest replay for portable goals.
   Admission records preserve the declared scope and survive restart.
 - [ ] Verify local repository identity, canonical roots and base commits before
-  any dispatch. Resolve runner and verifier IDs against registered capabilities
-  and enforce policy ceilings and deadlines in V.
+  any dispatch. PR #830 implements an authenticated read-only preflight for
+  checkout identity and scoped paths; it remains a point-in-time diagnostic
+  until merged and must be revalidated by any future dispatcher. Resolve
+  runner and verifier IDs against registered capabilities and enforce policy
+  ceilings and deadlines in V.
 - [ ] Store dependency and attempt transitions and link each claimed attempt to
   the existing operation lifecycle. Recover interrupted attempts without
   replaying uncertain effects.

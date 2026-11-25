@@ -431,6 +431,7 @@ fn test_every_declared_route_rejects_unauthenticated_requests_and_runs_no_handle
 	assert read_token_file(api_token_path(data)) or { panic(err) } == token
 
 	assert 'POST /v1/goals' in routes
+	assert 'GET /v1/goals/canary/preflight' in routes
 	assert 'GET /v1/goals/canary' in routes
 	assert 'GET /v1/goals/canary/tasks' in routes
 	admission_rows := store.admitted_goals() or { panic(err) }
@@ -660,7 +661,62 @@ fn test_canary_handler_body_never_executes_without_valid_credentials() {
 
 fn auth_test_goal_round_trip(port int, token string) {
 	headers := ['Authorization: Bearer ${token}', 'Content-Type: application/json']
-	body := '{"schema_version":1,"id":"http-goal","title":"HTTP goal","authorized_repositories":[{"owner":"veasel-labs","name":"veasel","path":"/work/veasel"}],"acceptance_criteria":[{"id":"test","description":"Verify the manifest","verification":"Review"}],"deadline":"2027-01-01T00:00:00Z","budget":{"max_attempts":1,"wall_seconds":60,"provider_turns":1},"delivery_mode":"report","tasks":[{"id":"z-final","title":"Final","repository":"veasel-labs/veasel","base_sha":"${'f'.repeat(40)}","paths":["src"],"depends_on":["a-start"],"recipe":"feature","runner":"local-v","verifier":"review"},{"id":"b-independent","title":"Independent","repository":"veasel-labs/veasel","base_sha":"${'f'.repeat(40)}","paths":["docs"],"recipe":"research","runner":"local-v","verifier":"review"},{"id":"a-start","title":"Start","repository":"veasel-labs/veasel","base_sha":"${'f'.repeat(40)}","paths":["src"],"recipe":"feature","runner":"local-v","verifier":"review"}]}'
+	fixture := new_auth_goal_repository_fixture() or {
+		panic(err)
+	}
+	defer { os.rmdir_all(os.dir(fixture.root)) or {} }
+	goal := GoalAdmission{
+		schema_version:          1
+		id:                      'http-goal'
+		title:                   'HTTP goal'
+		authorized_repositories: [GoalRepository{
+			owner: 'veasel-labs'
+			name:  'veasel'
+			path:  fixture.root
+		}]
+		acceptance_criteria:     [GoalCriterion{
+			id:           'test'
+			description:  'Verify the manifest'
+			verification: 'Review'
+		}]
+		deadline:                '2027-01-01T00:00:00Z'
+		budget:                  GoalBudget{ max_attempts: 1, wall_seconds: 60, provider_turns: 1 }
+		delivery_mode:           'report'
+		tasks:                   [
+			GoalTask{
+				id:         'z-final'
+				title:      'Final'
+				repository: 'veasel-labs/veasel'
+				base_sha:   fixture.commit
+				paths:      ['docs']
+				depends_on: ['a-start']
+				recipe:     'feature'
+				runner:     'local-v'
+				verifier:   'review'
+			},
+			GoalTask{
+				id:         'b-independent'
+				title:      'Independent'
+				repository: 'veasel-labs/veasel'
+				base_sha:   fixture.commit
+				paths:      ['docs']
+				recipe:     'research'
+				runner:     'local-v'
+				verifier:   'review'
+			},
+			GoalTask{
+				id:         'a-start'
+				title:      'Start'
+				repository: 'veasel-labs/veasel'
+				base_sha:   fixture.commit
+				paths:      ['docs']
+				recipe:     'feature'
+				runner:     'local-v'
+				verifier:   'review'
+			},
+		]
+	}
+	body := json2.encode(goal, escape_unicode: true, time_as_unix: true)
 	for expected in [' 201 ', ' 200 '] {
 		request := auth_test_request('POST', '/v1/goals', [...headers, 'Content-Length: ${body.len}'])
 		response := auth_test_raw(port, request + body)
@@ -731,4 +787,53 @@ fn auth_test_goal_round_trip(port int, token string) {
 		panic(err)
 	}
 	assert large_projection.tasks.len == 300
+	assert auth_test_status(auth_test_raw(port,
+		auth_test_request('GET', '/v1/goals/missing/preflight', headers))).contains(' 404 ')
+	status_before := run_workspace_git_command_output(fixture.root,
+		['status', '--porcelain=v1', '-z', '--untracked-files=all'], 1024) or { panic(err) }
+	worktrees_before := run_workspace_git_command_output(fixture.root, ['worktree', 'list',
+		'--porcelain'],
+		4096) or { panic(err) }
+	preflight_request := auth_test_request('GET', '/v1/goals/http-goal/preflight', headers)
+	preflight_response := auth_test_raw(port, preflight_request)
+	assert auth_test_status(preflight_response).contains(' 200 '), auth_test_status(preflight_response)
+	assert preflight_response.contains('"checkouts_validated":true')
+	assert !preflight_response.contains('"ready"')
+	assert !preflight_response.contains('execution_ready')
+	assert preflight_response.contains('"tasks_checked":3')
+	assert !preflight_response.contains(fixture.root)
+	assert !preflight_response.contains(fixture.commit)
+	assert !preflight_response.contains('github.com')
+	assert (run_workspace_git_command_output(fixture.root,
+		['status', '--porcelain=v1', '-z', '--untracked-files=all'], 1024) or { panic(err) }) == status_before
+	assert (run_workspace_git_command_output(fixture.root, ['worktree', 'list', '--porcelain'],
+		4096) or { panic(err) }) == worktrees_before
+}
+
+struct AuthGoalRepositoryFixture {
+	root   string
+	commit string
+}
+
+fn new_auth_goal_repository_fixture() !AuthGoalRepositoryFixture {
+	parent := os.join_path(os.temp_dir(), 'veasel-auth-goal-${uuid.new_v4().str()}')
+	root := os.join_path(parent, 'checkout')
+	hooks := os.join_path(parent, 'empty-hooks')
+	os.mkdir_all(os.join_path(root, 'docs'))!
+	os.mkdir_all(hooks)!
+	os.write_file(os.join_path(root, 'docs', 'README.md'), 'fixture')!
+	_ = run_workspace_git_command_output(root, ['init', '--quiet', '-b', 'main'], 1024)!
+	_ = run_workspace_git_command_output(root, ['config', 'user.name', 'Veasel Fixture'], 1024)!
+	_ = run_workspace_git_command_output(root, ['config', 'user.email', 'fixture@example.invalid'], 1024)!
+	_ = run_workspace_git_command_output(root, ['config', 'core.hooksPath', hooks], 1024)!
+	_ = run_workspace_git_command_output(root, ['remote', 'add', 'origin',
+		'https://github.com/veasel-labs/veasel.git'], 1024)!
+	_ = run_workspace_git_command_output(root, ['add', '--', 'docs/README.md'], 1024)!
+	_ = run_workspace_git_command_output(root, ['-c', 'commit.gpgsign=false', 'commit', '--no-gpg-sign',
+		'-m', 'fixture'], 1024)!
+	commit := run_workspace_git_command_output(root, ['rev-parse', '--verify', 'HEAD'], 1024)!
+	return AuthGoalRepositoryFixture{
+		root:   os.real_path(root)
+		commit: commit.trim_space()
+	}
 }

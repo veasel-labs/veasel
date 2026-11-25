@@ -327,6 +327,9 @@ fn command_help(command string) string {
 		'tui' {
 			return 'Usage: veasel tui\n\nStart or reuse the local backend, then open the terminal UI. By default, a backend started here exposes durable installed-CLI approval requests to the TUI; requests still require an explicit per-tool decision. An explicitly configured VEASEL_CLI_INTERACTIVE_APPROVALS value is preserved. A separately started backend must have VEASEL_CLI_INTERACTIVE_APPROVALS=1.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR, VEASEL_CLI_INTERACTIVE_APPROVALS'
 		}
+		'goals' {
+			return headless_goals_help
+		}
 		'mcp' {
 			return 'Usage: veasel mcp <list|add|enable|disable|remove> [options]\n\nManage configured MCP servers through the local API (user or project scope).\nRun `veasel mcp --help` for full syntax. Trust and per-call approval stay in the TUI.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR'
 		}
@@ -354,7 +357,7 @@ fn main() {
 		default_port
 	}
 	if command in ['--help', '-h', 'help'] {
-		println('Veasel Code ${product_version}\n\nCommands:\n  veasel         Start or reuse the local V backend, then open the TUI\n  serve          Start the local V backend only\n  tui            Start the TUI, starting the backend if needed\n  run            Run a task non-interactively in a persisted session\n  mcp            List or manage configured MCP servers (user/project scope)\n  plugins        Enable or disable Agent Plugin skill/MCP components\n  config         Show or update local model provider settings\n  worktrees      List, add, remove, lock, unlock, or prune git worktrees\n  skills         List discovered standalone SKILL.md packages\n  token          Show the API token file path or rotate the API token\n\nOptions:\n  --help, -h       Show this help\n  --version, -v    Show the product version\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR\n\nExamples:\n  veasel\n  veasel serve\n  veasel tui\n  veasel run --prompt "Explain this codebase"\n  veasel mcp list\n  veasel mcp add stdio echo-tools true\n  veasel plugins components list\n  veasel plugins components disable demo mcp local\n  veasel plugins links list\n  veasel config model get\n  veasel config model set --provider meta --max-output-tokens 8192\n  veasel worktrees list\n  veasel skills list\n  veasel --version')
+		println('Veasel Code ${product_version}\n\nCommands:\n  veasel         Start or reuse the local V backend, then open the TUI\n  serve          Start the local V backend only\n  tui            Start the TUI, starting the backend if needed\n  run            Run a task non-interactively in a persisted session\n  mcp            List or manage configured MCP servers (user/project scope)\n  plugins        Enable or disable Agent Plugin skill/MCP components\n  config         Show or update local model provider settings\n  worktrees      List, add, remove, lock, unlock, or prune git worktrees\n  skills         List discovered standalone SKILL.md packages\n  goals          Admit, list or show portable goals\n  token          Show the API token file path or rotate the API token\n\nOptions:\n  --help, -h       Show this help\n  --version, -v    Show the product version\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR\n\nExamples:\n  veasel\n  veasel serve\n  veasel tui\n  veasel run --prompt "Explain this codebase"\n  veasel mcp list\n  veasel mcp add stdio echo-tools true\n  veasel plugins components list\n  veasel plugins components disable demo mcp local\n  veasel plugins links list\n  veasel config model get\n  veasel config model set --provider meta --max-output-tokens 8192\n  veasel worktrees list\n  veasel skills list\n  veasel --version')
 		return
 	}
 	if command in ['--version', '-v', 'version'] {
@@ -373,6 +376,9 @@ fn main() {
 		}
 		'token' {
 			execute_token_command(port, data_dir, args[1..])
+		}
+		'goals' {
+			execute_headless_goal_command(port, args[1..])
 		}
 		'run' {
 			execute_headless_command(port, args[1..])

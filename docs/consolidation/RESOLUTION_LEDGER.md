@@ -929,3 +929,12 @@ HUMAN BLOCKERS if certificates/accounts are absent — never claim signed.
   its exact-SHA macOS cask job passes. Local push configuration is now
   overridden to `current` in the Homebrew and AUR worktrees; use explicit
   branch refspecs for future pushes.
+
+- 2026-11-25 20:24 UTC: Homebrew exact-main CI run `45693669062` remains queued
+  for commit `4b885ff33b68e014551744fbd137c792601ce27a`. AUR package PR #81 is
+  open as a draft at `f4829444fac8b351f0c0641b195764dde0151619`; it adds the
+  optional Desktop package and keeps first registration behind the
+  `publish-approved` workflow. Its Arch Package CI run `45694541688` is queued.
+  The exact hashes and local Arch build/install/uninstall acceptance are in
+  the PR body. No AUR publisher workflow, AUR RPC write, or first Desktop
+  package publication has occurred.

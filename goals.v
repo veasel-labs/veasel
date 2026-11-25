@@ -215,12 +215,17 @@ fn (mut store Store) admit_goal(goal GoalAdmission) !GoalAdmissionResult {
 	store.mu.lock()
 	defer { store.mu.unlock() }
 	manifest := json2.encode(goal, escape_unicode: true, time_as_unix: true)
+	store.db.begin()!
+	defer { store.db.rollback() or {} }
 	rows := store.db.exec_param('SELECT manifest FROM goal_admissions WHERE id = ?', goal.id)!
 	if rows.len != 0 {
+		store.db.commit()!
 		return if rows[0].val(0) == manifest { .replayed } else { .conflict }
 	}
 	store.db.exec_param_many('INSERT INTO goal_admissions (id, title, manifest) VALUES (?, ?, ?)',
 		[goal.id, goal.title, manifest])!
+	seed_goal_task_state(mut store.db, goal)!
+	store.db.commit()!
 	return .created
 }
 

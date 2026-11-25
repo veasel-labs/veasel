@@ -63,13 +63,13 @@ paths:
     get:
       operationId: getAdmittedGoalTasks
       description: >-
-        Returns an immutable projection of an admitted goal's task graph, with
-        tasks in a stable Kahn traversal. Initially ready tasks and children
-        released by each completed task are enqueued in manifest order. Direct
-        dependency lists retain manifest order. Goal admissions are limited to
-        a 1 MiB request body, which bounds this projection. The goal status is
-        admitted and each task status is pending; this endpoint does not
-        schedule, execute, or attach work.
+        Returns an authenticated projection of an admitted goal's task graph,
+        with tasks in a stable Kahn traversal. Initially ready tasks and
+        children released by each completed task are enqueued in manifest
+        order. Direct dependency lists retain manifest order. Task status and
+        attempt history come from durable SQLite state. A running attempt whose
+        owner process has exited is reported as uncertain and is never replayed.
+        This endpoint does not schedule, execute, or attach work.
       parameters:
         - in: path
           name: id
@@ -77,7 +77,7 @@ paths:
           schema: { type: string }
       responses:
         '200':
-          description: Read-only task graph projection.
+          description: Read-only task graph and durable execution state projection.
           content:
             application/json:
               schema:
@@ -2549,7 +2549,10 @@ components:
           type: object
           required: [max_attempts, wall_seconds, provider_turns]
           properties:
-            max_attempts: { type: integer, minimum: 1 }
+            max_attempts:
+              type: integer
+              minimum: 1
+              description: Maximum total task attempts across the goal, including retries.
             wall_seconds: { type: integer, minimum: 1 }
             provider_turns: { type: integer, minimum: 1 }
         delivery_mode: { enum: [report, draft] }
@@ -2581,7 +2584,7 @@ components:
             $ref: '#/components/schemas/GoalTaskProjectionItem'
     GoalTaskProjectionItem:
       type: object
-      required: [id, title, repository, base_sha, paths, depends_on, recipe, runner, verifier, status]
+      required: [id, title, repository, base_sha, paths, depends_on, recipe, runner, verifier, status, attempt_count, attempts]
       properties:
         id: { type: string }
         title: { type: string }
@@ -2592,7 +2595,18 @@ components:
         recipe: { type: string }
         runner: { type: string }
         verifier: { type: string }
-        status: { const: pending }
+        status: { enum: [pending, running, succeeded, failed, uncertain] }
+        attempt_count: { type: integer, minimum: 0 }
+        attempts:
+          type: array
+          items:
+            type: object
+            required: [attempt, status, started_at, ended_at]
+            properties:
+              attempt: { type: integer, minimum: 1 }
+              status: { enum: [running, succeeded, failed, uncertain] }
+              started_at: { type: string }
+              ended_at: { type: string }
     GoalPreflightReport:
       type: object
       required: [goal_id, checkouts_validated, repositories, diagnostics]

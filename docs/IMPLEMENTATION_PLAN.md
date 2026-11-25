@@ -71,15 +71,21 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   until merged and must be revalidated by any future dispatcher. Resolve
   runner and verifier IDs against registered capabilities and enforce policy
   ceilings and deadlines in V.
-- [ ] Store dependency and attempt transitions and link each claimed attempt to
-  the existing operation lifecycle. Recover interrupted attempts without
-  replaying uncertain effects.
+- [x] Persist per-task status and attempt history, initialize it idempotently,
+  and atomically claim only dependency-ready tasks within the goal-wide attempt
+  budget (all tasks and retries count). Classify claims whose owner process
+  has exited as uncertain and never replay them; opening another Store does
+  not interrupt a live owner.
+  This state-only groundwork does not dispatch work or link
+  attempts to session operations.
+- [ ] Link claimed attempts to the existing operation lifecycle before adding
+  dispatch. Runner and verifier resolution, dispatch and UI remain separate.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run
   progressive concurrency acceptance with live agents and independent review.
-- [ ] Integrate the authenticated deterministic task projection proposed in
-  PR #831. It returns dependency-ordered task metadata for admitted goals; it
-  does not schedule, launch, or recover workers. Runner/verifier resolution,
-  durable attempts, dispatch and UI remain separate milestones above.
+- [x] Integrate the authenticated deterministic task projection proposed in
+  PR #831. It returns dependency-ordered metadata with durable status and
+  attempt history; it does not schedule or launch workers. Runner/verifier
+  resolution, operation linkage, dispatch and UI remain separate milestones.
 
 ### Milestone 1 — functional foundation (complete locally)
 

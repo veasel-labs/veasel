@@ -737,6 +737,8 @@ fn auth_test_goal_round_trip(port int, token string) {
 	assert projection.status == 'admitted'
 	assert projection.tasks.map(it.id) == ['b-independent', 'a-start', 'z-final']
 	assert projection.tasks.map(it.status) == ['pending', 'pending', 'pending']
+	assert projection.tasks.map(it.attempt_count) == [0, 0, 0]
+	assert projection.tasks.map(it.attempts.len) == [0, 0, 0]
 	assert projection.tasks.last().depends_on == ['a-start']
 	assert auth_test_status(auth_test_raw(port, auth_test_request('GET', '/v1/goals/missing', headers))).contains(' 404 ')
 	assert auth_test_status(auth_test_raw(port, auth_test_request('GET', '/v1/goals/missing/tasks', headers))).contains(' 404 ')

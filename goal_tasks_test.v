@@ -146,43 +146,36 @@ fn test_goal_task_state_is_seeded_idempotently_and_recovery_never_replays_runnin
 	assert live.status == 'running'
 	assert live.attempts[0].status == 'running'
 	second_connection.close() or { panic(err) }
-	$if linux {
-		mut previous_owner := os.new_process('/bin/sleep')
-		previous_owner.set_args(['30'])
-		previous_owner.run()
-		defer {
-			if previous_owner.status == .running {
-				previous_owner.signal_kill()
-			}
-			previous_owner.wait()
+	mut previous_owner := goal_task_test_long_lived_process()
+	previous_owner.run()
+	defer {
+		if previous_owner.status == .running {
+			previous_owner.signal_kill()
 		}
-		previous_pid := previous_owner.pid
-		previous_identity := goal_task_owner_status(previous_pid)
-		assert previous_identity.alive
-		assert previous_identity.identity != ''
-		previous_owner.signal_kill()
 		previous_owner.wait()
-		_ = store.db.exec_param_many('UPDATE goal_task_states SET owner_pid = ?, owner_start_id = ? WHERE goal_id = ?', [
-			previous_pid.str(),
-			previous_identity.identity,
-			goal.id,
-		]) or { panic(err) }
-		_ = store.db.exec_param_many('UPDATE goal_task_attempts SET owner_pid = ?, owner_start_id = ? WHERE goal_id = ?', [
-			previous_pid.str(),
-			previous_identity.identity,
-			goal.id,
-		]) or { panic(err) }
 	}
+	previous_pid := previous_owner.pid
+	previous_identity := goal_task_owner_status(previous_pid)
+	assert previous_identity.alive
+	assert previous_identity.identity != ''
+	previous_owner.signal_kill()
+	previous_owner.wait()
+	_ = store.db.exec_param_many('UPDATE goal_task_states SET owner_pid = ?, owner_start_id = ? WHERE goal_id = ?', [
+		previous_pid.str(),
+		previous_identity.identity,
+		goal.id,
+	]) or { panic(err) }
+	_ = store.db.exec_param_many('UPDATE goal_task_attempts SET owner_pid = ?, owner_start_id = ? WHERE goal_id = ?', [
+		previous_pid.str(),
+		previous_identity.identity,
+		goal.id,
+	]) or { panic(err) }
 	store.close() or { panic(err) }
 
 	store = open_store(path) or { panic(err) }
 	recovered := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
-	$if linux {
-		assert recovered.status == 'uncertain'
-		assert recovered.attempts[0].status == 'uncertain'
-	} $else {
-		assert recovered.status == 'running'
-	}
+	assert recovered.status == 'uncertain'
+	assert recovered.attempts[0].status == 'uncertain'
 	assert recovered.attempt_count == 1
 	assert recovered.attempts.len == 1
 	store.close() or { panic(err) }
@@ -197,6 +190,28 @@ fn test_goal_task_state_is_seeded_idempotently_and_recovery_never_replays_runnin
 			return
 		}
 		assert false, 'recovery replayed an ambiguous attempt'
+	}
+}
+
+fn goal_task_test_long_lived_process() &os.Process {
+	$if windows {
+		mut process := os.new_process(goal_task_test_cmd_executable())
+		process.set_args(['/c', 'for /L %i in (1,1,200000000) do @rem veasel-goal-task-test-spin'])
+		return process
+	} $else {
+		mut process := os.new_process('/bin/sleep')
+		process.set_args(['30'])
+		return process
+	}
+}
+
+fn goal_task_test_cmd_executable() string {
+	comspec := os.getenv('COMSPEC').trim_space()
+	if comspec != '' {
+		return comspec
+	}
+	return os.find_abs_path_of_executable('cmd.exe') or {
+		panic('cmd.exe is required for the Windows goal task recovery test')
 	}
 }
 

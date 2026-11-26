@@ -154,6 +154,11 @@ fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 				row.val(1),
 				row.val(2),
 			])!
+			_ = db.exec_param_many("UPDATE goal_task_attempt_workspaces SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status IN ('preparing', 'ready')", [
+				row.val(0),
+				row.val(1),
+				row.val(2),
+			])!
 			if row.val(5) != '' && row.val(6) != '' {
 				_ = db.exec_param_many("UPDATE goal_task_states SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP, owner_pid = 0, owner_start_id = '' WHERE goal_id = ? AND task_id = ? AND status = 'running'", [
 					row.val(0),

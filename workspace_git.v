@@ -52,25 +52,77 @@ pub:
 }
 
 // workspace_git_common_directory returns the shared git directory that owns
-// worktrees/<id> entries. For the primary checkout this is `<root>/.git`. For a
-// linked worktree it is the parent of `worktrees/` above the linked gitdir.
+// worktrees/<id> entries. For a primary checkout it is `<root>/.git`; linked
+// worktrees resolve to the parent of `worktrees/`. Submodule gitdirs are already
+// their own common directory and are returned unchanged.
 fn workspace_git_common_directory(root string) !string {
-	git_directory := workspace_git_directory(root)!
-	normalized := git_directory.replace('\\', '/')
-	marker := '/worktrees/'
-	idx := normalized.last_index(marker) or { -1 }
-	if idx >= 0 {
-		parent := normalized[..idx]
-		if parent.len == 0 {
-			return error('unable to resolve common git directory')
-		}
-		$if windows {
-			return os.real_path(parent.replace('/', '\\'))
-		} $else {
-			return os.real_path(parent)
-		}
+	canonical_root := canonical_workspace_root(root)!
+	dot_git := os.join_path(canonical_root, '.git')
+	if os.is_dir(dot_git) && !os.is_link(dot_git) {
+		return os.real_path(dot_git)
 	}
-	return git_directory
+	git_directory := workspace_git_directory(root)!
+	commondir_file := os.join_path(git_directory, 'commondir')
+	if !os.exists(commondir_file) {
+		// Submodules use a gitdir under the superproject's modules directory and
+		// do not have linked-worktree commondir metadata.
+		return git_directory
+	}
+	if os.is_link(commondir_file) || !os.is_file(commondir_file) {
+		return error('linked worktree commondir metadata is not a regular file')
+	}
+	commondir_value := os.read_file(commondir_file)!.trim_space()
+	if commondir_value.len == 0 || commondir_value.len > max_workspace_git_worktree_path_len
+		|| workspace_has_hidden_controls(commondir_value) {
+		return error('linked worktree commondir metadata is invalid')
+	}
+	commondir_path := if os.is_abs_path(commondir_value) {
+		commondir_value
+	} else {
+		os.join_path(git_directory, commondir_value)
+	}
+	if os.is_link(commondir_path) || !os.is_dir(commondir_path) {
+		return error('linked worktree common directory is unavailable')
+	}
+	common_directory := os.real_path(commondir_path)
+	canonical_git_directory := os.real_path(git_directory)
+	if !workspace_git_path_is_within(common_directory, canonical_git_directory)
+		|| common_directory == canonical_git_directory {
+		return error('linked worktree common directory is outside its gitdir hierarchy')
+	}
+	common_config := os.join_path(common_directory, 'config')
+	if os.is_link(common_config) || !os.is_file(common_config) {
+		return error('linked worktree common Git config is unavailable')
+	}
+	return common_directory
+}
+
+fn workspace_git_path_is_within(parent string, child string) bool {
+	mut canonical_parent := os.real_path(parent).replace('\\', '/')
+	mut canonical_child := os.real_path(child).replace('\\', '/')
+	$if windows {
+		canonical_parent = canonical_parent.to_lower()
+		canonical_child = canonical_child.to_lower()
+	}
+	if canonical_parent.len > 1 && !canonical_parent.ends_with(':') {
+		canonical_parent = canonical_parent.trim_right('/')
+	}
+	if canonical_child.len > 1 && !canonical_child.ends_with(':') {
+		canonical_child = canonical_child.trim_right('/')
+	}
+	if canonical_parent.ends_with(':') {
+		canonical_parent += '/'
+	}
+	if canonical_child == canonical_parent {
+		return true
+	}
+	if canonical_parent == '/' {
+		return canonical_child.starts_with('/')
+	}
+	if canonical_parent.ends_with('/') {
+		return canonical_child.starts_with(canonical_parent)
+	}
+	return canonical_child.starts_with(canonical_parent + '/')
 }
 
 fn read_workspace_git_ref(git_directory string) (string, string) {

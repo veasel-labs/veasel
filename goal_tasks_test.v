@@ -127,13 +127,18 @@ fn test_goal_task_state_is_seeded_idempotently_and_recovery_never_replays_runnin
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 36') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 37') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 38') or { panic(err) }
+	store.db.exec('DELETE FROM schema_migrations WHERE version = 39') or { panic(err) }
 	store.close() or { panic(err) }
 
 	store = open_store(path) or { panic(err) }
 	seeded := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
 	assert seeded.status == 'pending'
 	assert seeded.attempt_count == 0
-	store.db.exec('DELETE FROM schema_migrations WHERE version = 36') or { panic(err) }
+	for version in [36, 37, 38, 39] {
+		store.db.exec_param_many('DELETE FROM schema_migrations WHERE version = ?', [version.str()]) or {
+			panic(err)
+		}
+	}
 	store.close() or { panic(err) }
 	store = open_store(path) or { panic(err) }
 	reseeded := store.goal_task_state(goal.id, 'prepare') or { panic(err) }

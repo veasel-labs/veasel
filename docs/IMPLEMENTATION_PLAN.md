@@ -145,17 +145,26 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   and atomically claim only dependency-ready tasks within the goal-wide attempt
   budget (all tasks and retries count). Classify claims with missing, exited,
   or unverifiable owner identity as uncertain and never replay them.
-  This state-only groundwork landed in #835; it does not dispatch work or link
-  attempts to session operations. Cross-platform recovery acceptance remains
-  pending until the macOS and Windows owner-lifecycle tests and CI complete.
-- [ ] Link claimed attempts to the existing operation lifecycle before adding
-  dispatch. Runner and verifier resolution, dispatch and UI remain separate.
+  This state-only groundwork landed in #835; it does not dispatch work. PR #840
+  is merged into `main` at `495f57cb`; it links claimed attempts to the existing
+  operation lifecycle with fencing tokens and goal-specific events. It still
+  does not launch workers.
+- [x] Link claimed attempts to the existing operation lifecycle (PR #840).
+  Runner and verifier resolution, policy enforcement, dispatch and UI remain
+  separate milestones.
+- [ ] Prepare an isolated, clean worktree for each claimed task at its exact
+  admitted full base SHA. PR #841 adds fail-closed checkout
+  revalidation, repository-config refusal, collision and symlink checks,
+  durable attempt/worktree identity, and uncertain recovery; focused tests pass
+  in the development compiler. This PR remains unmerged and does not launch an
+  agent. Expose no public start/claim path until the full dispatch acceptance
+  gates below are implemented.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run
   progressive concurrency acceptance with live agents and independent review.
 - [x] Integrate the authenticated deterministic task projection (PR #831). It
   returns dependency-ordered metadata with durable status and
   attempt history; it does not schedule or launch workers. Runner/verifier
-  resolution, operation linkage, dispatch and UI remain separate milestones.
+  resolution, dispatch and UI remain separate milestones.
 
 ### Milestone 1 — functional foundation (complete locally)
 

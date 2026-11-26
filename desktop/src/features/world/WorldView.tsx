@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { flushSync } from 'react-dom';
 import { useFocusThreads } from '../../data/focus';
+import { useJobs } from '../../data/jobs';
+import { useTools } from '../../data/catalog';
+import { useMemoryList } from '../../data/memory';
+import { useBackend } from '../../data/backend';
 import { useSessionContext } from '../../shell/useSessionContext';
 import { EmptyState } from '../../ui';
 import { worldDetailBackExtra } from './inspectors';
@@ -22,15 +26,19 @@ function projectNameOf(cwd: string, projectName: string | null): string {
 
 /**
  * World: semantic spatial home, projected only from real Veasel runtime
- * state (#693). Projects are the distinct working directories of real
- * Focus threads; characters are those threads with their real provider,
- * model and status (a character claims activity only while its session
- * is actually running). There is no second session store and no fake
- * activity: with no threads, the world is empty.
+ * state (#693). Projects are the distinct working directories of real Focus
+ * threads; people and job characters come from the existing session and job
+ * APIs with their real provider, model and status. There is no second state
+ * store and no invented activity: without real sessions or jobs, no workers
+ * appear in the world.
  */
 export default function WorldView() {
+  const { client } = useBackend();
   const { context, href } = useSessionContext();
   const { threads, loaded } = useFocusThreads();
+  const memoryQuery = useMemoryList();
+  const toolsQuery = useTools();
+  const jobsQuery = useJobs();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const focusProject = params.get('project');
@@ -96,7 +104,44 @@ export default function WorldView() {
     return [...byTarget.values()];
   }, [threads]);
 
-  const memory: MemorySummary = useMemo(() => ({ available: false, entries: [], projectKeys: [] }), []);
+  const memory: MemorySummary = useMemo(() => {
+    const entries = memoryQuery.isSuccess && memoryQuery.data.ok ? memoryQuery.data.entries : [];
+    return {
+      available: memoryQuery.isSuccess && memoryQuery.data.ok,
+      entries,
+      projectKeys: [...new Set(entries.map((entry) => entry.provenance.project).filter(Boolean))],
+    };
+  }, [memoryQuery.data, memoryQuery.isSuccess]);
+
+  const tools = useMemo(
+    () =>
+      toolsQuery.isSuccess && toolsQuery.data.ok
+        ? toolsQuery.data.tools.map((tool) => ({
+            id: tool.id,
+            toolName: tool.tool_name,
+            detected: tool.detected,
+            configured: tool.configured,
+            enabled: tool.enabled,
+            verified: tool.verified,
+            version: tool.version,
+          }))
+        : [],
+    [toolsQuery.data, toolsQuery.isSuccess],
+  );
+
+  const jobs = useMemo(
+    () =>
+      jobsQuery.isSuccess
+        ? Object.values(jobsQuery.data).map((job) => ({
+            id: job.id,
+            cmd: job.cmd,
+            args: job.args,
+            status: job.status,
+            workspace: job.workspace,
+          }))
+        : [],
+    [jobsQuery.data, jobsQuery.isSuccess],
+  );
 
   const personSessions = useMemo(
     () =>
@@ -122,13 +167,26 @@ export default function WorldView() {
         projects,
         projectsKnown: loaded,
         memory,
-        tools: [],
-        toolsKnown: false,
-        jobs: [],
+        tools,
+        toolsKnown: toolsQuery.isSuccess && toolsQuery.data.ok,
+        jobs,
+        jobsKnown: jobsQuery.isSuccess,
         personSessions,
         focusProjectId: focusProject,
       }),
-    [workspacePath, projects, loaded, memory, personSessions, focusProject],
+    [
+      workspacePath,
+      projects,
+      loaded,
+      memory,
+      tools,
+      toolsQuery.data,
+      toolsQuery.isSuccess,
+      jobs,
+      jobsQuery.isSuccess,
+      personSessions,
+      focusProject,
+    ],
   );
 
   const layout = useMemo(() => layoutWorld(model), [model]);
@@ -159,7 +217,25 @@ export default function WorldView() {
     }
   }, [memoryPath, toolId, focusPlace, focusProject, layout.entities]);
 
-  const gathering = !loaded;
+  // Queries are disabled while there is no connected backend. Do not keep a
+  // perpetual loading overlay in that state; the shell already reports the
+  // backend connection status.
+  const gathering =
+    client !== null && (!loaded || memoryQuery.isPending || toolsQuery.isPending || jobsQuery.isPending);
+  const showingLastKnownState =
+    client === null &&
+    (threads.length > 0 ||
+      Object.keys(jobsQuery.data ?? {}).length > 0 ||
+      memoryQuery.data !== undefined ||
+      toolsQuery.data !== undefined);
+  const liveDataUnavailable =
+    showingLastKnownState ||
+    (client !== null &&
+      (memoryQuery.isError ||
+        toolsQuery.isError ||
+        jobsQuery.isError ||
+        (memoryQuery.isSuccess && !memoryQuery.data.ok) ||
+        (toolsQuery.isSuccess && !toolsQuery.data.ok)));
 
   const openEntity = (entity: LaidOutEntity) => {
     if (!entity.hrefPath) return;
@@ -258,9 +334,13 @@ export default function WorldView() {
             onActivate={openEntity}
           />
         )}
-        {gathering && layout.entities.length > 0 ? (
+        {(gathering || liveDataUnavailable) && layout.entities.length > 0 ? (
           <p className={styles.worldLoadStatus} role="status" aria-live="polite">
-            Checking live workspace details…
+            {gathering
+              ? 'Checking live workspace details…'
+              : showingLastKnownState
+                ? 'Connection lost; showing last known workspace data.'
+                : 'Some live runtime details are unavailable; missing activity is omitted.'}
           </p>
         ) : null}
       </div>
@@ -268,7 +348,9 @@ export default function WorldView() {
       <details className={styles.entityListWrap}>
         <summary>
           <span className={styles.worldTitle}>World index</span>{' '}
-          <span className={styles.worldMeta}>— {layout.entities.length} places, resources, and active workers</span>
+          <span className={styles.worldMeta}>
+            — {layout.entities.length} destinations, resources, sessions, and jobs
+          </span>
         </summary>
         {layout.entities.length === 0 ? (
           <EmptyState title="Nothing to place yet.">Waiting on workspace context.</EmptyState>

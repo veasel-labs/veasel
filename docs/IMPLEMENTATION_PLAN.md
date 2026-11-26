@@ -56,12 +56,18 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `v0.103.3-next.0` passing with both packaged launchers in both orders
   (AppImage→TUI and TUI→AppImage). The artifacts matched `release.json`; both
   runs kept one authenticated backend PID and reached a TUI connected view plus
-  the Desktop Focus route. A rerun of the checked-in harness failed to observe
-  AppImage-first readiness/Focus, then hit the host disk quota creating the
-  second-order profile. The recorded prior pass is not a passing run of the
-  checked-in harness. The Desktop renderer was inspected headlessly, so this
-  proves startup/reuse only. The
-  release predates exact-file approval PR #821. Reproduction and exact artifact
+  the Desktop Focus route. A later corrected routeprobe independently passed
+  both orders and confirmed the visible TUI, routed Focus page, artifact hashes,
+  and shared backend PID/version; the sanitized result is preserved in the
+  [`corrected routeprobe evidence`](desktop/evidence/shared-listener-v0.103.3-next.0.json)
+  alongside the checked-in harness result.
+  The checked-in harness itself still failed to observe AppImage-first
+  readiness/Focus, then hit the host disk quota creating its second-order
+  profile. These results establish packaged startup/reuse only, not the complete
+  daily-driver journey. The Desktop renderer was inspected headlessly. The
+  separate diagnostic attempt that exited 127 is intermittent; available logs
+  do not establish its cause. The release predates exact-file approval PR #821.
+  Reproduction and exact artifact
   hashes are in [`desktop/packaged-shared-listener-smoke.md`](desktop/packaged-shared-listener-smoke.md)
   and [`desktop/evidence/shared-listener-v0.103.3-next.0.json`](desktop/evidence/shared-listener-v0.103.3-next.0.json).
 - On the same Linux host, the released AppImage completed a real Claude Code
@@ -76,6 +82,31 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   not acceptance of the current `v0.103.3-next.0` package. Attach the exact
   installed/executed version, source and workspace SHAs, session, permissions,
   and receipts for any repeat.
+
+### Optional cozy World (#693)
+
+- The packaged Linux preview `v0.105.0-next.0` was installed side-by-side on
+  HorneroOS and launched through its extracted AppDir because this host denies
+  AppImage FUSE mounting. Its top-down pixel-art World rendered nine real
+  destinations; no session or productivity activity was fabricated. A
+  separate isolated profile also opened the World with real temporary sessions.
+  Screenshots are retained under `/home/ulisesjcf/.cache/veasel-validation/`.
+- The packaged World currently projects the real Focus session list and
+  destinations. PR #836 projects data from the existing memory, tools, and jobs
+  APIs, makes project job state explicitly unknown when that source is
+  unavailable, and labels retained data after a backend disconnect. It also
+  replaces fixed “ready” claims with destination descriptions and improves
+  camera framing for tall compact windows while keeping Fit World as the
+  complete overview. PR #836 merged to main as `33f98183`; the current main CI
+  run is still pending, and no release containing this change is published yet.
+- The World remains optional and is not evidence of daily-driver completion.
+  Focus/TUI session parity, provider authentication recovery, cancellation,
+  packaged-session recovery, and cross-platform acceptance remain open under
+  [#550](https://github.com/veasel-labs/veasel/issues/550). On this host, the
+  installed Codex authentication completed a real isolated read-only acceptance
+  turn. Claude’s UI reported an authenticated MAX account but the provider
+  rejected its revoked OAuth token; Cursor is detected but is not yet
+  launchable through Veasel. No credentials were changed as part of acceptance.
 
 ### Durable goals and worker coordination
 
@@ -98,8 +129,8 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   dispatch. Runner and verifier resolution, dispatch and UI remain separate.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run
   progressive concurrency acceptance with live agents and independent review.
-- [x] Integrate the authenticated deterministic task projection proposed in
-  PR #831. It returns dependency-ordered metadata with durable status and
+- [x] Integrate the authenticated deterministic task projection (PR #831). It
+  returns dependency-ordered metadata with durable status and
   attempt history; it does not schedule or launch workers. Runner/verifier
   resolution, operation linkage, dispatch and UI remain separate milestones.
 

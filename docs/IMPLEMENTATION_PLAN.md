@@ -91,14 +91,13 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   destinations; no session or productivity activity was fabricated. A
   separate isolated profile also opened the World with real temporary sessions.
   Screenshots are retained under `/home/ulisesjcf/.cache/veasel-validation/`.
-- The packaged World currently projects the real Focus session list and
-  destinations. PR #836 projects data from the existing memory, tools, and jobs
-  APIs, makes project job state explicitly unknown when that source is
-  unavailable, and labels retained data after a backend disconnect. It also
-  replaces fixed “ready” claims with destination descriptions and improves
-  camera framing for tall compact windows while keeping Fit World as the
-  complete overview. PR #836 merged to main as `33f98183`; the current main CI
-  run is still pending, and no release containing this change is published yet.
+- PR #836 merged as `33f9818` after 24 checks passed. The main source now
+  projects real Focus sessions, memory, tools, jobs, and destinations; job
+  state remains unknown when its source is unavailable, and retained state is
+  labeled after a backend disconnect. Destination descriptions and responsive
+  framing keep the full map available through Fit World. The latest published
+  preview `v0.106.0-next.0` predates this merge, so no published package
+  contains the change yet; packaged validation remains pending.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under

@@ -353,6 +353,7 @@ jobs:
           v test main_test.v
           v test api_auth_test.v
           v test goal_tasks_test.v
+          v test goal_task_worktree_test.v
           v test model_settings_test.v
           v test secret_store_test.v
           v test api_metadata_test.v
@@ -402,7 +403,7 @@ jobs:
         env:
           VJOBS: 2
         run: |
-          & v -cc gcc -d windows_7 test plugin_mcp_transport_test.v plugin_mcp_cancel_test.v headless_cli_test.v headless_config_test.v workspace_edits_windows_test.v workspace_confinement_windows_test.v
+          & v -cc gcc -d windows_7 test plugin_mcp_transport_test.v plugin_mcp_cancel_test.v headless_cli_test.v headless_config_test.v workspace_edits_windows_test.v workspace_confinement_windows_test.v goal_task_worktree_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run Windows plugin, workspace edit, and recovery tests (batch 3)
         if: runner.os == 'Windows'
@@ -419,6 +420,7 @@ jobs:
           v test main_test.v
           v test api_auth_test.v
           v test goal_tasks_test.v
+          v test goal_task_worktree_test.v
           v test model_settings_test.v
           v test secret_store_test.v
           v test api_metadata_test.v

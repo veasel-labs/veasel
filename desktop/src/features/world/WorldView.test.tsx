@@ -5,6 +5,7 @@ import WorldView from './WorldView';
 
 const live = vi.hoisted(() => ({
   client: {} as object | null,
+  session: { workspace: '/workspace' },
   focus: { loaded: true, threads: [] as Array<Record<string, unknown>> },
   memory: {
     isPending: false,
@@ -39,7 +40,7 @@ vi.mock('../../data/memory', () => ({ useMemoryList: () => live.memory, useMemor
 vi.mock('../../data/catalog', () => ({ useTools: () => live.tools }));
 vi.mock('../../data/jobs', () => ({ useJobs: () => live.jobs }));
 vi.mock('../../shell/useSessionContext', () => ({
-  useSessionContext: () => ({ context: { workspace: '/workspace' }, href: (path: string) => path }),
+  useSessionContext: () => ({ context: live.session, href: (path: string) => path }),
 }));
 vi.mock('../../data/backend', () => ({ useBackend: () => ({ client: live.client }) }));
 vi.mock('./useWorldDetailEscape', () => ({ useWorldDetailEscape: () => undefined }));
@@ -67,6 +68,7 @@ function renderWorld() {
 describe('WorldView live state', () => {
   beforeEach(() => {
     live.client = {};
+    live.session = { workspace: '/workspace' };
     live.focus = { loaded: true, threads: [] };
     live.memory = { isPending: false, isError: false, isSuccess: true, data: { ok: true, entries: [] } };
     live.tools = { isPending: false, isError: false, isSuccess: true, data: { ok: true, tools: [] } };
@@ -192,6 +194,15 @@ describe('WorldView live state', () => {
     expect(screen.getByTestId('entity:character:job:job-1')).toHaveTextContent('running');
     expect(screen.getByTestId('entity:character:person:thread-1:thread-1')).toHaveTextContent('running');
     expect(screen.queryByText(/live runtime details are unavailable/i)).not.toBeInTheDocument();
+  });
+
+  it('offers the real workspace picker when there is no workspace context', () => {
+    live.session = { workspace: '' };
+
+    renderWorld();
+
+    expect(screen.getByRole('heading', { name: 'Your valley is waiting for a workspace' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Focus to choose a workspace' })).toHaveAttribute('href', '/focus');
   });
 
   it('reports unavailable live sources instead of presenting missing activity as known empty', () => {

@@ -140,9 +140,9 @@ export function WorldEntityMap({
   const regionRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState<number>(48);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  // Start at a playable scale around the human avatar. Fit world remains one
-  // click away for workspace overview and direct productivity navigation.
-  const [cameraMode, setCameraMode] = useState<'frame' | 'fit' | 'manual' | 'follow'>('follow');
+  // Open on the full diorama so the first view communicates the world and its
+  // real destinations. Walking is an explicit, one-click camera mode.
+  const [cameraMode, setCameraMode] = useState<'frame' | 'fit' | 'manual' | 'follow'>('frame');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const drag = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null);
   const suppressClick = useRef(false);

@@ -146,16 +146,24 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   budget (all tasks and retries count). Classify claims with missing, exited,
   or unverifiable owner identity as uncertain and never replay them.
   This state-only groundwork landed in #835; it does not dispatch work or link
-  attempts to session operations. Cross-platform recovery acceptance remains
-  pending until the macOS and Windows owner-lifecycle tests and CI complete.
+  attempts to session operations.
 - [ ] Link claimed attempts to the existing operation lifecycle before adding
-  dispatch. Runner and verifier resolution, dispatch and UI remain separate.
+  dispatch. PR #840 adds transactional links, fencing tokens, and goal-specific
+  operation events; it remains unmerged pending Linux and Windows CI. Runner
+  and verifier resolution, dispatch and UI remain separate.
+- [ ] Prepare an isolated, clean worktree for each claimed task at its exact
+  admitted full base SHA. A local follow-up adds fail-closed checkout
+  revalidation, repository-config refusal, collision and symlink checks,
+  durable attempt/worktree identity, and uncertain recovery; focused tests pass
+  in the development compiler. It is not integrated and does not launch an
+  agent. Expose no public start/claim path until the full dispatch acceptance
+  gates below are implemented.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run
   progressive concurrency acceptance with live agents and independent review.
 - [x] Integrate the authenticated deterministic task projection (PR #831). It
   returns dependency-ordered metadata with durable status and
   attempt history; it does not schedule or launch workers. Runner/verifier
-  resolution, operation linkage, dispatch and UI remain separate milestones.
+  resolution, dispatch and UI remain separate milestones.
 
 ### Milestone 1 — functional foundation (complete locally)
 

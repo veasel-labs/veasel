@@ -386,14 +386,49 @@ fn test_workspace_git_directory_resolves_linked_worktree_pointer() {
 		os.rmdir_all(worktree) or {}
 	}
 	os.write_file(os.join_path(worktree, '.git'), 'gitdir: ${gitdir}\n') or { panic(err) }
+	os.write_file(os.join_path(main_root, '.git', 'config'), '[core]\n\trepositoryformatversion = 0\n') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(gitdir, 'commondir'), '../..\n') or { panic(err) }
 	resolved := workspace_git_directory(worktree) or { panic(err) }
 	assert resolved == os.real_path(gitdir)
+	common := workspace_git_common_directory(worktree) or { panic(err) }
+	assert common == os.real_path(os.join_path(main_root, '.git'))
 	os.write_file(os.join_path(gitdir, 'HEAD.lock'), '') or { panic(err) }
 	_ := prepare_workspace_edit(worktree, 'note.txt', 'hello\n') or {
 		assert err.msg().contains('HEAD.lock')
 		return
 	}
 	assert false, 'linked worktree prepare should refuse while HEAD.lock exists'
+}
+
+fn test_workspace_git_common_directory_does_not_confuse_parent_worktrees_path() {
+	root := os.join_path(os.temp_dir(), 'worktrees', 'veasel-primary-git-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(os.dir(root)) or {} }
+	_ = run_workspace_git_command_output(root, ['init', '--quiet', '-b', 'main'], 1024) or {
+		panic(err)
+	}
+	common := workspace_git_common_directory(root) or { panic(err) }
+	assert common == os.real_path(os.join_path(root, '.git'))
+}
+
+fn test_workspace_git_common_directory_keeps_submodule_gitdir() {
+	parent := os.join_path(os.temp_dir(), 'veasel-submodule-common-${uuid.new_v4().str()}')
+	root := os.join_path(parent, 'submodule')
+	gitdir := os.join_path(parent, 'superproject', '.git', 'modules', 'worktrees', 'nested')
+	os.mkdir_all(root) or { panic(err) }
+	os.mkdir_all(gitdir) or { panic(err) }
+	defer { os.rmdir_all(parent) or {} }
+	os.write_file(os.join_path(root, '.git'), 'gitdir: ${gitdir}\n') or { panic(err) }
+	common := workspace_git_common_directory(root) or { panic(err) }
+	assert common == os.real_path(gitdir)
+	outside := os.join_path(parent, 'superproject', 'outside')
+	os.mkdir_all(outside) or { panic(err) }
+	os.write_file(os.join_path(gitdir, 'commondir'), '../../../../outside\n') or { panic(err) }
+	if _ := workspace_git_common_directory(root) {
+		assert false, 'accepted a linked-worktree commondir outside its gitdir hierarchy'
+	}
 }
 
 fn workspace_file_error_contains(root string, path string, expected string) bool {

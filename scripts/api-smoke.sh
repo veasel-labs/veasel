@@ -259,7 +259,11 @@ start_server() {
 	fi
 	server_pid=$!
 	for ((attempt = 0; attempt < 80; attempt++)); do
-		if curl -fsS "$api/v1/health" >"$work_dir/health" 2>/dev/null; then
+		# The unauthenticated liveness route intentionally omits version. Do not
+		# treat it as readiness while the API token file is still being created.
+		if [[ -r "$(token_file)" ]] && curl -fsS "$api/v1/health" >"$work_dir/health" 2>/dev/null &&
+			grep -Fq '"healthy":true' "$work_dir/health" &&
+			grep -Fq "\"version\":\"$expected_version\"" "$work_dir/health"; then
 			return
 		fi
 		if ! kill -0 "$server_pid" 2>/dev/null; then
@@ -268,7 +272,7 @@ start_server() {
 		sleep 0.1
 	done
 	cat "$work_dir/server.log" >&2
-	fail 'server did not become ready'
+	fail 'server did not become ready with authenticated health'
 }
 
 cd "$repo_root"

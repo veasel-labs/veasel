@@ -126,13 +126,13 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [ ] Bind repository identity/base-SHA revalidation to every dispatch. Resolve
   runner and verifier IDs against registered capabilities and enforce policy
   ceilings and deadlines in V.
-- [ ] Persist per-task status and attempt history, initialize it idempotently,
+- [x] Persist per-task status and attempt history, initialize it idempotently,
   and atomically claim only dependency-ready tasks within the goal-wide attempt
   budget (all tasks and retries count). Classify claims with missing, exited,
   or unverifiable owner identity as uncertain and never replay them.
-  This state-only groundwork does not dispatch work or link attempts to
-  session operations. Cross-platform recovery acceptance remains pending until
-  the macOS and Windows owner-lifecycle tests and CI complete.
+  This state-only groundwork landed in #835; it does not dispatch work or link
+  attempts to session operations. Cross-platform recovery acceptance remains
+  pending until the macOS and Windows owner-lifecycle tests and CI complete.
 - [ ] Link claimed attempts to the existing operation lifecycle before adding
   dispatch. Runner and verifier resolution, dispatch and UI remain separate.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run

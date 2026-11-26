@@ -82,23 +82,21 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   not acceptance of the current `v0.103.3-next.0` package. Attach the exact
   installed/executed version, source and workspace SHAs, session, permissions,
   and receipts for any repeat.
-- HorneroOS smoke on 2026-11-26 used the installed `v0.106.3-next.0` Desktop
-  with isolated temporary profiles. Desktop health was HTTP 200 and native
-  discovery verified the installed Codex CLI. In one profile, a read-only
-  `plan` session created via the versioned backend API completed, and the TUI
-  connected to that backend and saw the shared session; the repository
-  worktree stayed clean. In a separate profile, the Desktop Focus composer
-  submitted a read-only `plan` task to Codex and the operation completed, but
-  the response incorrectly described already-merged PR #841 as unmerged, so
-  semantic correctness failed. That run selected a folder already remembered
-  by the isolated profile; the native folder picker was not exercised. The
-  stale Desktop launcher was corrected to the extracted `v0.106.3-next.0`
-  AppDir and passes `desktop-file-validate`.
+- HorneroOS smoke on 2026-11-26 used installed `v0.107.0-next.0` Desktop and
+  TUI builds with an isolated temporary backend profile. The AppImage and CLI
+  archive SHA-256 values matched the published release manifest, and both
+  installed version commands reported `0.107.0-next.0`. Desktop health was
+  HTTP 200 and native discovery verified the installed Codex CLI. The Desktop
+  Focus composer submitted a read-only `plan` task to Codex; it returned the first Markdown
+  heading in `README.md` exactly (`## Start here`). The TUI connected to the
+  same backend profile and observed that shared session. The repository
+  worktree stayed clean. The stale Desktop launcher now points to the extracted
+  `v0.107.0-next.0` AppDir and passes `desktop-file-validate`.
   Evidence and installed executable hashes are recorded in
   [`desktop/evidence/hornero-installed-smoke-2026-11-26.json`](desktop/evidence/hornero-installed-smoke-2026-11-26.json).
-  These observations do not complete daily-driver acceptance: the Desktop
-  composer task's answer was incorrect, native folder selection was not
-  validated, the installed build is still a prerelease, and the host's other
+  This does not complete daily-driver acceptance: the project path was already
+  remembered by the isolated profile so the native folder picker was not
+  exercised, the installed build is still a prerelease, and the host's other
   native provider checks remain partly unknown.
 
 ### Optional cozy World (#693)

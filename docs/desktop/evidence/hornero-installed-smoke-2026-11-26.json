@@ -3,10 +3,14 @@
   "date": "2026-11-26",
   "host": "HorneroOS Linux",
   "release": {
-    "tag": "v0.106.3-next.0",
-    "source_commit": "ceed8b1fe5e0930b4e57ce48c8a9494cb5b29743",
-    "desktop_appimage_release_sha256": "c1ab99e5c3db7f07a9c047d1dd5c6aa3e9d4502e0b32b7ee7e249704399ef18e",
-    "installed_tui_sha256": "4c3bb4d1cdc1b10dee3e48abc1e02e56559337fb28d26b3abd8362258cf310fb",
+    "tag": "v0.107.0-next.0",
+    "source_commit": "495f57cbc8208e51955ee6c53f2f8ff4f5cad086",
+    "desktop_appimage_release_sha256": "7e4f49a6dff786aacd2c82b13aaf4f649bf517307cb7011c41850c015c0d5eb1",
+    "cli_archive_sha256": "cd8a537d5ea19a2eeb8e4fb87554105b5d3c6e4a86c26423e9fa3c1d26016f12",
+    "installed_cli_sha256": "6baa9e05df222e58ed9124d8c40c3fb84a4089fd33ee9578060ab82c4c2e21f5",
+    "installed_cli_reported_version": "Veasel Code 0.107.0-next.0",
+    "installed_tui_sha256": "20696f2795206c94cd55143f460fd8146c59f9552f9f06ce4af3dbced1a0777e",
+    "installed_tui_reported_version": "Veasel Code Terminal 0.107.0-next.0",
     "installed_desktop_executable_sha256": "0a009921284b3e0324b658a3f23e8c9b846fb9bb7fa52dbd3d5155beb958ec4c"
   },
   "desktop": {
@@ -30,20 +34,18 @@
     "provider": "codex",
     "permission_mode": "plan",
     "operation_status": "completed",
-    "task": "Read-only inspection of docs/IMPLEMENTATION_PLAN.md; no shell commands, network access, or file edits requested.",
-    "result": "The composer submitted the task to the authenticated Codex CLI and the operation completed. The response incorrectly described PR #841 as unmerged, so semantic answer correctness is not accepted.",
+    "task": "Read README.md and report its first Markdown heading exactly; no shell commands, network access, or file edits requested.",
+    "result": "The authenticated Codex CLI returned '## Start here', matching the first Markdown heading in README.md.",
     "worktree_clean_afterward": true
   },
-  "separate_api_tui_smoke": {
-    "session_created_via_versioned_api": true,
+  "tui": {
     "tui_launched": true,
     "tui_connected_to_same_backend_profile": true,
-    "tui_observed_shared_session_count": 1
+    "tui_observed_shared_session_count": 1,
+    "shared_session_created_via": "Desktop Focus composer"
   },
   "limitations": [
     "The Desktop composer flow used a project path already remembered in the isolated profile; the native folder picker was not exercised in this run.",
-    "The Desktop composer operation completed, but its answer incorrectly reported merged PR #841 as unmerged; semantic correctness failed.",
-    "The TUI shared-session observation belongs to a separate API-created session and profile, not the Desktop composer run.",
     "The installed package is a prerelease; stable release and downstream distribution synchronization remain outstanding.",
     "This smoke does not establish verified native authentication for every installed provider or full daily-driver acceptance."
   ]

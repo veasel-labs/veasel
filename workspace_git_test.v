@@ -15,7 +15,11 @@ fn test_list_workspace_git_worktrees_includes_main_and_linked() {
 		os.rmdir_all(worktree) or {}
 	}
 	os.write_file(os.join_path(git_common, 'HEAD'), 'ref: refs/heads/main\n') or { panic(err) }
+	os.write_file(os.join_path(git_common, 'config'), '[core]\n repositoryformatversion = 0\n') or {
+		panic(err)
+	}
 	os.write_file(os.join_path(gitdir, 'HEAD'), 'ref: refs/heads/feature\n') or { panic(err) }
+	os.write_file(os.join_path(gitdir, 'commondir'), '../..\n') or { panic(err) }
 	os.write_file(os.join_path(gitdir, 'gitdir'), '${worktree}/.git\n') or { panic(err) }
 	os.write_file(os.join_path(worktree, '.git'), 'gitdir: ${gitdir}\n') or { panic(err) }
 

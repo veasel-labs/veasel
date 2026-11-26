@@ -191,6 +191,8 @@ export default function WorldView() {
 
   const layout = useMemo(() => layoutWorld(model), [model]);
   const selected = layout.entities.find((entity) => entity.id === selectedId) ?? null;
+  const needsWorkspace =
+    !model.focusProjectId && layout.entities.some((entity) => entity.id === 'place:workspace' && entity.state === 'missing');
 
   useEffect(() => {
     if (memoryPath) {
@@ -316,6 +318,18 @@ export default function WorldView() {
       </header>
 
       <div className={styles.mapWrap} aria-busy={gathering}>
+        {needsWorkspace ? (
+          <aside className={styles.workspacePrompt} aria-labelledby="workspace-prompt-title">
+            <span className={styles.workspacePromptMark} aria-hidden="true">⌂</span>
+            <div className={styles.workspacePromptCopy}>
+              <h2 id="workspace-prompt-title">Your valley is waiting for a workspace</h2>
+              <p>Set a workspace in the context bar above to bring its real sessions, tools, and activity into this world.</p>
+            </div>
+            <Link className={styles.workspacePromptAction} to={href('/focus')}>
+              Open Focus <span aria-hidden="true">→</span>
+            </Link>
+          </aside>
+        ) : null}
         {layout.entities.length === 0 ? (
           <EmptyState title="Nothing to place yet.">Waiting on workspace context.</EmptyState>
         ) : (

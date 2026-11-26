@@ -91,22 +91,37 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   destinations; no session or productivity activity was fabricated. A
   separate isolated profile also opened the World with real temporary sessions.
   Screenshots are retained under `/home/ulisesjcf/.cache/veasel-validation/`.
+- On 2026-11-26, the published `v0.106.1-next.0` AppImage was downloaded and
+  SHA-256 verified against its release manifest before extraction. Its packaged
+  Desktop launched with a throwaway HOME, data directory and workspace. The
+  Cozy Valley at 1440×900 and Cyberpunk City at 1024×640 were rendered and
+  visually reviewed; the map composition and pixel scaling are coherent at
+  both sizes. Screenshots are retained in
+  `/home/ulisesjcf/.cache/veasel-validation/v0.106.1-next.0/`. This isolated
+  profile had no authenticated providers or active sessions, and its runtime
+  detail queries were unavailable. It proves packaged launch and visual
+  framing only, not the daily-driver journey or live-agent display.
 - The packaged World currently projects the real Focus session list and
   destinations. PR #836 projects data from the existing memory, tools, and jobs
   APIs, makes project job state explicitly unknown when that source is
   unavailable, and labels retained data after a backend disconnect. It also
   replaces fixed “ready” claims with destination descriptions and improves
   camera framing for tall compact windows while keeping Fit World as the
-  complete overview. PR #836 merged to main as `33f98183`; no published
-  release contains this change yet.
+  complete overview. PR #836 merged to main as `33f98183`; published release
+  `v0.106.1-next.0` is based on `709d6857`, which contains that merge. Its
+  packaged Desktop still needs the updated readiness fix below and fresh
+  visual/acceptance evidence.
 - Exact-main CI run `45726898766` for merge commit `33f98183` completed with a
   failure in `V backend / linux`: the Linux HTTP and persistence smoke reported
   `health version does not match the CLI version`. The smoke's readiness loop
-  can accept anonymous liveness before the API token exists, leaving a response
-  without version metadata for the later assertion. The working-tree candidate
-  waits for authenticated health with the expected version and process ID; it
-  still requires exact-CI verification. The later `Ensure main CI` workflow-run
-  `45734923673` succeeded, but did not rerun that failing smoke.
+  could accept anonymous liveness before the API token existed, leaving a
+  response without version metadata for the later assertion. The fix waits for
+  authenticated health with the expected version and process ID. Exact branch
+  CI passed for candidate `72ca0ff4` in run `45746852114`, including required
+  Linux, macOS and Windows jobs. It is not yet integrated into `main`; rerun
+  exact-main checks and packaged acceptance after integration. The later
+  `Ensure main CI` workflow-run `45734923673` succeeded, but did not rerun the
+  failing smoke.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under

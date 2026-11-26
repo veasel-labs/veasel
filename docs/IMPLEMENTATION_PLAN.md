@@ -1075,12 +1075,15 @@ items below open until receipts and end-to-end acceptance exist.
   ownership is confirmed on other hosts/schedulers and a one-loop rollback is
   documented. Existing loop output stays local by default.
 - [ ] Maintain two distinct local pilot goals: (1) the packaged Linux Claude
-  Code and Codex daily-driver journey tracked by #550, and (2) the existing
-  four-repository release-sync report goal. Add a separate product-pilot
-  manifest; do not broaden or overwrite the release-sync manifest. Record the
-  exact installed/executed binary versions, repository/workspace SHAs, session,
+  Code and Codex daily-driver journey tracked by #550, and (2) verification of
+  one already-published Veasel release across its checksums, website links,
+  Homebrew, AUR, and installed `--version` in disposable environments. Keep the
+  existing four-repository release-sync report as a separate reporting goal;
+  add distinct manifests for the product pilot and distribution journey rather
+  than broadening or overwriting the report manifest. Record the exact
+  installed/executed binary versions, repository/workspace SHAs, session,
   permissions, cancellation/recovery outcome, verifier, and evidence. Keep
-  distribution checksums and per-channel evidence separate.
+  checksums and per-channel distribution evidence separate.
   Limit the first local plan to two goals and eight tasks, at most four provider
   turns and two concurrent writers, while reserving capacity for independent
   verification and operator decisions. Before cutover, run both paths for two

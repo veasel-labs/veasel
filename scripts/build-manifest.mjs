@@ -1,15 +1,27 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const [binaryPath, tuiBinaryPath, outputPath] = process.argv.slice(2);
 if (!binaryPath || !tuiBinaryPath || !outputPath || !process.env.VEASEL_BUILD_CC) {
   throw new Error("usage: node scripts/build-manifest.mjs <binary> <tui-binary> <output> (VEASEL_BUILD_CC required)");
 }
 
+const nativeLibraryByTarget = {
+  "bun-linux-x64": "libopentui.so",
+  "bun-darwin-arm64": "libopentui.dylib",
+  "bun-windows-x64": "opentui.dll",
+};
+const nativeLibraryName = nativeLibraryByTarget[process.env.VEASEL_TUI_TARGET];
+if (!nativeLibraryName) {
+  throw new Error(`unsupported OpenTUI native library target: ${process.env.VEASEL_TUI_TARGET ?? "unknown"}`);
+}
+const nativeLibraryPath = join(dirname(resolve(tuiBinaryPath)), nativeLibraryName);
+
 const binary = readFileSync(binaryPath);
 const tuiBinary = readFileSync(tuiBinaryPath);
+const nativeLibrary = readFileSync(nativeLibraryPath);
 const compiler = process.env.VEASEL_BUILD_CC;
 const compilerVersion = execFileSync(compiler, ["--version"], { encoding: "utf8" })
   .split(/\r?\n/, 1)[0];
@@ -32,6 +44,8 @@ const manifest = {
   binary_sha256: createHash("sha256").update(binary).digest("hex"),
   tui_binary: tuiBinaryPath.replaceAll("\\", "/").split("/").at(-1),
   tui_binary_sha256: createHash("sha256").update(tuiBinary).digest("hex"),
+  tui_native_library: nativeLibraryName,
+  tui_native_library_sha256: createHash("sha256").update(nativeLibrary).digest("hex"),
   tui_build_target: process.env.VEASEL_TUI_TARGET ?? "unknown",
   tui_bun_version: process.env.VEASEL_TUI_BUN_VERSION ?? "unknown",
 };

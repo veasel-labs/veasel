@@ -22,31 +22,45 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def make_tar(path: Path, tui_name: str, tui: bytes, claimed: bytes | None = None):
+def make_tar(path: Path, tui_name: str, tui: bytes, claimed: bytes | None = None,
+             bad_native: bool = False):
+    native_name = "libopentui.dylib" if "macOS" in path.name else "libopentui.so"
+    native = b"native-" + native_name.encode()
     build = json.dumps({"tui_binary": tui_name,
-                        "tui_binary_sha256": sha(claimed if claimed is not None else tui)}).encode()
+                        "tui_binary_sha256": sha(claimed if claimed is not None else tui),
+                        "tui_native_library": native_name,
+                        "tui_native_library_sha256": sha(b"other" if bad_native else native)}).encode()
     with tarfile.open(path, "w:gz") as tf:
-        for name, data in ((tui_name, tui), ("build.json", build)):
+        for name, data in ((tui_name, tui), (native_name, native),
+                           ("opentui-licenses/LICENSE", b"OpenTUI test license"),
+                           ("build.json", build)):
             info = tarfile.TarInfo(name)
             info.size = len(data)
             tf.addfile(info, io.BytesIO(data))
 
 
 def make_zip(path: Path, tui_name: str, tui: bytes):
-    build = json.dumps({"tui_binary": tui_name, "tui_binary_sha256": sha(tui)})
+    native_name = "opentui.dll"
+    native = b"native-opentui"
+    build = json.dumps({"tui_binary": tui_name, "tui_binary_sha256": sha(tui),
+                        "tui_native_library": native_name,
+                        "tui_native_library_sha256": sha(native)})
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr(tui_name, tui)
+        zf.writestr(native_name, native)
+        zf.writestr("opentui-licenses/LICENSE", b"OpenTUI test license")
         zf.writestr("build.json", build)
 
 
 def fixture(root: Path, cli=("linux", "macos", "windows"),
-            desktop=("linux", "macos", "windows"), bad_linux_tui=False) -> Path:
+            desktop=("linux", "macos", "windows"), bad_linux_tui=False,
+            bad_linux_native=False) -> Path:
     """Build CI-artifact fixtures. Unlisted platforms have no files at all."""
     assets = root / "release-assets"
     assets.mkdir()
     if "linux" in cli:
         make_tar(assets / "veasel-Linux.tar.gz", "veasel-tui", b"linux-tui",
-                 claimed=b"other" if bad_linux_tui else None)
+                 claimed=b"other" if bad_linux_tui else None, bad_native=bad_linux_native)
     if "macos" in cli:
         make_tar(assets / "veasel-macOS.tar.gz", "veasel-tui", b"mac-tui")
     if "windows" in cli:
@@ -102,6 +116,8 @@ class StageTests(unittest.TestCase):
         out, manifest = stage(self.root, fixture(self.root))
         self.assertEqual({a["name"] for a in manifest["assets"]}, {
             "veasel-Linux.tar.gz", "veasel-macOS.tar.gz", "veasel-Windows.zip",
+            "libopentui.so", "opentui.dll", "veasel-tui-runtime-Linux.tar.gz",
+            "veasel-tui-runtime-macOS.tar.gz", "veasel-tui-runtime-Windows.zip",
             "veasel-tui", "veasel-tui.exe", "veasel-desktop-1.AppImage",
             "veasel-desktop-1.deb", "veasel-desktop-1.dmg", "veasel-desktop-1.exe"})
         self.assertEqual(manifest["desktop"]["status"], "available")
@@ -115,6 +131,15 @@ class StageTests(unittest.TestCase):
             self.assertEqual(a["sha256"], sha((out / a["name"]).read_bytes()))
             self.assertEqual("signed" in a, a["kind"] == "desktop-installer")
         self.assertEqual((out / "veasel-tui").read_bytes(), b"linux-tui")
+        self.assertEqual((out / "libopentui.so").read_bytes(), b"native-libopentui.so")
+        with tarfile.open(out / "veasel-tui-runtime-Linux.tar.gz") as package:
+            self.assertIn("veasel-tui", package.getnames())
+            self.assertIn("libopentui.so", package.getnames())
+            self.assertIn("opentui-licenses/LICENSE", package.getnames())
+        with zipfile.ZipFile(out / "veasel-tui-runtime-Windows.zip") as package:
+            self.assertIn("veasel-tui.exe", package.namelist())
+            self.assertIn("opentui.dll", package.namelist())
+            self.assertIn("opentui-licenses/LICENSE", package.namelist())
         self.assert_sums_cover(out, manifest)
         self.assertIn("UNSIGNED", self.notes())
         self.assertNotIn("Not included", self.notes())
@@ -127,7 +152,8 @@ class StageTests(unittest.TestCase):
                               cli=res(linux="success", windows="failure"),
                               lanes=res(linux="success", windows="skipped"))
         self.assertEqual({p.name for p in out.iterdir()}, {
-            "veasel-Linux.tar.gz", "veasel-tui", "veasel-desktop-1.AppImage",
+            "veasel-Linux.tar.gz", "veasel-tui", "libopentui.so",
+            "veasel-tui-runtime-Linux.tar.gz", "veasel-desktop-1.AppImage",
             "veasel-desktop-1.deb", "release.json", "SHA256SUMS"})
         pl = manifest["platforms"]
         self.assertEqual(pl["linux"]["status"], "published")
@@ -150,6 +176,8 @@ class StageTests(unittest.TestCase):
                               cli=res(linux="success", windows="success", macos="cancelled"),
                               lanes=res(linux="success", windows="success", macos="skipped"))
         self.assertIn("veasel-tui.exe", {p.name for p in out.iterdir()})
+        self.assertIn("veasel-tui-runtime-Windows.zip", {p.name for p in out.iterdir()})
+        self.assertNotIn("veasel-tui-runtime-macOS.tar.gz", {p.name for p in out.iterdir()})
         self.assertEqual(manifest["platforms"]["macos"]["status"], "cancelled")
         self.assertIn("Included platforms: Linux, Windows.", self.notes())
         self.assertIn("macOS CLI: cancelled", self.notes())
@@ -197,6 +225,10 @@ class StageTests(unittest.TestCase):
     def test_tui_provenance_mismatch_fails(self):
         with self.assertRaises(bra.ReleaseError):
             stage(self.root, fixture(self.root, bad_linux_tui=True))
+
+    def test_native_library_provenance_mismatch_fails(self):
+        with self.assertRaises(bra.ReleaseError):
+            stage(self.root, fixture(self.root, bad_linux_native=True))
 
     def test_parse_results(self):
         self.assertEqual(bra.parse_results("linux=success,windows=", "x"),

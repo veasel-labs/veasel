@@ -21,7 +21,11 @@ archives with that exact version, and publishes the V backend, a standalone
 terminal-client executable, SHA-256 sums, and a JSON source/asset manifest
 together. Each platform archive includes `build.json`, which records the V
 revision, V and C compiler versions, target, exact backend build arguments, and
-the SHA-256 hashes and build targets for both executables. Release commands
+the SHA-256 hashes and build targets for both executables and the OpenTUI
+native FFI sidecar. The archive also carries the sidecar's upstream notices in
+`opentui-licenses/`. A separate `veasel-tui-runtime-<platform>` archive
+contains the TUI, its matching sidecar, and those notices as a self-contained
+standalone distribution. Release commands
 and compiler selection are documented in [`V_BUILD_PROFILE.md`](V_BUILD_PROFILE.md).
 Bun is a build-time dependency for the TypeScript TUI; release archives do not
 require Bun at runtime. A failed check or platform build prevents publication.
@@ -40,8 +44,10 @@ Published release assets are immutable, because downstream consumers pin their
 SHA-256 digests (website, Homebrew, AUR).
 
 - CI stages one upload set (`tools/release/build_release_assets.py`): the CLI
-  archives, standalone `veasel-tui` / `veasel-tui.exe` extracted from the
-  checksum-verified archives, Desktop installers, `release.json`, and
+  archives, standalone TUI runtime bundles (`veasel-tui-runtime-<platform>`),
+  and the legacy loose `veasel-tui` / `veasel-tui.exe` plus matching native
+  libraries extracted from the checksum-verified archives, Desktop installers,
+  `release.json`, and
   `SHA256SUMS`. The set contains **only what verified**. `SHA256SUMS` covers
   every uploaded file except itself.
 - `tools/release/publish-release.sh` creates the release as a **draft**,
@@ -87,7 +93,10 @@ SHA-256 digests (website, Homebrew, AUR).
 `status` is one of `published`, `unavailable` (job never reported, e.g. runner
 capacity), `failed`, `cancelled`, `skipped`. `assets[]` lists every uploaded
 file with `name`, `size`, `sha256`, `platform`, `arch`, `kind`. The generated
-release notes list every platform that is **not** included and why.
+release notes list every platform that is **not** included and why. Standalone
+runtime bundles use the `standalone-tui-runtime` kind; their filenames identify
+the OS, and their entries carry the OS platform and architecture. The release
+stager creates a bundle only for a platform whose CLI archive passed CI.
 
 **Consumer rule (website `src/data/verified-release.json`, Homebrew cask, AUR
 PKGBUILD generators):** advertise or pin a platform only if

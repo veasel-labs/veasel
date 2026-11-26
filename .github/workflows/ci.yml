@@ -471,15 +471,23 @@ jobs:
         run: |
           tui_binary_name="${{ matrix.tui_binary }}"
           tui_binary_name="${tui_binary_name#dist/}"
+          native_library_name=libopentui.so
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            native_library_name=libopentui.dylib
+          fi
+          test -s "dist/$native_library_name"
+          test -s dist/opentui-licenses/LICENSE
           # Bundled offline Library content (#706) ships next to the binary.
           cp -r bundled dist/bundled
-          archive_members=(veasel "$tui_binary_name" build.json bundled)
+          archive_members=(veasel "$tui_binary_name" "$native_library_name" build.json bundled opentui-licenses)
           if [ "$RUNNER_OS" = "Linux" ]; then
             # Register the CLI in XDG launchers (including HorneroOS Apps).
             install -m 0644 packaging/linux/veasel-tui.desktop dist/veasel-tui.desktop
             archive_members+=(veasel-tui.desktop)
           fi
           tar -czf dist/veasel-${{ runner.os }}.tar.gz -C dist "${archive_members[@]}"
+          tar -tzf dist/veasel-${{ runner.os }}.tar.gz | grep -Fx "$native_library_name"
+          tar -tzf dist/veasel-${{ runner.os }}.tar.gz | grep -Fx opentui-licenses/LICENSE
           if [ "$RUNNER_OS" = "Linux" ]; then
             tar -tzf dist/veasel-Linux.tar.gz | grep -Fx veasel-tui.desktop
           fi
@@ -487,7 +495,16 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           Copy-Item -Recurse bundled dist/bundled
-          Compress-Archive -Path dist/veasel.exe,dist/veasel-tui.exe,dist/build.json,dist/bundled -DestinationPath dist/veasel-Windows.zip
+          if (-not (Test-Path -PathType Leaf dist/opentui.dll) -or (Get-Item dist/opentui.dll).Length -le 0) { throw 'OpenTUI native sidecar is missing or empty.' }
+          if (-not (Test-Path -PathType Leaf dist/opentui-licenses/LICENSE)) { throw 'OpenTUI license notices are missing.' }
+          Compress-Archive -Path dist/veasel.exe,dist/veasel-tui.exe,dist/opentui.dll,dist/build.json,dist/bundled,dist/opentui-licenses -DestinationPath dist/veasel-Windows.zip
+          $archive = [System.IO.Compression.ZipFile]::OpenRead('dist/veasel-Windows.zip')
+          try {
+            if (-not ($archive.Entries.FullName -contains 'opentui.dll')) { throw 'OpenTUI native sidecar is missing from the Windows archive.' }
+            if (-not ($archive.Entries.FullName -contains 'opentui-licenses/LICENSE')) { throw 'OpenTUI license notices are missing from the Windows archive.' }
+          } finally {
+            $archive.Dispose()
+          }
       - name: Extract and verify packaged binaries
         env:
           VEASEL_PACKAGE_ARCHIVE: dist/veasel-Windows.zip

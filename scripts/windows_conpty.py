@@ -413,7 +413,7 @@ def run_tui_conpty(
             True,
             EXTENDED_STARTUPINFO_PRESENT | 0x00000400,  # CREATE_UNICODE_ENVIRONMENT
             environment_block,
-            None,
+            env.get("VEASEL_PROJECT_DIR"),
             ctypes.byref(startup.StartupInfo),
             ctypes.byref(process),
         ):

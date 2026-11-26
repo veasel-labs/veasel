@@ -11,13 +11,32 @@ compatibility and does not authorize copying branding or product chrome.
 | OpenCode | [`e25b7abf8955a4fa1b02b935964cb47db4c3a02a`](https://github.com/anomalyco/opencode/tree/e25b7abf8955a4fa1b02b935964cb47db4c3a02a) | MIT | Engineering patterns for `packages/tui/` (`render` / `testRender`, `jsxImportSource`, bunfig preload, standalone bun-plugin). Catalog still pins `@opentui/core` + `@opentui/solid` **0.5.17** and `solid-js` **1.9.15** (study reference only). |
 | OpenTUI | [`341d728b40ee2d1b34f1ea1eaaf3ee0ef801ec69`](https://github.com/anomalyco/opentui/tree/341d728b40ee2d1b34f1ea1eaaf3ee0ef801ec69) (`@opentui/core` + `@opentui/solid` **0.6.8**) | MIT | Solid package APIs and the class-owned render-hook implementation. Veasel runtime packages are pinned to published **0.6.8** (see upgrade history below). |
 
-## Veasel package pins (runtime)
+## Historical Veasel package pins (0.6.8 migration baseline)
 
 - `@opentui/core` **0.6.8**
 - `@opentui/solid` **0.6.8**
 - `solid-js` **1.9.17** (1.9.x line matching OpenCode's catalog intent; bumped from
   1.9.15 so transitive `seroval` lands on the CVE-fixed ≥1.6.2 line. Peer of
   `@opentui/solid` remains `1.9.12`.)
+
+## Standalone native FFI packaging (current 0.8.3 runtime)
+
+The current runtime lock pins `@opentui/core` and `@opentui/solid` to **0.8.3**.
+The exact upstream source contract is [OpenTUI v0.8.3 at
+`b9e9d46b9303ca3ae20d38f867d6211f2d7ecaa5`](https://github.com/anomalyco/opentui/tree/b9e9d46b9303ca3ae20d38f867d6211f2d7ecaa5),
+including [`packages/core/src/zig.ts`](https://github.com/anomalyco/opentui/blob/b9e9d46b9303ca3ae20d38f867d6211f2d7ecaa5/packages/core/src/zig.ts),
+which documents `OPENTUI_LIB_PATH` as the native-library file override.
+
+Bun compile embeds dependency assets under its virtual `/$bunfs` namespace;
+OpenTUI's FFI loader needs an OS filesystem path for `dlopen`. The standalone
+build therefore copies the platform binary from the exact locked optional
+package beside `veasel-tui`: `libopentui.so`, `libopentui.dylib`, or
+`opentui.dll`. The entry point selects that adjacent sidecar only when the
+operator has not set `OPENTUI_LIB_PATH`. `build.json` records the sidecar name
+and SHA-256; package extraction and release staging verify it. The upstream
+platform packages declare `MIT AND LGPL-2.1-or-later`; their license, author,
+patent, and related notice files ship under `opentui-licenses/` in each CLI
+archive.
 
 ### Upgrade history from 0.5.17 → 0.6.8 (2026-10-16 to 2026-10-24)
 

@@ -1,6 +1,7 @@
 module main
 
 import os
+import json2
 import rand
 
 fn test_goal_task_projection_is_stable_topological_order() {
@@ -124,6 +125,8 @@ fn test_goal_task_state_is_seeded_idempotently_and_recovery_never_replays_runnin
 	store.db.exec('DROP TABLE goal_task_attempts') or { panic(err) }
 	store.db.exec('DROP TABLE goal_task_states') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 36') or { panic(err) }
+	store.db.exec('DELETE FROM schema_migrations WHERE version = 37') or { panic(err) }
+	store.db.exec('DELETE FROM schema_migrations WHERE version = 38') or { panic(err) }
 	store.close() or { panic(err) }
 
 	store = open_store(path) or { panic(err) }
@@ -269,6 +272,204 @@ fn test_goal_task_claim_gates_dependencies_and_enforces_attempt_budget() {
 		return
 	}
 	assert false, 'claim exceeded goal attempt budget'
+}
+
+fn test_linked_goal_task_attempt_uses_fencing_and_durable_session_operation() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-operation-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	goal := goal_task_test_admission()
+	_ = store.admit_goal(goal) or { panic(err) }
+	store.claim_goal_task_for_session(goal.id, 'prepare', 'missing-session') or {
+		assert err.msg().contains('session not found')
+	}
+	assert (store.goal_task_state(goal.id, 'prepare') or { panic(err) }).status == 'pending'
+	session := store.create_session(SessionInput{ title: 'linked task', directory: root }) or {
+		panic(err)
+	}
+	claim := store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or { panic(err) }
+	assert claim.state.status == 'running'
+	assert claim.state.attempt_count == 1
+	assert claim.session_operation_id.len > 0
+	assert claim.fencing_token.len > 0
+	operation := store.get_session_operation(session.id, claim.session_operation_id) or { panic(err) }
+	assert operation.status == 'running'
+	links := store.db.exec_param_many('SELECT session_id, session_operation_id, fencing_token FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = 1', [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	assert links.len == 1
+	assert links[0].val(0) == session.id
+	assert links[0].val(1) == claim.session_operation_id
+	assert links[0].val(2) == claim.fencing_token
+	mut second_connection := open_store(store.path) or { panic(err) }
+	live_state := second_connection.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	live_operation := second_connection.get_session_operation(session.id,
+		claim.session_operation_id) or { panic(err) }
+	assert live_state.status == 'running'
+	assert live_state.attempts[0].status == 'running'
+	assert live_operation.status == 'running'
+	second_connection.close() or { panic(err) }
+	store.complete_linked_goal_task_attempt(goal.id, 'prepare', 1, claim.fencing_token,
+		.failed) or { panic(err) }
+	failed_operation := store.get_session_operation(session.id, claim.session_operation_id) or {
+		panic(err)
+	}
+	assert failed_operation.status == 'failed'
+	retry := store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or { panic(err) }
+	assert retry.state.attempt_count == 2
+	assert retry.session_operation_id != claim.session_operation_id
+	assert retry.fencing_token != claim.fencing_token
+	store.complete_linked_goal_task_attempt(goal.id, 'prepare', 2, claim.fencing_token,
+		.succeeded) or {
+		assert err.msg().contains('not running')
+	}
+	current := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert current.status == 'running'
+	assert current.attempts[1].status == 'running'
+	current_operation := store.get_session_operation(session.id, retry.session_operation_id) or {
+		panic(err)
+	}
+	assert current_operation.status == 'running'
+	store.complete_linked_goal_task_attempt(goal.id, 'prepare', 2, retry.fencing_token,
+		.succeeded) or { panic(err) }
+	completed_operation := store.get_session_operation(session.id, retry.session_operation_id) or {
+		panic(err)
+	}
+	assert completed_operation.status == 'completed'
+	started := store.db.exec_param_many("SELECT COUNT(*) FROM events WHERE session_id = ? AND type = 'goal.task_attempt_started'", [
+		session.id,
+	]) or { panic(err) }
+	completed := store.db.exec_param_many("SELECT COUNT(*) FROM events WHERE session_id = ? AND type = 'goal.task_attempt_completed'", [
+		session.id,
+	]) or { panic(err) }
+	assert started[0].val(0).int() == 2
+	assert completed[0].val(0).int() == 2
+	started_payloads := store.db.exec_param_many("SELECT data FROM events WHERE session_id = ? AND type = 'goal.task_attempt_started' ORDER BY id", [
+		session.id,
+	]) or { panic(err) }
+	started_payload := json2.decode[GoalTaskEventData](started_payloads[0].val(0)) or {
+		panic(err)
+	}
+	assert started_payload.goal_id == goal.id
+	assert started_payload.task_id == 'prepare'
+	assert started_payload.attempt == 1
+	assert started_payload.operation_id == claim.session_operation_id
+	completed_payloads := store.db.exec_param_many("SELECT data FROM events WHERE session_id = ? AND type = 'goal.task_attempt_completed' ORDER BY id", [
+		session.id,
+	]) or { panic(err) }
+	completed_payload := json2.decode[GoalTaskEventData](completed_payloads[0].val(0)) or {
+		panic(err)
+	}
+	assert completed_payload.goal_id == goal.id
+	assert completed_payload.task_id == 'prepare'
+	assert completed_payload.attempt == 1
+	assert completed_payload.operation_id == claim.session_operation_id
+	assert completed_payload.status == 'failed'
+	assert completed_payload.outcome == 'failed'
+	session_turn_events := store.db.exec_param_many("SELECT COUNT(*) FROM events WHERE session_id = ? AND type IN ('session.turn_started', 'session.turn_completed')", [
+		session.id,
+	]) or { panic(err) }
+	assert session_turn_events[0].val(0).int() == 0
+}
+
+fn test_linked_goal_task_claim_recovery_marks_operation_uncertain_without_replay() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-operation-recovery-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'veasel.sqlite3')
+	goal := goal_task_test_admission()
+	mut store := open_store(path) or { panic(err) }
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'linked task recovery'
+		directory: root
+	}) or { panic(err) }
+	claim := store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or { panic(err) }
+	_ = store.db.exec_param_many("UPDATE goal_task_states SET owner_start_id = '' WHERE goal_id = ? AND task_id = ?", [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	_ = store.db.exec_param_many("UPDATE goal_task_attempts SET owner_start_id = '' WHERE goal_id = ? AND task_id = ?", [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	store.close() or { panic(err) }
+	mut recovered_store := open_store(path) or { panic(err) }
+	defer { recovered_store.close() or {} }
+	state := recovered_store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'uncertain'
+	assert state.attempts[0].status == 'uncertain'
+	operation := recovered_store.get_session_operation(session.id, claim.session_operation_id) or {
+		panic(err)
+	}
+	assert operation.status == 'uncertain'
+	completions := recovered_store.db.exec_param_many("SELECT COUNT(*) FROM events WHERE session_id = ? AND type = 'goal.task_attempt_completed'", [
+		session.id,
+	]) or { panic(err) }
+	assert completions[0].val(0).int() == 1
+	recovered_store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or {
+		assert err.msg().contains('not claimable')
+		return
+	}
+	assert false, 'recovery replayed a linked ambiguous attempt'
+}
+
+fn test_linked_goal_task_recovery_tolerates_deleted_session() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-deleted-session-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'veasel.sqlite3')
+	goal := goal_task_test_admission()
+	mut store := open_store(path) or { panic(err) }
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'deleted task session'
+		directory: root
+	}) or { panic(err) }
+	_ = store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or { panic(err) }
+	_ = store.db.exec_param_many("UPDATE goal_task_states SET owner_start_id = '' WHERE goal_id = ? AND task_id = ?", [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	_ = store.db.exec_param_many("UPDATE goal_task_attempts SET owner_start_id = '' WHERE goal_id = ? AND task_id = ?", [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	store.delete_session(session.id) or { panic(err) }
+	store.close() or { panic(err) }
+	mut recovered_store := open_store(path) or { panic(err) }
+	defer { recovered_store.close() or {} }
+	state := recovered_store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'uncertain'
+	assert state.attempts[0].status == 'uncertain'
+}
+
+fn test_linked_goal_task_completion_survives_deleted_session() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-complete-deleted-session-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	goal := goal_task_test_admission()
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'deleted task session completion'
+		directory: root
+	}) or { panic(err) }
+	claim := store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or { panic(err) }
+	store.delete_session(session.id) or { panic(err) }
+	store.complete_linked_goal_task_attempt(goal.id, 'prepare', 1, claim.fencing_token,
+		.succeeded) or { panic(err) }
+	state := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'succeeded'
+	assert state.attempts[0].status == 'succeeded'
+	operations := store.db.exec_param_many('SELECT COUNT(*) FROM session_operations WHERE id = ?', [
+		claim.session_operation_id,
+	]) or { panic(err) }
+	assert operations[0].val(0).int() == 0
 }
 
 fn test_goal_task_completion_rolls_back_when_state_row_is_not_running() {

@@ -3,6 +3,7 @@ module main
 import db.sqlite
 import json2
 import os
+import uuid
 
 // Lifecycle values stay typed in the V state machine. Projections encode their
 // string wire values explicitly for the versioned HTTP API.
@@ -63,6 +64,22 @@ pub:
 	attempts      []GoalTaskAttemptProjection
 }
 
+struct GoalTaskClaim {
+	state                GoalTaskProjectionState
+	session_operation_id string
+	fencing_token        string
+}
+
+struct GoalTaskEventData {
+	goal_id      string
+	task_id      string
+	attempt      int
+	operation_id string
+	status       string
+	outcome      string
+	error        string
+}
+
 struct GoalTaskOwnerStatus {
 	alive    bool
 	identity string
@@ -98,8 +115,20 @@ fn migrate_goal_task_state(mut db sqlite.DB) ! {
 	add_column_if_missing(&db, 'goal_task_states', 'owner_start_id', "TEXT NOT NULL DEFAULT ''")!
 	add_column_if_missing(&db, 'goal_task_attempts', 'owner_pid', 'INTEGER NOT NULL DEFAULT 0')!
 	add_column_if_missing(&db, 'goal_task_attempts', 'owner_start_id', "TEXT NOT NULL DEFAULT ''")!
+	add_column_if_missing(&db, 'goal_task_attempts', 'session_id', "TEXT NOT NULL DEFAULT ''")!
+	add_column_if_missing(&db, 'goal_task_attempts', 'session_operation_id', "TEXT NOT NULL DEFAULT ''")!
+	add_column_if_missing(&db, 'goal_task_attempts', 'fencing_token', "TEXT NOT NULL DEFAULT ''")!
 	db.exec('CREATE INDEX IF NOT EXISTS idx_goal_task_attempts_status ON goal_task_attempts(status)')!
 	db.exec('INSERT OR IGNORE INTO schema_migrations (version) VALUES (36)')!
+	db.exec('INSERT OR IGNORE INTO schema_migrations (version) VALUES (37)')!
+	db.commit()!
+}
+
+fn migrate_goal_task_session_operation_index(mut db sqlite.DB) ! {
+	db.begin()!
+	defer { db.rollback() or {} }
+	db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_goal_task_attempts_session_operation ON goal_task_attempts(session_operation_id) WHERE session_operation_id != ''")!
+	db.exec('INSERT OR IGNORE INTO schema_migrations (version) VALUES (38)')!
 	db.commit()!
 }
 
@@ -116,7 +145,7 @@ fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 		goal := json2.decode[GoalAdmission](row.val(0))!
 		seed_goal_task_state(mut db, goal)!
 	}
-	interrupted_attempts := db.exec("SELECT goal_id, task_id, attempt, owner_pid, owner_start_id FROM goal_task_attempts WHERE status = 'running'")!
+	interrupted_attempts := db.exec("SELECT goal_id, task_id, attempt, owner_pid, owner_start_id, session_id, session_operation_id FROM goal_task_attempts WHERE status = 'running'")!
 	for row in interrupted_attempts {
 		owner := goal_task_owner_status(row.val(3).int())
 		if row.val(4) == '' || !owner.alive || owner.identity == '' || owner.identity != row.val(4) {
@@ -125,6 +154,31 @@ fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 				row.val(1),
 				row.val(2),
 			])!
+			if row.val(5) != '' && row.val(6) != '' {
+				_ = db.exec_param_many("UPDATE goal_task_states SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP, owner_pid = 0, owner_start_id = '' WHERE goal_id = ? AND task_id = ? AND status = 'running'", [
+					row.val(0),
+					row.val(1),
+				])!
+				_ = db.exec_param_many("UPDATE session_operations SET status = 'uncertain', outcome = 'uncertain', error = 'The server stopped before this task attempt reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status IN ('running', 'cancelling')", [
+					row.val(5),
+					row.val(6),
+				])!
+				if db.get_affected_rows_count() == 1 {
+					_ = db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+						'goal.task_attempt_completed',
+						row.val(5),
+						json2.encode[GoalTaskEventData](GoalTaskEventData{
+							goal_id:      row.val(0)
+							task_id:      row.val(1)
+							attempt:      row.val(2).int()
+							operation_id: row.val(6)
+							status:       'uncertain'
+							outcome:      'uncertain'
+							error:        'The server stopped before this task attempt reached a recorded result.'
+						}),
+					])!
+				}
+			}
 		}
 	}
 	interrupted_tasks := db.exec("SELECT goal_id, task_id, owner_pid, owner_start_id FROM goal_task_states WHERE status = 'running'")!
@@ -224,6 +278,23 @@ fn (mut store Store) goal_task_states_for_goal(goal_id string) !map[string]GoalT
 // succeeded and whose goal-wide attempt budget has not been exhausted. It is a
 // state transition only; it never starts a worker or performs task effects.
 fn (mut store Store) claim_goal_task(goal_id string, task_id string) !GoalTaskProjectionState {
+	claim := store.claim_goal_task_internal(goal_id, task_id, '')!
+	return claim.state
+}
+
+// Linked claims are an internal storage API until task workers exist. The
+// supplied session must already exist; the operation and attempt are created
+// atomically, and only the returned fencing token may complete this attempt.
+fn (mut store Store) claim_goal_task_for_session(goal_id string, task_id string,
+	session_id string) !GoalTaskClaim {
+	if session_id.trim_space().len == 0 {
+		return error('session identifier is required for linked goal task claim')
+	}
+	return store.claim_goal_task_internal(goal_id, task_id, session_id)
+}
+
+fn (mut store Store) claim_goal_task_internal(goal_id string, task_id string,
+	session_id string) !GoalTaskClaim {
 	store.mu.lock()
 	defer { store.mu.unlock() }
 	goal_rows := store.db.exec_param('SELECT manifest FROM goal_admissions WHERE id = ?', goal_id)!
@@ -245,6 +316,12 @@ fn (mut store Store) claim_goal_task(goal_id string, task_id string) !GoalTaskPr
 	}
 	store.db.exec('BEGIN IMMEDIATE')!
 	defer { store.db.rollback() or {} }
+	if session_id != '' {
+		sessions := store.db.exec_param_many('SELECT id FROM sessions WHERE id = ?', [session_id])!
+		if sessions.len != 1 {
+			return error('session not found')
+		}
+	}
 	for dependency in dependencies {
 		dependency_rows := store.db.exec_param_many('SELECT status FROM goal_task_states WHERE goal_id = ? AND task_id = ?', [
 			goal_id,
@@ -280,32 +357,131 @@ fn (mut store Store) claim_goal_task(goal_id string, task_id string) !GoalTaskPr
 		task_id,
 	])!
 	attempt := attempt_rows[0].val(0)
-	_ = store.db.exec_param_many("INSERT INTO goal_task_attempts (goal_id, task_id, attempt, status, owner_pid, owner_start_id) VALUES (?, ?, ?, 'running', ?, ?)", [
+	mut session_operation_id := ''
+	mut fencing_token := ''
+	if session_id != '' {
+		session_operation_id = uuid.new_v4().str()
+		fencing_token = uuid.new_v4().str()
+		_ = store.db.exec_param_many("INSERT INTO session_operations (id, session_id, status, request_json, queue_order) VALUES (?, ?, 'running', '', (SELECT COALESCE(MAX(queue_order), 0) + 1 FROM session_operations WHERE session_id = ?))", [
+			session_operation_id,
+			session_id,
+			session_id,
+		])!
+		_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+			'goal.task_attempt_started',
+			session_id,
+			json2.encode[GoalTaskEventData](GoalTaskEventData{
+				goal_id:      goal_id
+				task_id:      task_id
+				attempt:      attempt.int()
+				operation_id: session_operation_id
+				status:       'running'
+			}),
+		])!
+	}
+	_ = store.db.exec_param_many("INSERT INTO goal_task_attempts (goal_id, task_id, attempt, status, owner_pid, owner_start_id, session_id, session_operation_id, fencing_token) VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?)", [
 		goal_id,
 		task_id,
 		attempt,
 		pid,
 		owner_start_id,
+		session_id,
+		session_operation_id,
+		fencing_token,
 	])!
 	store.db.commit()!
-	return store.goal_task_state_unlocked(goal_id, task_id)!
+	return GoalTaskClaim{
+		state:                store.goal_task_state_unlocked(goal_id, task_id)!
+		session_operation_id: session_operation_id
+		fencing_token:        fencing_token
+	}
 }
 
 // complete_goal_task_attempt records an explicit result. Failed attempts return
 // the task to pending while budget remains; uncertain results are never retried.
 fn (mut store Store) complete_goal_task_attempt(goal_id string, task_id string, attempt int, result GoalTaskResult) ! {
+	return store.complete_goal_task_attempt_internal(goal_id, task_id, attempt, '', result)
+}
+
+fn (mut store Store) complete_linked_goal_task_attempt(goal_id string, task_id string, attempt int,
+	fencing_token string, result GoalTaskResult) ! {
+	if fencing_token.len == 0 {
+		return error('goal task fencing token is required')
+	}
+	return store.complete_goal_task_attempt_internal(goal_id, task_id, attempt, fencing_token,
+		result)
+}
+
+fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id string,
+	attempt int, fencing_token string, result GoalTaskResult) ! {
 	store.mu.lock()
 	defer { store.mu.unlock() }
 	store.db.begin()!
 	defer { store.db.rollback() or {} }
-	_ = store.db.exec_param_many("UPDATE goal_task_attempts SET status = ?, ended_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running'", [
+	_ = store.db.exec_param_many("UPDATE goal_task_attempts SET status = ?, ended_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running' AND fencing_token = ?", [
 		result.str(),
 		goal_id,
 		task_id,
 		attempt.str(),
+		fencing_token,
 	])!
 	if store.db.get_affected_rows_count() != 1 {
-		return error('goal task attempt is not running')
+		return error('goal task attempt is not running or fencing token is stale')
+	}
+	linked := store.db.exec_param_many('SELECT session_id, session_operation_id FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	if linked.len != 1 {
+		return error('goal task attempt link not found')
+	}
+	if linked[0].val(1) != '' {
+		op_status := match result {
+			.succeeded { 'completed' }
+			.failed { 'failed' }
+			.uncertain { 'uncertain' }
+		}
+		op_outcome := match result {
+			.succeeded { 'completed' }
+			.failed { 'failed' }
+			.uncertain { 'uncertain' }
+		}
+		if linked[0].val(0).len == 0 {
+			return error('linked goal task session is invalid')
+		}
+		sessions := store.db.exec_param_many('SELECT id FROM sessions WHERE id = ?', [linked[0].val(0)])!
+		if sessions.len > 0 {
+			_ = store.db.exec_param_many("UPDATE session_operations SET status = ?, outcome = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'running'", [
+				op_status,
+				op_outcome,
+				if result == .uncertain { 'The task attempt result is uncertain.' } else { '' },
+				linked[0].val(0),
+				linked[0].val(1),
+			])!
+			if store.db.get_affected_rows_count() != 1 {
+				return error('linked session operation is not running')
+			}
+			_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+				'goal.task_attempt_completed',
+				linked[0].val(0),
+				json2.encode[GoalTaskEventData](GoalTaskEventData{
+					goal_id:      goal_id
+					task_id:      task_id
+					attempt:      attempt
+					operation_id: linked[0].val(1)
+					status:       op_status
+					outcome:      op_outcome
+					error:        if result == .uncertain {
+						'The task attempt result is uncertain.'
+					} else {
+						''
+					}
+				}),
+			])!
+		}
+	} else if fencing_token != '' {
+		return error('linked session operation not found')
 	}
 	goal_rows := store.db.exec_param('SELECT manifest FROM goal_admissions WHERE id = ?', goal_id)!
 	if goal_rows.len == 0 {

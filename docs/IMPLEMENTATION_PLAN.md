@@ -83,18 +83,23 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   installed/executed version, source and workspace SHAs, session, permissions,
   and receipts for any repeat.
 - HorneroOS smoke on 2026-11-26 used the installed `v0.106.3-next.0` Desktop
-  and TUI against one isolated temporary backend profile. Desktop health was
-  HTTP 200; native discovery verified the installed Codex CLI, and a
-  read-only `plan` session against this repository completed through Codex.
-  The TUI then connected to that same backend and saw the shared session. The
-  worktree stayed clean. The stale Desktop launcher was corrected to the
-  extracted `v0.106.3-next.0` AppDir and passes `desktop-file-validate`.
+  with isolated temporary profiles. Desktop health was HTTP 200 and native
+  discovery verified the installed Codex CLI. In one profile, a read-only
+  `plan` session created via the versioned backend API completed, and the TUI
+  connected to that backend and saw the shared session; the repository
+  worktree stayed clean. In a separate profile, the Desktop Focus composer
+  submitted a read-only `plan` task to Codex and the operation completed, but
+  the response incorrectly described already-merged PR #841 as unmerged, so
+  semantic correctness failed. That run selected a folder already remembered
+  by the isolated profile; the native folder picker was not exercised. The
+  stale Desktop launcher was corrected to the extracted `v0.106.3-next.0`
+  AppDir and passes `desktop-file-validate`.
   Evidence and installed executable hashes are recorded in
   [`desktop/evidence/hornero-installed-smoke-2026-11-26.json`](desktop/evidence/hornero-installed-smoke-2026-11-26.json).
-  This does not complete daily-driver acceptance: the session was admitted via
-  the backend API rather than submitted through the Desktop composer, the
-  installed build is still a prerelease, and the host's other native provider
-  checks remain partly unknown.
+  These observations do not complete daily-driver acceptance: the Desktop
+  composer task's answer was incorrect, native folder selection was not
+  validated, the installed build is still a prerelease, and the host's other
+  native provider checks remain partly unknown.
 
 ### Optional cozy World (#693)
 
@@ -165,13 +170,12 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Link claimed attempts to the existing operation lifecycle (PR #840).
   Runner and verifier resolution, policy enforcement, dispatch and UI remain
   separate milestones.
-- [ ] Prepare an isolated, clean worktree for each claimed task at its exact
-  admitted full base SHA. PR #841 adds fail-closed checkout
-  revalidation, repository-config refusal, collision and symlink checks,
-  durable attempt/worktree identity, and uncertain recovery; focused tests pass
-  in the development compiler. This PR remains unmerged and does not launch an
-  agent. Expose no public start/claim path until the full dispatch acceptance
-  gates below are implemented.
+- [x] Prepare an isolated, clean worktree for each claimed task at its exact
+  admitted full base SHA (PR #841, merged at `22574497`). The implementation
+  adds fail-closed checkout revalidation, repository-config refusal, collision
+  and symlink checks, durable attempt/worktree identity, and uncertain recovery.
+  It does not launch an agent or expose a public dispatch path; dispatch
+  acceptance gates below remain incomplete.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run
   progressive concurrency acceptance with live agents and independent review.
 - [x] Integrate the authenticated deterministic task projection (PR #831). It

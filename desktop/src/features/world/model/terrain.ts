@@ -608,6 +608,26 @@ function feather(p: Painter) {
   }
 }
 
+/** Finish creek bends with the matching bank tile on all four sides. */
+function shorelineTransitions(p: Painter, bridgeRows: ReadonlySet<number>) {
+  const snapshot = new Map(p.cells);
+  const directions = [
+    { dx: 0, dy: -1, edge: 'water-edge-n' },
+    { dx: 0, dy: 1, edge: 'water-edge-s' },
+    { dx: -1, dy: 0, edge: 'water-edge-w' },
+    { dx: 1, dy: 0, edge: 'water-edge-e' },
+  ] as const;
+  for (const [at, tile] of snapshot) {
+    if ((!tile.startsWith('grass') && !tile.startsWith('flowers')) || p.paths.has(at)) continue;
+    const [xs, ys] = at.split(',');
+    const x = Number(xs);
+    const y = Number(ys);
+    if (bridgeRows.has(y) || p.isBlocked(x, y)) continue;
+    const bank = directions.find(({ dx, dy }) => snapshot.get(key(x + dx, y + dy)) === 'water');
+    if (bank) p.set(x, y, bank.edge);
+  }
+}
+
 /** Bridge planks where a road crosses the creek. */
 function bridgeAt(p: Painter, creekX: number, y: number) {
   p.sprite(`bridge:${creekX},${y}`, creekX, y - 1, 'bridge', 48, 48, 0, -8, false);
@@ -1736,6 +1756,7 @@ export function paintTerrain(entities: readonly LaidOutEntity[], cols: number, r
   flowerGlades(p);
   forest(p, projects.length === 0);
   flowerPatchSprites(p);
+  shorelineTransitions(p, new Set([roadY]));
   wildlife(p, hall);
   renderCourtyardStones(p);
 

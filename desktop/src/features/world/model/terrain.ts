@@ -173,7 +173,7 @@ function baseGround(p: Painter) {
         // Each moisture band has four authored tile patterns. Keep one
         // pattern across broad patches so the meadow reads as a material,
         // not a checker of alternating stamps.
-        const texture = Math.min(3, Math.floor(meadowField(x, y, 9, 59) * 4));
+        const texture = Math.min(3, Math.floor(meadowField(x, y, 7, 59) * 4));
         p.set(x, y, `grass-${grass * 4 + texture}`, blocked);
       }
     }

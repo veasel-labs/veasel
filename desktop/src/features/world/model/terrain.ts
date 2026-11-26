@@ -170,9 +170,10 @@ function baseGround(p: Painter) {
         p.set(x, y, ['flowers-poppy', 'flowers-daisy', 'flowers-lavender', 'flowers-gold'][h2(x, y, 12) % 4]!, blocked);
       } else {
         const grass = Math.max(0, Math.min(5, Math.floor((moisture - 0.22) * 9)));
-        // Each moisture band has four authored tile patterns. Spatially
-        // seeded choice breaks up repeated 16px stamps without adding noise.
-        const texture = Math.min(3, Math.floor(meadowField(x, y, 5, 59) * 4));
+        // Each moisture band has four authored tile patterns. Keep one
+        // pattern across broad patches so the meadow reads as a material,
+        // not a checker of alternating stamps.
+        const texture = Math.min(3, Math.floor(meadowField(x, y, 9, 59) * 4));
         p.set(x, y, `grass-${grass * 4 + texture}`, blocked);
       }
     }

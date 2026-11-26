@@ -1054,7 +1054,7 @@ function grassTile(seed) {
   // leaf texture to read as a living meadow at normal zoom. Deterministic
   // clumps avoid the confetti effect of isolated noise pixels and soften the
   // broad moisture bands without obscuring paths or semantic objects.
-  const count = 8 + random(5);
+  const count = 5 + random(3);
   for (let i = 0; i < count; i++) {
     const motif = random(3) === 0 ? tufts[random(tufts.length)] : clovers[random(clovers.length)];
     const left = 1 + random(12);

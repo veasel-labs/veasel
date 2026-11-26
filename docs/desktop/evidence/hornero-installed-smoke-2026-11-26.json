@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-26",
+  "host": "HorneroOS Linux",
+  "release": {
+    "tag": "v0.106.3-next.0",
+    "source_commit": "ceed8b1fe5e0930b4e57ce48c8a9494cb5b29743",
+    "desktop_appimage_release_sha256": "c1ab99e5c3db7f07a9c047d1dd5c6aa3e9d4502e0b32b7ee7e249704399ef18e",
+    "installed_tui_sha256": "4c3bb4d1cdc1b10dee3e48abc1e02e56559337fb28d26b3abd8362258cf310fb",
+    "installed_desktop_executable_sha256": "0a009921284b3e0324b658a3f23e8c9b846fb9bb7fa52dbd3d5155beb958ec4c"
+  },
+  "desktop": {
+    "launched": true,
+    "backend_health_http_status": 200,
+    "backend_data_profile": "temporary isolated profile",
+    "desktop_entry_points_to_current_release": true,
+    "desktop_entry_valid": true,
+    "provider_discovery": {
+      "codex_installed": true,
+      "codex_cli_version": "codex-cli 0.172.0",
+      "native_auth_state": "verified",
+      "auth_method": "chatgpt",
+      "launchable": true
+    }
+  },
+  "session_smoke": {
+    "workspace": "Veasel repository worktree",
+    "provider": "codex",
+    "permission_mode": "plan",
+    "operation_status": "completed",
+    "task": "Read-only inspection of docs/IMPLEMENTATION_PLAN.md; no shell commands, network access, or file edits requested.",
+    "result": "Returned the first three unchecked headings and identified Fleet orchestration and portable workflow handoff as incomplete.",
+    "worktree_clean_afterward": true
+  },
+  "tui": {
+    "launched": true,
+    "connected_to_same_backend_profile": true,
+    "observed_shared_session_count": 1
+  },
+  "limitations": [
+    "The session was created and submitted through the versioned backend API; the Desktop start form was not used to submit this live-provider turn.",
+    "The installed package is a prerelease; stable release and downstream distribution synchronization remain outstanding.",
+    "This smoke does not establish verified native authentication for every installed provider or full daily-driver acceptance."
+  ]
+}

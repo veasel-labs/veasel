@@ -82,6 +82,19 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   not acceptance of the current `v0.103.3-next.0` package. Attach the exact
   installed/executed version, source and workspace SHAs, session, permissions,
   and receipts for any repeat.
+- HorneroOS smoke on 2026-11-26 used the installed `v0.106.3-next.0` Desktop
+  and TUI against one isolated temporary backend profile. Desktop health was
+  HTTP 200; native discovery verified the installed Codex CLI, and a
+  read-only `plan` session against this repository completed through Codex.
+  The TUI then connected to that same backend and saw the shared session. The
+  worktree stayed clean. The stale Desktop launcher was corrected to the
+  extracted `v0.106.3-next.0` AppDir and passes `desktop-file-validate`.
+  Evidence and installed executable hashes are recorded in
+  [`desktop/evidence/hornero-installed-smoke-2026-11-26.json`](desktop/evidence/hornero-installed-smoke-2026-11-26.json).
+  This does not complete daily-driver acceptance: the session was admitted via
+  the backend API rather than submitted through the Desktop composer, the
+  installed build is still a prerelease, and the host's other native provider
+  checks remain partly unknown.
 
 ### Optional cozy World (#693)
 

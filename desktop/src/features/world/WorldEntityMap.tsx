@@ -15,6 +15,7 @@ import { paintInterior, paintTerrain, type DecorSprite, type LaidOutEntity } fro
 import spriteManifest from './manifest.json';
 import { TerrainCanvas } from './TerrainRenderer';
 import { nearestWorldNeighbor, type WorldDirection } from './spatialNavigation';
+import { worldLabelPosition } from './worldLabelPosition';
 import {
   findWorldSpawn,
   nearbyWorldTarget,
@@ -712,6 +713,19 @@ export function WorldEntityMap({
           .map((entity) => {
             const isNearby = entity.id === nearbyId;
             const isActive = entity.id === selectedId || entity.id === hoveredId || isNearby;
+            const labelDetail = isNearby ? entity.state : '';
+            const viewport = {
+              width: regionRef.current?.clientWidth ?? 0,
+              height: regionRef.current?.clientHeight ?? 0,
+            };
+            const labelPosition = worldLabelPosition({
+              entity,
+              zoom,
+              pan,
+              viewport,
+              detail: labelDetail,
+              emphasized: isActive,
+            });
             return (
               <span
                 key={`label:${entity.id}`}
@@ -723,13 +737,14 @@ export function WorldEntityMap({
                 data-nearby={isNearby ? 'true' : undefined}
                 data-selected={isActive ? 'true' : undefined}
                 style={{
-                  left: (entity.x + entity.w / 2) * zoom,
-                  top: (entity.y + entity.h) * zoom + 2,
+                  left: labelPosition.left,
+                  top: labelPosition.top,
+                  maxWidth: labelPosition.maxWidth ? `${labelPosition.maxWidth}px` : undefined,
                   ['--world-tile-size' as string]: `${zoom}px`,
                 }}
               >
                 {entity.name}
-                {isNearby && entity.state ? <small className={styles.worldLabelDetail}>{entity.state}</small> : null}
+                {labelDetail ? <small className={styles.worldLabelDetail}>{labelDetail}</small> : null}
               </span>
             );
           })}

@@ -580,6 +580,10 @@
   background: var(--accent-gold);
   color: #241d2e;
   border-color: var(--accent-gold);
+  border-width: 2px;
+  padding: 3px 7px;
+  font-size: clamp(9px, calc(var(--world-tile-size, 16px) * 0.4), 14px);
+  box-shadow: 0 0 0 2px rgb(255 227 140 / 25%), 3px 3px 0 rgb(13 16 27 / 55%);
 }
 
 /* Always-on house sign: quieter wooden plaque so houses stay identifiable

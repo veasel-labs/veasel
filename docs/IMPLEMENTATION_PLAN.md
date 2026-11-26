@@ -97,9 +97,8 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   unavailable, and labels retained data after a backend disconnect. It also
   replaces fixed “ready” claims with destination descriptions and improves
   camera framing for tall compact windows while keeping Fit World as the
-  complete overview.
-  This is an open PR, not a released behavior; its regression suite and CI must
-  pass before the change is considered shipped.
+  complete overview. PR #836 merged to main as `33f98183`; the current main CI
+  run is still pending, and no release containing this change is published yet.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under
@@ -113,22 +112,27 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 - [x] Add Veasel-specific, authenticated admission, listing and manifest replay for portable goals.
   Admission records preserve the declared scope and survive restart.
-- [ ] Verify local repository identity, canonical roots and base commits before
-  any dispatch. PR #830 merged as `acece001` and adds an authenticated
-  read-only preflight for checkout identity and scoped paths. It remains a
-  point-in-time diagnostic and must be revalidated by any future dispatcher.
-  Resolve runner and verifier IDs against registered capabilities and enforce
-  policy ceilings and deadlines in V.
-- [ ] Store dependency and attempt transitions and link each claimed attempt to
-  the existing operation lifecycle. PR #835 adds durable task-attempt state
-  and remains open while cross-platform CI runs. Recover interrupted attempts
-  without replaying uncertain effects.
+- [x] Implement authenticated read-only repository identity preflight for
+  local roots and scoped paths (PR #830). The result remains point-in-time
+  diagnostic evidence and must be revalidated by any future dispatcher.
+- [ ] Bind repository identity/base-SHA revalidation to every dispatch. Resolve
+  runner and verifier IDs against registered capabilities and enforce policy
+  ceilings and deadlines in V.
+- [ ] Persist per-task status and attempt history, initialize it idempotently,
+  and atomically claim only dependency-ready tasks within the goal-wide attempt
+  budget (all tasks and retries count). Classify claims with missing, exited,
+  or unverifiable owner identity as uncertain and never replay them.
+  This state-only groundwork does not dispatch work or link attempts to
+  session operations. Cross-platform recovery acceptance remains pending until
+  the macOS and Windows owner-lifecycle tests and CI complete.
+- [ ] Link claimed attempts to the existing operation lifecycle before adding
+  dispatch. Runner and verifier resolution, dispatch and UI remain separate.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run
   progressive concurrency acceptance with live agents and independent review.
-- [x] Integrate the authenticated deterministic task projection (#831). It
-  returns dependency-ordered task metadata for admitted goals; it does not
-  schedule, launch, or recover workers. Runner/verifier resolution, durable
-  attempts, dispatch and UI remain separate milestones above.
+- [x] Integrate the authenticated deterministic task projection (PR #831). It
+  returns dependency-ordered metadata with durable status and
+  attempt history; it does not schedule or launch workers. Runner/verifier
+  resolution, operation linkage, dispatch and UI remain separate milestones.
 
 ### Milestone 1 — functional foundation (complete locally)
 

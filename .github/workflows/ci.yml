@@ -352,6 +352,7 @@ jobs:
           bwrap --unshare-all --die-with-parent --new-session --ro-bind / / -- true
           v test main_test.v
           v test api_auth_test.v
+          v test goal_tasks_test.v
           v test model_settings_test.v
           v test secret_store_test.v
           v test api_metadata_test.v
@@ -380,7 +381,7 @@ jobs:
           v test headless_cli_test.v
           v test headless_config_test.v
           v test workspace_tools_test.v
-      # Split into batches of <=6 files: every file recompiles the whole
+      # Split into batches of <=7 files: every file recompiles the whole
       # module with gcc on Windows (~3 min/file at VJOBS=2, measured on run
       # 44594397273: 11 files = 33 min wall, runtime only ~42 s). A single
       # 17-file step exceeds any sane step timeout although no test hangs;
@@ -410,13 +411,14 @@ jobs:
         env:
           VJOBS: 2
         run: |
-          & v -cc gcc test model_settings_test.v secret_store_test.v api_metadata_test.v plugin_mcp_http_transport_test.v shell_commands_test.v repository_map_test.v
+          & v -cc gcc test model_settings_test.v secret_store_test.v api_metadata_test.v plugin_mcp_http_transport_test.v shell_commands_test.v repository_map_test.v goal_tasks_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run macOS provider settings, backend startup, and shell sandbox tests
         if: runner.os == 'macOS'
         run: |
           v test main_test.v
           v test api_auth_test.v
+          v test goal_tasks_test.v
           v test model_settings_test.v
           v test secret_store_test.v
           v test api_metadata_test.v

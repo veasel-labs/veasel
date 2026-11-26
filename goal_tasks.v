@@ -12,16 +12,18 @@ pub:
 
 pub struct GoalTaskProjectionItem {
 pub:
-	id         string
-	title      string
-	repository string
-	base_sha   string
-	paths      []string
-	depends_on []string
-	recipe     string
-	runner     string
-	verifier   string
-	status     string
+	id            string
+	title         string
+	repository    string
+	base_sha      string
+	paths         []string
+	depends_on    []string
+	recipe        string
+	runner        string
+	verifier      string
+	status        string
+	attempt_count int
+	attempts      []GoalTaskAttemptProjection
 }
 
 fn project_goal_task_graph(goal GoalAdmission) !GoalTasksProjection {
@@ -66,5 +68,24 @@ pub fn (app &App) get_admitted_goal_tasks(mut ctx Context, id string) veb.Result
 	projection := project_goal_task_graph(goal) or {
 		return json_server_error(mut ctx, 'Unable to project admitted goal tasks')
 	}
-	return ctx.json(projection)
+	states := store.goal_task_states_for_goal(id) or {
+		return json_server_error(mut ctx, 'Unable to read admitted goal task state')
+	}
+	mut tasks := projection.tasks.clone()
+	for i, task in tasks {
+		state := states[task.id] or {
+			return json_server_error(mut ctx, 'Unable to read admitted goal task state')
+		}
+		tasks[i] = GoalTaskProjectionItem{
+			...task
+			status:        state.status
+			attempt_count: state.attempt_count
+			attempts:      state.attempts
+		}
+	}
+	current := GoalTasksProjection{
+		...projection
+		tasks: tasks
+	}
+	return ctx.json(current)
 }

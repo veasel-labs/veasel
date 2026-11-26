@@ -97,8 +97,16 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   unavailable, and labels retained data after a backend disconnect. It also
   replaces fixed “ready” claims with destination descriptions and improves
   camera framing for tall compact windows while keeping Fit World as the
-  complete overview. PR #836 merged to main as `33f98183`; the current main CI
-  run is still pending, and no release containing this change is published yet.
+  complete overview. PR #836 merged to main as `33f98183`; no published
+  release contains this change yet.
+- Exact-main CI run `45726898766` for merge commit `33f98183` completed with a
+  failure in `V backend / linux`: the Linux HTTP and persistence smoke reported
+  `health version does not match the CLI version`. The smoke's readiness loop
+  can accept anonymous liveness before the API token exists, leaving a response
+  without version metadata for the later assertion. The working-tree candidate
+  waits for authenticated health with the expected version and process ID; it
+  still requires exact-CI verification. The later `Ensure main CI` workflow-run
+  `45734923673` succeeded, but did not rerun that failing smoke.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under
@@ -933,7 +941,7 @@ honoring its license and attribution.
 ## Fleet orchestration and portable workflow handoff (incomplete)
 
 The existing session-turn queue, merged Goal v1 admission/preflight work, and
-the open #831 task-projection PR are not an objective scheduler. `veasel-labs/veasel`
+the merged #831 task projection are not an objective scheduler. `veasel-labs/veasel`
 must own execution, persistence, scheduling, workers, GitHub reconciliation,
 evidence, and the versioned API. `ulises-jeremias/agent-toolkit` owns portable
 goal/task/evidence contracts, validators, playbooks, and workflow recipes;

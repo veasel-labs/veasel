@@ -259,7 +259,13 @@ start_server() {
 	fi
 	server_pid=$!
 	for ((attempt = 0; attempt < 80; attempt++)); do
-		if curl -fsS "$api/v1/health" >"$work_dir/health" 2>/dev/null; then
+		# The unauthenticated liveness response intentionally has no version or
+		# process identity. Do not treat it as ready: the API token can appear a
+		# moment after the listener starts, and accepting liveness here races the
+		# authenticated health assertion below.
+		if [[ -r "$(token_file)" ]] && curl -fsS "$api/v1/health" >"$work_dir/health" 2>/dev/null \
+			&& grep -Fq "\"version\":\"$expected_version\"" "$work_dir/health" \
+			&& grep -Eq "\"pid\":${server_pid}([,}])" "$work_dir/health"; then
 			return
 		fi
 		if ! kill -0 "$server_pid" 2>/dev/null; then

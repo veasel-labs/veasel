@@ -63,6 +63,11 @@ describe('responsiveCameraZoom', () => {
     expect(responsiveCameraZoom('grounds', { x: 1920, y: 860 }, { x: 40, y: 24 })).toBe(64);
     expect(responsiveCameraZoom('interior', { x: 800, y: 360 }, { x: 13, y: 9 })).toBe(32);
   });
+
+  it('uses the vertical space on a tall compact desktop while keeping short terminals readable', () => {
+    expect(responsiveCameraZoom('grounds', { x: 1120, y: 860 }, { x: 28, y: 13 })).toBe(48);
+    expect(responsiveCameraZoom('grounds', { x: 1024, y: 448 }, { x: 28, y: 13 })).toBe(32);
+  });
 });
 
 describe('clampCamera', () => {

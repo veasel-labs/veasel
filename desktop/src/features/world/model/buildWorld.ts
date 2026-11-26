@@ -74,8 +74,13 @@ function projectWorldState(
   activity: PlaceActivity,
   jobCount: number,
   personCount: number,
+  jobsKnown: boolean,
 ): string {
   if (project.status === 'broken') return 'broken';
+  if (!jobsKnown)
+    return personCount > 0
+      ? `${personCount} Person session${personCount === 1 ? '' : 's'} open · job state unknown`
+      : 'job state unknown';
   if (activity === 'working') return `${jobCount} job${jobCount === 1 ? '' : 's'} active`;
   if (activity === 'blocked') return 'needs attention';
   if (personCount > 0) return `${personCount} Person session${personCount === 1 ? '' : 's'} open`;
@@ -220,7 +225,7 @@ function buildGrounds(input: WorldDomainInput): SemanticEntity[] {
     kind: 'place',
     concept: 'Terminal / PTY workstation',
     name: 'Terminal',
-    state: 'ready',
+    state: 'launcher',
     themeKey: 'tool.terminal',
     availability: 'present',
     hrefPath: '/terminal',
@@ -267,7 +272,7 @@ function buildGrounds(input: WorldDomainInput): SemanticEntity[] {
     kind: 'place',
     concept: 'Workspace files',
     name: 'Files',
-    state: 'ready',
+    state: 'workspace tree',
     themeKey: 'files.workspace',
     availability: 'present',
     hrefPath: '/workspace',
@@ -282,7 +287,7 @@ function buildGrounds(input: WorldDomainInput): SemanticEntity[] {
     kind: 'place',
     concept: 'Operations / runtime',
     name: 'Operations',
-    state: 'ready',
+    state: 'inspector',
     themeKey: 'ops.crate',
     availability: 'present',
     hrefPath: '/operations',
@@ -295,7 +300,7 @@ function buildGrounds(input: WorldDomainInput): SemanticEntity[] {
     kind: 'place',
     concept: 'Settings',
     name: 'Settings',
-    state: 'ready',
+    state: 'configuration',
     themeKey: 'ops.lamp',
     availability: 'present',
     hrefPath: '/settings',
@@ -345,7 +350,8 @@ function buildGrounds(input: WorldDomainInput): SemanticEntity[] {
       const projectSessions = (input.personSessions ?? []).filter(
         (session) => session.projectId === project.name && pathIsWithin(session.cwd, project.target),
       );
-      const activity = activityForJobs(projectJobs);
+      const jobsKnown = input.jobsKnown ?? true;
+      const activity = jobsKnown ? activityForJobs(projectJobs) : 'unknown';
       const liveCount = projectJobs.filter((job) => !isTerminalJobStatus(job.status)).length;
       const projectPlaceId = `place:project:${project.name}`;
       entities.push({
@@ -353,7 +359,7 @@ function buildGrounds(input: WorldDomainInput): SemanticEntity[] {
         kind: 'place',
         concept: 'Project',
         name: project.name,
-        state: projectWorldState(project, activity, liveCount, projectSessions.length),
+        state: projectWorldState(project, activity, liveCount, projectSessions.length, jobsKnown),
         themeKey: 'project.building',
         availability: 'present',
         hrefPath: '/world',
@@ -395,7 +401,7 @@ function buildInterior(input: WorldDomainInput, focus: string): SemanticEntity[]
     kind: 'object',
     concept: 'Return to workspace grounds',
     name: 'Exit',
-    state: 'ready',
+    state: 'return',
     themeKey: 'workspace.grounds',
     availability: 'present',
     hrefPath: '/world',
@@ -422,7 +428,8 @@ function buildInterior(input: WorldDomainInput, focus: string): SemanticEntity[]
   const projectSessions = (input.personSessions ?? []).filter(
     (session) => session.projectId === project.name && pathIsWithin(session.cwd, project.target),
   );
-  const activity = activityForJobs(projectJobs);
+  const jobsKnown = input.jobsKnown ?? true;
+  const activity = jobsKnown ? activityForJobs(projectJobs) : 'unknown';
   const liveCount = projectJobs.filter(
     (job) => !isTerminalJobStatus(job.status) || job.status === 'failed' || job.status === 'rejected',
   ).length;
@@ -432,7 +439,7 @@ function buildInterior(input: WorldDomainInput, focus: string): SemanticEntity[]
     kind: 'place',
     concept: 'Project overview board',
     name: project.name,
-    state: projectWorldState(project, activity, liveCount, projectSessions.length),
+    state: projectWorldState(project, activity, liveCount, projectSessions.length, jobsKnown),
     themeKey: 'project.building',
     availability: 'present',
     hrefPath: '/workspace',
@@ -486,7 +493,7 @@ function buildInterior(input: WorldDomainInput, focus: string): SemanticEntity[]
     kind: 'object',
     concept: 'Terminal / PTY workstation',
     name: 'Terminal',
-    state: 'ready',
+    state: 'launcher',
     themeKey: 'tool.terminal',
     availability: 'present',
     hrefPath: '/terminal',
@@ -505,7 +512,7 @@ function buildInterior(input: WorldDomainInput, focus: string): SemanticEntity[]
     kind: 'object',
     concept: 'Project files',
     name: 'Files',
-    state: 'ready',
+    state: 'project tree',
     themeKey: 'files.project',
     availability: 'present',
     hrefPath: '/workspace',

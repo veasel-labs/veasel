@@ -13,6 +13,12 @@ const live = vi.hoisted(() => ({
     data: { ok: true, entries: [] as Array<Record<string, unknown>> } as
       { ok: boolean; entries: Array<Record<string, unknown>> } | undefined,
   },
+  memoryFile: {
+    isPending: false,
+    error: null as Error | null,
+    data: undefined as unknown,
+    refetch: vi.fn(),
+  },
   tools: {
     isPending: false,
     isError: false,
@@ -29,7 +35,7 @@ const live = vi.hoisted(() => ({
 }));
 
 vi.mock('../../data/focus', () => ({ useFocusThreads: () => live.focus }));
-vi.mock('../../data/memory', () => ({ useMemoryList: () => live.memory }));
+vi.mock('../../data/memory', () => ({ useMemoryList: () => live.memory, useMemoryFile: () => live.memoryFile }));
 vi.mock('../../data/catalog', () => ({ useTools: () => live.tools }));
 vi.mock('../../data/jobs', () => ({ useJobs: () => live.jobs }));
 vi.mock('../../shell/useSessionContext', () => ({
@@ -65,6 +71,61 @@ describe('WorldView live state', () => {
     live.memory = { isPending: false, isError: false, isSuccess: true, data: { ok: true, entries: [] } };
     live.tools = { isPending: false, isError: false, isSuccess: true, data: { ok: true, tools: [] } };
     live.jobs = { isPending: false, isError: false, isSuccess: true, data: {} };
+    live.memoryFile = { isPending: false, error: null, data: undefined, refetch: vi.fn() };
+  });
+
+  it('opens the canonical memory-file inspector from a world deep link', () => {
+    live.memoryFile.data = {
+      entry: {
+        id: 'notes.md',
+        kind: 'note',
+        title: 'Real note',
+        body: 'from the typed memory endpoint',
+        snippet: '',
+        tags: [],
+        provenance: { file: 'notes.md', author: 'user', timestamp: '', project: '', agent: '' },
+      },
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/world?memory=notes.md']}>
+        <WorldView />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('region', { name: 'Memory record notes.md' })).toBeInTheDocument();
+    expect(screen.getByText('from the typed memory endpoint')).toBeInTheDocument();
+    expect(screen.queryByTestId('entity:place:memory')).not.toBeInTheDocument();
+  });
+
+  it('opens the live tool catalog inspector and routes reviewed installs to Library', () => {
+    live.tools.data = {
+      ok: true,
+      tools: [
+        {
+          id: 'claude',
+          tool_name: 'Claude Code',
+          detected: true,
+          configured: true,
+          enabled: 'true',
+          verified: true,
+          version: '1.0',
+          resolved_path: '/bin/claude',
+          config_paths: [],
+          reason: '',
+          install_hint: 'reviewed',
+        },
+      ],
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/world?tool=claude']}>
+        <WorldView />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('region', { name: 'Coding tool claude' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Review installation in Library' })).toBeInTheDocument();
   });
 
   it('projects real memory, detected tools, and running jobs into the map', () => {

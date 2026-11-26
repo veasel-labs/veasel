@@ -91,14 +91,37 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   destinations; no session or productivity activity was fabricated. A
   separate isolated profile also opened the World with real temporary sessions.
   Screenshots are retained under `/home/ulisesjcf/.cache/veasel-validation/`.
+- On 2026-11-26, the published `v0.106.1-next.0` AppImage was downloaded and
+  SHA-256 verified against its release manifest before extraction. Its packaged
+  Desktop launched with a throwaway HOME, data directory and workspace. The
+  Cozy Valley at 1440×900 and Cyberpunk City at 1024×640 were rendered and
+  visually reviewed; the map composition and pixel scaling are coherent at
+  both sizes. Screenshots are retained in
+  `/home/ulisesjcf/.cache/veasel-validation/v0.106.1-next.0/`. This isolated
+  profile had no authenticated providers or active sessions, and its runtime
+  detail queries were unavailable. It proves packaged launch and visual
+  framing only, not the daily-driver journey or live-agent display.
 - The packaged World currently projects the real Focus session list and
   destinations. PR #836 projects data from the existing memory, tools, and jobs
   APIs, makes project job state explicitly unknown when that source is
   unavailable, and labels retained data after a backend disconnect. It also
   replaces fixed “ready” claims with destination descriptions and improves
   camera framing for tall compact windows while keeping Fit World as the
-  complete overview. PR #836 merged to main as `33f98183`; the current main CI
-  run is still pending, and no release containing this change is published yet.
+  complete overview. PR #836 merged to main as `33f98183`; published release
+  `v0.106.1-next.0` is based on `709d6857`, which contains that merge. Its
+  packaged Desktop still needs the updated readiness fix below and fresh
+  visual/acceptance evidence.
+- Exact-main CI run `45726898766` for merge commit `33f98183` completed with a
+  failure in `V backend / linux`: the Linux HTTP and persistence smoke reported
+  `health version does not match the CLI version`. The smoke's readiness loop
+  could accept anonymous liveness before the API token existed, leaving a
+  response without version metadata for the later assertion. The fix waits for
+  authenticated health with the expected version and process ID. Exact branch
+  CI passed for candidate `72ca0ff4` in run `45746852114`, including required
+  Linux, macOS and Windows jobs. It is not yet integrated into `main`; rerun
+  exact-main checks and packaged acceptance after integration. The later
+  `Ensure main CI` workflow-run `45734923673` succeeded, but did not rerun the
+  failing smoke.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under
@@ -118,13 +141,13 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [ ] Bind repository identity/base-SHA revalidation to every dispatch. Resolve
   runner and verifier IDs against registered capabilities and enforce policy
   ceilings and deadlines in V.
-- [ ] Persist per-task status and attempt history, initialize it idempotently,
+- [x] Persist per-task status and attempt history, initialize it idempotently,
   and atomically claim only dependency-ready tasks within the goal-wide attempt
   budget (all tasks and retries count). Classify claims with missing, exited,
   or unverifiable owner identity as uncertain and never replay them.
-  This state-only groundwork does not dispatch work or link attempts to
-  session operations. Cross-platform recovery acceptance remains pending until
-  the macOS and Windows owner-lifecycle tests and CI complete.
+  This state-only groundwork landed in #835; it does not dispatch work or link
+  attempts to session operations. Cross-platform recovery acceptance remains
+  pending until the macOS and Windows owner-lifecycle tests and CI complete.
 - [ ] Link claimed attempts to the existing operation lifecycle before adding
   dispatch. Runner and verifier resolution, dispatch and UI remain separate.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run
@@ -933,7 +956,7 @@ honoring its license and attribution.
 ## Fleet orchestration and portable workflow handoff (incomplete)
 
 The existing session-turn queue, merged Goal v1 admission/preflight work, and
-the open #831 task-projection PR are not an objective scheduler. `veasel-labs/veasel`
+the merged #831 task projection are not an objective scheduler. `veasel-labs/veasel`
 must own execution, persistence, scheduling, workers, GitHub reconciliation,
 evidence, and the versioned API. `ulises-jeremias/agent-toolkit` owns portable
 goal/task/evidence contracts, validators, playbooks, and workflow recipes;

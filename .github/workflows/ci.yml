@@ -18,7 +18,7 @@ concurrency:
   # same last tag and the second publish fails on a tag collision (run
   # 43921368447). A serialized queue makes each run's release-plan observe
   # the previous run's published tag.
-  group: ${{ github.event_name == 'pull_request' && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-main-serial', github.workflow) }}
+  group: ${{ github.event_name == 'pull_request' && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || github.ref == 'refs/heads/main' && format('{0}-main-serial', github.workflow) || format('{0}-ref-{1}', github.workflow, github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

@@ -10,6 +10,25 @@ import { expect, test } from '@playwright/test';
  * exercise backend-driven panels locally.
  */
 test.describe('desktop smoke', () => {
+  test('Focus loads its lazy CSS and renders without page errors', async ({ page }) => {
+    test.setTimeout(60_000);
+    const pageErrors: string[] = [];
+    const failedStylesheets: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    page.on('response', (response) => {
+      if (response.request().resourceType() === 'stylesheet' && !response.ok()) {
+        failedStylesheets.push(`${response.status()} ${response.url()}`);
+      }
+    });
+
+    await page.goto('/#/focus', { waitUntil: 'commit' });
+    await expect(page.getByText('Sessions run inside Veasel Code. This preview has no session runtime.')).toBeVisible({
+      timeout: 45_000,
+    });
+    expect(failedStylesheets).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
   test('world shell loads as home', async ({ page }) => {
     test.setTimeout(60_000);
     await page.goto('/#/world', { waitUntil: 'commit' });

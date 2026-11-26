@@ -4,11 +4,13 @@ import { flushSync } from 'react-dom';
 import { useFocusThreads } from '../../data/focus';
 import { useJobs } from '../../data/jobs';
 import { useTools } from '../../data/catalog';
-import { useMemoryList } from '../../data/memory';
+import { useMemoryFile, useMemoryList } from '../../data/memory';
 import { useBackend } from '../../data/backend';
 import { useSessionContext } from '../../shell/useSessionContext';
 import { EmptyState } from '../../ui';
-import { worldDetailBackExtra } from './inspectors';
+import { MemoryRecordInspector } from './MemoryRecordInspector';
+import { ToolRecordInspector } from './ToolRecordInspector';
+import { installTargetForTool, worldDetailBackExtra, worldDetailBackLabel } from './inspectors';
 import { buildWorldModel, layoutWorld, type LaidOutEntity, type MemorySummary, type ProjectRecord } from './model';
 import { WORLD_THEME_PACKS, worldThemePack } from './theme/cyberpunkCity';
 import { useWorldDetailEscape } from './useWorldDetailEscape';
@@ -35,16 +37,17 @@ function projectNameOf(cwd: string, projectName: string | null): string {
 export default function WorldView() {
   const { client } = useBackend();
   const { context, href } = useSessionContext();
-  const { threads, loaded } = useFocusThreads();
-  const memoryQuery = useMemoryList();
-  const toolsQuery = useTools();
-  const jobsQuery = useJobs();
-  const navigate = useNavigate();
   const [params] = useSearchParams();
   const focusProject = params.get('project');
   const focusPlace = params.get('place');
   const memoryPath = params.get('memory')?.trim() || '';
   const toolId = params.get('tool')?.trim() || '';
+  const { threads, loaded } = useFocusThreads();
+  const memoryQuery = useMemoryList();
+  const memoryFileQuery = useMemoryFile(memoryPath);
+  const toolsQuery = useTools();
+  const jobsQuery = useJobs();
+  const navigate = useNavigate();
 
   const workspacePath = context.workspace || threads[0]?.workspace || threads[0]?.cwd || '';
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -243,9 +246,9 @@ export default function WorldView() {
     navigateWorld(href(entity.hrefPath, entity.hrefExtra), crossesProjectDoor);
   };
 
-  // Memory/tool detail inspectors targeted the retired legacy backend;
-  // until they are ported, no detail overlay opens from the world.
-  const detailOpen = false;
+  const toolEntry =
+    toolId && toolsQuery.data?.ok ? toolsQuery.data.tools.find((tool) => tool.id === toolId) : undefined;
+  const detailOpen = Boolean(memoryPath || toolId);
   const goBackFromDetail = useCallback(() => {
     navigate(href('/world', worldDetailBackExtra(focusProject)));
   }, [navigate, href, focusProject]);
@@ -316,7 +319,33 @@ export default function WorldView() {
       </header>
 
       <div className={styles.mapWrap} aria-busy={gathering}>
-        {layout.entities.length === 0 ? (
+        {memoryPath ? (
+          <MemoryRecordInspector
+            path={memoryPath}
+            data={memoryFileQuery.data}
+            error={memoryFileQuery.error as Error | null}
+            isPending={memoryFileQuery.isPending}
+            onBack={() => navigate(href('/world', worldDetailBackExtra(focusProject)))}
+            backLabel={worldDetailBackLabel(focusProject)}
+            onRetry={() => void memoryFileQuery.refetch()}
+          />
+        ) : toolId ? (
+          <ToolRecordInspector
+            toolId={toolId}
+            tool={toolEntry}
+            error={toolsQuery.error as Error | null}
+            isPending={toolsQuery.isPending}
+            onBack={() => navigate(href('/world', worldDetailBackExtra(focusProject)))}
+            backLabel={worldDetailBackLabel(focusProject)}
+            onRetry={() => void toolsQuery.refetch()}
+            onReviewInstall={
+              installTargetForTool(toolId)
+                ? () =>
+                    navigate(href('/library', { install_target: installTargetForTool(toolId)!, install_review: '1' }))
+                : undefined
+            }
+          />
+        ) : layout.entities.length === 0 ? (
           <EmptyState title="Nothing to place yet.">Waiting on workspace context.</EmptyState>
         ) : (
           <WorldEntityMap

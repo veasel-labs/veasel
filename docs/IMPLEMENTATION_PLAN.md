@@ -1039,7 +1039,10 @@ cross-process lock against a later Git mutation.
   pin plugin versions, record provenance/compatibility/permissions, and retain
   trust review before installation. Keep `agent-toolkit.io` focused on the
   portable capabilities in `ulises-jeremias/agent-toolkit`, not its retired
-  Desktop.
+  Desktop. If the optional pstack-inspired Toolkit pack is curated for the
+  marketplace, publish an immutable version referencing its portable source,
+  with source commit, license, provenance, compatibility, and permissions;
+  require independent trust review before release or installation.
 - [ ] Keep organization-wide reusable CI, release publication, and post-merge
   verification workflows in `veasel-labs/.github`. Install the GitHub App only
   on explicitly enabled repositories; reusable workflow availability does not
@@ -1100,15 +1103,30 @@ cross-process lock against a later Git mutation.
   effect)` owner manifest covering issue/PR create and update, assignment,
   labels, comments, commit, push, close, merge, and release publication;
   enforce it in the executor and with scoped credentials.
-  Compare the same event in both paths and prove that at most one external
-  effect occurs. Do not change loop YAML, histories, reports, or triggers until
-  ownership is confirmed on other hosts/schedulers and a one-loop rollback is
-  documented. Existing loop output stays local by default. The personal
+  Before transferring any single `(repository,effect)` pair, run two matched
+  read-only observation executions through both paths against the same event;
+  the current owner remains the only path allowed to perform the external
+  effect. Then enable only the new owner for that pair, verify the cutover
+  caused no duplicate effect, and retain a documented one-loop rollback. Do
+  not change loop YAML, histories, reports, or triggers until ownership is
+  confirmed on other hosts/schedulers.
+  Existing loop output stays local by default. The personal
   `oss-daily-briefing` may consume a read-only Veasel summary of ready goals,
   pending decisions, PRs, known remaining provider budget (preserving unknown
   as unknown), and evidence links. Include the summary timestamp; when Veasel
   is unavailable, the briefing continues with the last known summary and its
-  age.
+  age. Keep `oss-triage` at its current OSS L2 scope and require human review
+  before any external comment or assignment; Veasel Labs intake remains a
+  draft. Keep `oss-pr-monitor` at its existing OSS L3 behavior, but exclude
+  Veasel-owned repository/effect pairs from its automated mutations using both
+  executor enforcement and separately scoped credentials. Keep
+  `cna-maintenance`, `cpa-maintenance`, and `cva-maintenance` on their existing
+  L3 runbooks and budgets, with no auto-merge and outside the pilot. Keep
+  `cra-maintenance` at L1 and disabled; do not promote or reactivate it as part
+  of Veasel integration. Inspect any apparently orphaned service or link on
+  every relevant host and confirm ownership and other schedulers before
+  cleanup; preserve a documented reactivation path, and leave it untouched
+  while ownership is unknown.
 - [ ] Maintain two distinct local pilot goals: (1) the packaged Linux Claude
   Code and Codex daily-driver journey tracked by #550, and (2) verification of
   one already-published Veasel release across its checksums, website links,
@@ -1131,11 +1149,13 @@ cross-process lock against a later Git mutation.
   paths clear on each platform.
   Complete packaged TUI/Desktop workdays on macOS and Windows before claiming
   cross-platform daily-driver parity.
-- [ ] After local recovery and cancellation are proven, add the persistent
-  Linux coordinator and remote workers. Use authenticated SSH tunnels to the
-  loopback coordinator, rootless disposable checkouts, CPU/RAM/disk limits,
-  no container socket, dedicated API credentials in the runner only, and
-  tested backup/restore. Reconcile refs, PRs, releases, and process state before
+- [ ] After local recovery and cancellation are proven, add a persistent Linux
+  coordinator managed as a system service and a supervisor on each worker host.
+  Use authenticated SSH tunnels to the loopback coordinator; run each attempt
+  in a rootless container with a disposable checkout, CPU/RAM/disk limits, no
+  container socket, and dedicated API credentials in the runner only. Keep
+  publication credentials out of workers and test backup/restore. Reconcile
+  refs, PRs, releases, and process state before
   retrying any uncertain effect.
   Before remote admission, reconcile live process identity and query the
   canonical ref, PR, or release; an ambiguous effect stays `uncertain` until

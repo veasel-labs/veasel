@@ -1040,6 +1040,10 @@ cross-process lock against a later Git mutation.
   trust review before installation. Keep `agent-toolkit.io` focused on the
   portable capabilities in `ulises-jeremias/agent-toolkit`, not its retired
   Desktop.
+- [ ] Keep organization-wide reusable CI, release publication, and post-merge
+  verification workflows in `veasel-labs/.github`. Install the GitHub App only
+  on explicitly enabled repositories; reusable workflow availability does not
+  grant repository credentials or permissions.
 - [ ] Build an objective scheduler in V and SQLite, separate from session-turn
   operations. Persist tasks, attempts, leases/generations, evidence, decisions,
   and audit events transactionally. Validate DAGs, repository identity, base
@@ -1099,7 +1103,12 @@ cross-process lock against a later Git mutation.
   Compare the same event in both paths and prove that at most one external
   effect occurs. Do not change loop YAML, histories, reports, or triggers until
   ownership is confirmed on other hosts/schedulers and a one-loop rollback is
-  documented. Existing loop output stays local by default.
+  documented. Existing loop output stays local by default. The personal
+  `oss-daily-briefing` may consume a read-only Veasel summary of ready goals,
+  pending decisions, PRs, known remaining provider budget (preserving unknown
+  as unknown), and evidence links. Include the summary timestamp; when Veasel
+  is unavailable, the briefing continues with the last known summary and its
+  age.
 - [ ] Maintain two distinct local pilot goals: (1) the packaged Linux Claude
   Code and Codex daily-driver journey tracked by #550, and (2) verification of
   one already-published Veasel release across its checksums, website links,
@@ -1130,8 +1139,11 @@ cross-process lock against a later Git mutation.
   retrying any uncertain effect.
   Before remote admission, reconcile live process identity and query the
   canonical ref, PR, or release; an ambiguous effect stays `uncertain` until
-  that check resolves it. Preflight versions, authentication, coordinator
-  connection, and typed-action permissions in `agentic-workstation`/HorneroOS.
+  that check resolves it. Integrate naturally with `agentic-workstation` and
+  HorneroOS: preflight Veasel version, existing-agent authentication, coordinator
+  connection, and typed-action permissions, and add an entry point to open an
+  objective in Veasel. HorneroOS keeps its native companion, Hermes integration,
+  and privileged typed actions; Veasel does not duplicate them.
 - [ ] Test recovery and cancellation after coordinator, host, provider, and
   publisher failures; prove duplicate-event and expired-lease behavior. Stage
   concurrency at 8, 12, 16, then 24 active workers, preserving capacity for

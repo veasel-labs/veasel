@@ -3,15 +3,18 @@
 
 Inputs are the merged CI artifacts in --assets-dir. The output directory
 contains exactly the files that will be uploaded: CLI archives, standalone TUI
-binaries taken from the checksum-verified archives, per-platform Desktop
-installers (each only when its own job succeeded), release.json, SHA256SUMS and the release
-notes used for the GitHub release body (RELEASE_NOTES.md, not uploaded).
+runtime bundles, legacy loose TUI binaries and their OpenTUI native sidecars
+taken from the checksum-verified archives, per-platform Desktop installers
+(each only when its own job succeeded), release.json, SHA256SUMS and the
+release notes used for the GitHub release body (RELEASE_NOTES.md, not uploaded).
 """
 
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
+import io
 import json
 import shutil
 import sys
@@ -26,6 +29,12 @@ ARCHIVES = {
     "macos": ("veasel-macOS.tar.gz", "arm64", None),
     "windows": ("veasel-Windows.zip", "x86_64", "veasel-tui.exe"),
 }
+NATIVE_LIBRARIES = {
+    "linux": "libopentui.so",
+    "macos": "libopentui.dylib",
+    "windows": "opentui.dll",
+}
+PLATFORM_LABELS = {"linux": "Linux", "macos": "macOS", "windows": "Windows"}
 DESKTOP_KINDS = {
     ".AppImage": ("linux", "x86_64"),
     ".deb": ("linux", "x86_64"),
@@ -60,6 +69,64 @@ def read_member(archive: Path, member: str) -> bytes:
         if handle is None:
             raise ReleaseError(f"{archive.name}: {member} is not a regular file")
         return handle.read()
+
+
+def read_members(archive: Path, prefix: str) -> dict[str, bytes]:
+    files: dict[str, bytes] = {}
+    if archive.suffix == ".zip":
+        with zipfile.ZipFile(archive) as package:
+            for name in package.namelist():
+                if not name.startswith(prefix) or name.endswith("/"):
+                    continue
+                relative = name.removeprefix(prefix)
+                if Path(relative).name != relative or "\\" in relative:
+                    raise ReleaseError(f"{archive.name}: unsafe member {name}")
+                files[relative] = package.read(name)
+    else:
+        with tarfile.open(archive) as package:
+            for member in package.getmembers():
+                if not member.name.startswith(prefix):
+                    continue
+                if member.isdir():
+                    continue
+                if not member.isfile():
+                    raise ReleaseError(f"{archive.name}: {member.name} is not a regular file")
+                relative = member.name.removeprefix(prefix)
+                if Path(relative).name != relative or "\\" in relative:
+                    raise ReleaseError(f"{archive.name}: unsafe member {member.name}")
+                source = package.extractfile(member)
+                if source is None:
+                    raise ReleaseError(f"{archive.name}: {member.name} could not be read")
+                files[relative] = source.read()
+    if "LICENSE" not in files or not files["LICENSE"]:
+        raise ReleaseError(f"{archive.name}: OpenTUI license notice is missing")
+    return files
+
+
+def create_runtime_bundle(tui_name: str, tui_data: bytes, native_name: str,
+                          native_data: bytes, legal_files: dict[str, bytes],
+                          platform: str) -> bytes:
+    if platform == "windows":
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as package:
+            for name, data in ((tui_name, tui_data), (native_name, native_data),
+                               *((f"opentui-licenses/{name}", data) for name, data in legal_files.items())):
+                info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                package.writestr(info, data)
+        return output.getvalue()
+
+    output = io.BytesIO()
+    with gzip.GzipFile(fileobj=output, mode="wb", mtime=0) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w") as package:
+            for name, data in ((tui_name, tui_data), (native_name, native_data),
+                               *((f"opentui-licenses/{name}", data) for name, data in legal_files.items())):
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                info.mode = 0o755 if name == tui_name else 0o644
+                info.mtime = 0
+                package.addfile(info, io.BytesIO(data))
+    return output.getvalue()
 
 
 def parse_results(raw: str, what: str) -> dict[str, str]:
@@ -137,16 +204,33 @@ def stage(assets_dir: Path, out_dir: Path, tag: str, version: str,
                 raise ReleaseError(f"{platform} job succeeded but {name} is missing")
             shutil.copyfile(source, out_dir / name)
             assets.append(entry(out_dir / name, "cli-archive", platform, arch))
+            provenance = json.loads(read_member(source, "build.json"))
+            native_name = NATIVE_LIBRARIES[platform]
+            native_data = read_member(source, native_name)
+            native_digest = hashlib.sha256(native_data).hexdigest()
+            if (provenance.get("tui_native_library") != native_name
+                    or provenance.get("tui_native_library_sha256") != native_digest):
+                raise ReleaseError(
+                    f"{native_name} sha256 {native_digest} != verified OpenTUI native provenance")
+            tui_filename = provenance["tui_binary"]
+            tui_data = read_member(source, tui_filename)
+            tui_digest = hashlib.sha256(tui_data).hexdigest()
+            if provenance.get("tui_binary_sha256") != tui_digest:
+                raise ReleaseError(
+                    f"{tui_filename} sha256 {tui_digest} != verified TUI provenance")
+            legal_files = read_members(source, "opentui-licenses/")
+            bundle_name = f"veasel-tui-runtime-{PLATFORM_LABELS[platform]}"
+            bundle_suffix = ".zip" if platform == "windows" else ".tar.gz"
+            bundle_data = create_runtime_bundle(
+                tui_filename, tui_data, native_name, native_data, legal_files, platform)
+            (out_dir / f"{bundle_name}{bundle_suffix}").write_bytes(bundle_data)
+            assets.append(entry(out_dir / f"{bundle_name}{bundle_suffix}",
+                                "standalone-tui-runtime", platform, arch))
             if tui_name:
-                provenance = json.loads(read_member(source, "build.json"))
-                data = read_member(source, tui_name)
-                expected = provenance["tui_binary_sha256"]
-                actual = hashlib.sha256(data).hexdigest()
-                if actual != expected:
-                    raise ReleaseError(
-                        f"{tui_name} sha256 {actual} != verified provenance {expected}")
-                (out_dir / tui_name).write_bytes(data)
+                (out_dir / tui_name).write_bytes(tui_data)
                 assets.append(entry(out_dir / tui_name, "standalone-tui", platform, arch))
+                (out_dir / native_name).write_bytes(native_data)
+                assets.append(entry(out_dir / native_name, "standalone-tui-native", platform, arch))
         else:
             block["reason"] = REASONS.get(status, REASONS["unavailable"])
         platforms[platform] = block

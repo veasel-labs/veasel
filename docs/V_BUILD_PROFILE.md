@@ -116,8 +116,11 @@ CI pins Bun 1.4.2 to build the TypeScript/OpenTUI client as a standalone
 embeds the Bun runtime and client assets; end users do not install Bun. The
 binary still uses the operating system's normal C runtime libraries. On Linux,
 CI checks that the executable resolves its shared libraries and does not
-introduce external ICU or C++ runtime dependencies. `build.json` records the
-TUI binary hash, Bun build version, and target alongside backend provenance.
+introduce external ICU or C++ runtime dependencies. The build also stages the
+locked OpenTUI native FFI library beside the executable and preserves its
+upstream license notices under `opentui-licenses/`; `build.json` records the
+TUI and native-library hashes, Bun build version, and target alongside backend
+provenance.
 
 The local Linux build equivalent, after installing the pinned V and Bun
 toolchains, is:

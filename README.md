@@ -61,8 +61,9 @@ veasel --version
 veasel            # starts or reuses the local server, then opens the TUI
 ```
 
-Release archives include a standalone `veasel-tui` beside the V backend — Bun
-is only needed when developing the terminal client from source.
+Release archives include `veasel-tui`, its matching OpenTUI native library,
+and the upstream license notices beside the V backend. Bun is only needed when
+developing the terminal client from source.
 
 ## Quick start (from source)
 

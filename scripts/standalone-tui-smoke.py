@@ -194,6 +194,40 @@ def loopback_port_is_free(port: int) -> bool:
     return True
 
 
+def standalone_tui_environment(env: dict[str, str]) -> dict[str, str]:
+    """Remove source-tree and Bun/Node lookup hints before launching the package."""
+    cleaned: dict[str, str] = {}
+    for name, value in env.items():
+        upper_name = name.upper()
+        lower_value = value.lower()
+        if upper_name.startswith(("BUN_", "NODE_")) or upper_name == "OPENTUI_LIB_PATH":
+            continue
+        if upper_name in {"GITHUB_WORKSPACE", "GITHUB_ACTION_PATH", "INIT_CWD", "PWD"}:
+            continue
+        if "node_modules" in lower_value or "/tui/src/" in lower_value or "\\tui\\src\\" in lower_value:
+            continue
+        cleaned[name] = value
+    if any(name.upper().startswith(("BUN_", "NODE_")) for name in cleaned):
+        raise RuntimeError("standalone TUI smoke environment retained a Bun or Node lookup variable")
+    return cleaned
+
+
+def packaged_native_library(tui_path: Path) -> Path:
+    if os.name == "nt":
+        name = "opentui.dll"
+    elif platform.system() == "Darwin":
+        name = "libopentui.dylib"
+    else:
+        name = "libopentui.so"
+    path = tui_path.with_name(name)
+    if not path.is_file() or path.stat().st_size == 0:
+        raise RuntimeError(f"packaged TUI is missing its OpenTUI native sidecar: {path}")
+    license_path = tui_path.parent / "opentui-licenses" / "LICENSE"
+    if not license_path.is_file() or license_path.stat().st_size == 0:
+        raise RuntimeError(f"package is missing the OpenTUI license notice: {license_path}")
+    return path
+
+
 def api_json(port: int, method: str, path: str, body: dict[str, str] | None = None) -> dict[str, object]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     request = Request(
@@ -351,9 +385,10 @@ def run_tui(
     create_session_via_ui: bool = False,
     shell_review_command: bytes | None = None,
 ) -> float:
+    launch_env = standalone_tui_environment(env)
     if os.name == "nt":
         return run_tui_conpty(
-            tui_path, env, session_title, session_id, wait_for_persisted_reply, review_path, recovery_only,
+            tui_path, launch_env, session_title, session_id, wait_for_persisted_reply, review_path, recovery_only,
             first_run=first_run,
             delegation_task=delegation_task,
             create_session_via_ui=create_session_via_ui,
@@ -363,7 +398,8 @@ def run_tui(
     started = time.monotonic()
     child, terminal = pty.fork()
     if child == 0:
-        os.execve(tui_path, [str(tui_path)], env)
+        os.chdir(launch_env.get("VEASEL_PROJECT_DIR", tempfile.gettempdir()))
+        os.execve(tui_path, [str(tui_path)], launch_env)
 
     fcntl.ioctl(terminal, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 100, 0, 0))
     output = bytearray()
@@ -914,11 +950,13 @@ def run_tui_home_at_size(tui_path: Path, env: dict[str, str], rows: int, cols: i
     driver's home_only path instead of this PTY helper.
     """
     if os.name == "nt":
-        run_tui_conpty(tui_path, env, None, None, None, None, False, True, (rows, cols))
+        run_tui_conpty(tui_path, standalone_tui_environment(env), None, None, None, None, False, True, (rows, cols))
         return
+    launch_env = standalone_tui_environment(env)
     child, terminal = pty.fork()
     if child == 0:
-        os.execve(tui_path, [str(tui_path)], env)
+        os.chdir(launch_env.get("VEASEL_PROJECT_DIR", tempfile.gettempdir()))
+        os.execve(tui_path, [str(tui_path)], launch_env)
     fcntl.ioctl(terminal, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
     screen = TerminalScreen(rows=rows, cols=cols)
     markers = (b"SESSIONS", b"connected", b"n new", b"q quit")
@@ -1021,6 +1059,7 @@ def main() -> None:
         parser.error("--startup-samples must be between 1 and 10")
     server_path = args.server.resolve(strict=True)
     tui_path = args.tui.resolve(strict=True)
+    packaged_native_library(tui_path)
 
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -1031,6 +1070,12 @@ def main() -> None:
         plugin_dir = Path(temporary) / "plugins"
         workspace = Path(temporary) / "workspace"
         workspace.mkdir()
+        tui_launch_path = tui_path
+        if os.name != "nt":
+            launcher_dir = Path(temporary) / "launcher"
+            launcher_dir.mkdir()
+            tui_launch_path = launcher_dir / tui_path.name
+            tui_launch_path.symlink_to(tui_path)
         install_opener(build_opener(BackendTokenHandler(port, data_dir / "api-token")))
         env = os.environ.copy()
         for name in list(env):
@@ -1140,7 +1185,7 @@ def main() -> None:
                         break
                     time.sleep(0.05)
                 if first_run_port_file.exists() and first_run_provider.poll() is None:
-                    run_tui(tui_path, env, first_run=True)
+                    run_tui(tui_launch_path, env, first_run=True)
                     connected = api_json(port, "GET", "/v1/config/model")
                     connected_profile = connected.get("profiles", {}).get("ollama", {})
                     if (connected.get("active_provider") != "ollama"
@@ -1195,7 +1240,7 @@ def main() -> None:
                 "providerBaseUrl": profile["base_url"],
                 "modelReady": settings.get("model_ready", False),
             }
-            samples_ms = [run_tui(tui_path, env) for _ in range(args.startup_samples)]
+            samples_ms = [run_tui(tui_launch_path, env) for _ in range(args.startup_samples)]
             terminal_sizes: list[str] = []
             for rows, cols in (
                 (12, 32),
@@ -1205,7 +1250,7 @@ def main() -> None:
                 (35, 100),
                 (40, 120),
             ):
-                run_tui_home_at_size(tui_path, env, rows, cols)
+                run_tui_home_at_size(tui_launch_path, env, rows, cols)
                 terminal_sizes.append(f"{cols}x{rows}")
             session_title = "TUI round-trip smoke"
             request = Request(
@@ -1217,7 +1262,7 @@ def main() -> None:
                 if response.status != 201:
                     raise RuntimeError(f"backend did not create the TUI smoke session: HTTP {response.status}")
                 session_id = json.load(response)["id"]
-            run_tui(tui_path, env, session_title, session_id)
+            run_tui(tui_launch_path, env, session_title, session_id)
             with urlopen(f"http://127.0.0.1:{port}/v1/sessions/{session_id}/messages", timeout=5) as response:
                 messages = json.load(response)
             persisted = {(message.get("role"), message.get("content")) for message in messages}
@@ -1229,7 +1274,7 @@ def main() -> None:
             before_restart = [(message.get("role"), message.get("content")) for message in messages]
             stop_server(server)
             server = start_server()
-            run_tui(tui_path, env, session_title, session_id, recovery_only=True)
+            run_tui(tui_launch_path, env, session_title, session_id, recovery_only=True)
             with urlopen(f"http://127.0.0.1:{port}/v1/sessions/{session_id}/messages", timeout=5) as response:
                 after_messages = json.load(response)
             after_restart = [(message.get("role"), message.get("content")) for message in after_messages]
@@ -1300,7 +1345,7 @@ def main() -> None:
                 port,
                 Path(temporary),
             )
-            run_tui(tui_path, env, review_path=b"review.txt")
+            run_tui(tui_launch_path, env, review_path=b"review.txt")
             review_state = api_json(
                 port,
                 "GET",
@@ -1325,7 +1370,7 @@ def main() -> None:
             )
             shell_command = str(shell_commands[0]["command"]).encode("utf-8")
             run_tui(
-                tui_path,
+                tui_launch_path,
                 env,
                 session_title="Shell approval smoke",
                 session_id=shell_session_id,
@@ -1387,7 +1432,7 @@ def main() -> None:
             delegation_env = env.copy()
             delegation_env["VEASEL_PROJECT_DIR"] = str(delegation_workspace)
             run_tui(
-                tui_path,
+                tui_launch_path,
                 delegation_env,
                 delegation_task=DELEGATION_TASK,
                 create_session_via_ui=True,

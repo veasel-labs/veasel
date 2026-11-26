@@ -117,27 +117,24 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   profile had no authenticated providers or active sessions, and its runtime
   detail queries were unavailable. It proves packaged launch and visual
   framing only, not the daily-driver journey or live-agent display.
-- The packaged World currently projects the real Focus session list and
-  destinations. PR #836 projects data from the existing memory, tools, and jobs
-  APIs, makes project job state explicitly unknown when that source is
-  unavailable, and labels retained data after a backend disconnect. It also
-  replaces fixed “ready” claims with destination descriptions and improves
-  camera framing for tall compact windows while keeping Fit World as the
-  complete overview. PR #836 merged to main as `33f98183`; published release
-  `v0.106.1-next.0` is based on `709d6857`, which contains that merge. Its
-  packaged Desktop still needs the updated readiness fix below and fresh
-  visual/acceptance evidence.
-- Exact-main CI run `45726898766` for merge commit `33f98183` completed with a
-  failure in `V backend / linux`: the Linux HTTP and persistence smoke reported
-  `health version does not match the CLI version`. The smoke's readiness loop
-  could accept anonymous liveness before the API token existed, leaving a
-  response without version metadata for the later assertion. The fix waits for
-  authenticated health with the expected version and process ID. Exact branch
-  CI passed for candidate `72ca0ff4` in run `45746852114`, including required
-  Linux, macOS and Windows jobs. It is not yet integrated into `main`; rerun
-  exact-main checks and packaged acceptance after integration. The later
-  `Ensure main CI` workflow-run `45734923673` succeeded, but did not rerun the
-  failing smoke.
+- PR #836's authentic runtime-data projection and #837's authenticated health
+  readiness fix are merged. PR #837 merged as `83434b48`; its full exact-branch
+  CI passed on Linux, macOS, and Windows. The earlier Linux HTTP/persistence
+  smoke failure on #836 is historical and was fixed by #837. The packaged
+  `v0.106.3-next.0` source includes both changes. Exact-main CI on that release
+  source commit `ceed8b1f` passed in run `45810498477`; scheduled main CI run
+  `45838887847` also passed.
+- On 2026-11-26, the packaged `v0.106.3-next.0` Desktop launched fullscreen on
+  HorneroOS with fresh isolated backend data and an Electron profile. The real
+  Codex CLI provider (`0.172.0`, `gpt-6.2-sol`) returned the requested `PASS`
+  for a no-tools turn. Repository file-read attempts then failed with a
+  provider storage-quota error, so no real repository edit was completed.
+  The 1920×1080 World screenshot shows the Cozy Valley top-down pixel-art map
+  with 15 real destinations and the honest banner that unavailable live
+  runtime details are omitted; it is retained at
+  `/home/ulisesjcf/.cache/veasel-validation/v0.106.3-next.0/packaged-world-fullscreen.png`.
+  This is visual and provider-response evidence, not clean live-session
+  acceptance or a publishable unqualified Desktop screenshot.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under
@@ -146,6 +143,12 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   turn. Claude’s UI reported an authenticated MAX account but the provider
   rejected its revoked OAuth token; Cursor is detected but is not yet
   launchable through Veasel. No credentials were changed as part of acceptance.
+- Keep the World off by default and as a projection of actual Veasel sessions,
+  jobs, and destinations only. Before reusing any upstream sprite, record its
+  exact source revision, license, and attribution; exclude assets that cannot
+  be verified for compatible commercial/open-source use. Finish the #693 visual
+  review at compact window sizes and high zoom, including reduced-motion
+  behavior, after Focus/TUI state parity is proven.
 
 ### Durable goals and worker coordination
 

@@ -580,6 +580,10 @@
   background: var(--accent-gold);
   color: #241d2e;
   border-color: var(--accent-gold);
+  border-width: 2px;
+  padding: 3px 7px;
+  font-size: clamp(9px, calc(var(--world-tile-size, 16px) * 0.4), 14px);
+  box-shadow: 0 0 0 2px rgb(255 227 140 / 25%), 3px 3px 0 rgb(13 16 27 / 55%);
 }
 
 /* Always-on house sign: quieter wooden plaque so houses stay identifiable
@@ -620,7 +624,7 @@
   right: var(--space-3);
   top: var(--space-3);
   display: flex;
-  gap: var(--space-1);
+  gap: var(--space-2);
   z-index: 8;
 }
 
@@ -657,7 +661,7 @@
 .appearanceControl {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   height: 28px;
   padding-inline: 6px;
   color: var(--world-plaque-fg, #f3edda);
@@ -671,7 +675,7 @@
 }
 
 .appearanceSelect {
-  max-width: 72px;
+  max-width: 88px;
   padding: 2px 3px;
   color: var(--world-plaque-fg, #f3edda);
   background: transparent;

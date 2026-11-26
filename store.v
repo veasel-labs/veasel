@@ -40,7 +40,7 @@ const session_columns = "id, title, directory, created_at, preferred_provider, p
 // latest_schema_version is the highest migration open_store applies. Tests
 // compare against it instead of a literal so adding a migration never breaks
 // them; keep it equal to the last `if current < N` block below.
-const latest_schema_version = 36
+const latest_schema_version = 38
 
 // add_column_if_missing makes ADD COLUMN migrations re-runnable: a ledger row
 // that was removed (tests, manual repair) must not fail on a duplicate column.
@@ -1279,6 +1279,17 @@ fn open_store_at(path string) !&Store {
 			db.close() or {}
 			return error('unable to migrate goal task state: ${err}')
 		}
+	} else if current < 37 {
+		migrate_goal_task_state(mut db) or {
+			db.close() or {}
+			return error('unable to migrate goal task operation links: ${err}')
+		}
+	}
+	if current < 38 {
+		migrate_goal_task_session_operation_index(mut db) or {
+			db.close() or {}
+			return error('unable to index goal task session operations: ${err}')
+		}
 	}
 	initialize_and_recover_goal_task_state(mut db) or {
 		db.close() or {}
@@ -1308,6 +1319,21 @@ fn open_store_at(path string) !&Store {
 		return error('unable to classify interrupted agent token budget reservations')
 	}
 	for row in interrupted_operations {
+		linked_attempts := db.exec_param_many("SELECT owner_pid, owner_start_id FROM goal_task_attempts WHERE session_id = ? AND session_operation_id = ? AND status = 'running'", [
+			row.val(1),
+			row.val(0),
+		]) or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to inspect linked goal task session operation')
+		}
+		if linked_attempts.len == 1 {
+			owner := goal_task_owner_status(linked_attempts[0].val(0).int())
+			if linked_attempts[0].val(1) != '' && owner.alive && owner.identity != ''
+				&& owner.identity == linked_attempts[0].val(1) {
+				continue
+			}
+		}
 		_ = db.exec_param_many("UPDATE session_operations SET status = 'uncertain', outcome = 'uncertain', error = 'The server stopped before this operation reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('running', 'cancelling')", [row.val(0)]) or {
 			db.rollback() or {}
 			db.close() or {}

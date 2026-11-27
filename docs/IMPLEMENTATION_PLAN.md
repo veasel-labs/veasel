@@ -991,15 +991,20 @@ until a per-loop handoff is reviewed and accepted. HorneroOS and
 `agentic-workstation` retain privileged desktop and OS actions; Veasel must not
 duplicate those capabilities.
 
-The current `codex/local-goal-task-dispatch` branch adds the first local
-dispatch slice: an authenticated task start creates a fenced attempt, an
+The current local goal-task dispatch work adds the next slice: an
+authenticated task start creates a fenced attempt, an
 exact-base isolated worktree, and a durable session operation using the
-canonical session worker. Recovery, live queued cancellation/rejection, and
-concurrent attempt paths are covered fail-closed. This is not yet a verified
-draft: successful turns remain in progress until independent candidate-SHA
-verification is implemented. It does not provide goal CLI commands, autonomous
-retry/recovery, leases, GitHub publication, or fleet concurrency. Keep those
-items below open until receipts and end-to-end acceptance exist.
+canonical session worker. A successful worker now transitions the linked task
+and attempt to explicit `verifying`; it never implies `succeeded` or
+`draft_ready`. Recovery never replays `verifying`, and verification does not
+satisfy dependencies. An independent receipt bound to the exact repository,
+base, and candidate SHAs is still required before promotion to `succeeded` or
+`draft_ready`; client-provided receipt promotion remains deferred until the
+verifier trust/candidate observation gate exists. Recovery, live queued
+cancellation/rejection, and concurrent attempt paths are covered fail-closed.
+It does not provide goal CLI commands, autonomous retry/recovery, leases,
+GitHub publication, or fleet concurrency. Keep those items below open until
+receipts and end-to-end acceptance exist.
 
 - [ ] Publish a versioned Toolkit goal/task/evidence contract with an offline
   validator and planner; require authorized repositories, observable finish

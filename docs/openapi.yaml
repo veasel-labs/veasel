@@ -2617,11 +2617,22 @@ components:
               recipe: { enum: [research, bug, feature, migration, release] }
               runner: { type: string, minLength: 1 }
               verifier: { type: string, minLength: 1 }
+              verifier_provider: { type: string, minLength: 1, maxLength: 128 }
+              verifier_model: { type: string, minLength: 1, maxLength: 256 }
               permissions:
                 type: array
                 uniqueItems: true
                 description: Required by Goal v2; requested effects are constrained by policy_ceiling and runtime policy.
                 items: { $ref: '#/components/schemas/GoalPermissionEffect' }
+            allOf:
+              - if:
+                  required: [verifier_provider]
+                then:
+                  required: [verifier_model]
+              - if:
+                  required: [verifier_model]
+                then:
+                  required: [verifier_provider]
       oneOf:
         - properties:
             schema_version: { const: 1 }
@@ -2653,17 +2664,6 @@ components:
     GoalPermissionEffect:
       type: string
       enum: [repository.read, repository.write, process.execute, network.access, git.commit, git.push, github.read, github.issue.create, github.issue.update, github.pr.create, github.pr.update, github.comment.create, github.label.set, github.assign, github.close, github.merge, release.publish]
-              verifier_provider: { type: string, minLength: 1, maxLength: 128 }
-              verifier_model: { type: string, minLength: 1, maxLength: 256 }
-            allOf:
-              - if:
-                  required: [verifier_provider]
-                then:
-                  required: [verifier_model]
-              - if:
-                  required: [verifier_model]
-                then:
-                  required: [verifier_provider]
     GoalTasksProjection:
       type: object
       required: [goal_id, status, tasks]

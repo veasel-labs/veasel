@@ -37,18 +37,18 @@ struct GoalBudget {
 }
 
 struct GoalTask {
-	id          string
-	title       string
-	repository  string
-	base_sha    string
-	paths       []string
-	depends_on  []string
-	recipe      string
-	runner      string
-	verifier    string
-	permissions []string @[omitempty]
-	verifier_provider string @[omitempty]
-	verifier_model    string @[omitempty]
+	id                string
+	title             string
+	repository        string
+	base_sha          string
+	paths             []string
+	depends_on        []string
+	recipe            string
+	runner            string
+	verifier          string
+	permissions       []string @[omitempty]
+	verifier_provider string   @[omitempty]
+	verifier_model    string   @[omitempty]
 }
 
 struct AdmittedGoal {

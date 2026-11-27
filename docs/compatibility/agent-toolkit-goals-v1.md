@@ -41,12 +41,14 @@ Veasel also accepts the optional task fields `verifier_provider` and
 without these fields remain admissible and round-trip with empty route values.
 Dispatch of `independent-review` requires an explicit pair; Veasel will not
 silently reuse the implementation route and call it independent. These fields
-express the requested route. The receipt binding verifies that the persisted
-reviewer run used that route and rejects an `independent-review` run whose
-provider and model both match the implementation operation. Runtime dispatch
-and provider/model availability checks are not implemented yet. This enforces
-distinct configured route strings only; provider aliases, proxies, and model
-aliases may still resolve to the same underlying service or model family.
+express the requested route. The runtime checks supported adapters before
+launching a bound read-only reviewer and verifies that the persisted run used
+the requested route. It rejects an `independent-review` run whose provider and
+model both match the implementation operation. This enforces distinct
+configured route strings only; provider aliases, proxies, and model aliases
+may still resolve to the same underlying service or model family. Installed
+CLI reviewers run in `ask` mode, so their requested native tool actions remain
+subject to Veasel approval and may pause until the user responds.
 
 Compatibility currently covers the canonical fields emitted by `goal export`.
 Although the upstream JSON Schema permits additional properties, Veasel's

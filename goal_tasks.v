@@ -13,19 +13,19 @@ pub:
 
 pub struct GoalTaskProjectionItem {
 pub:
-	id            string
-	title         string
-	repository    string
-	base_sha      string
-	paths         []string
-	depends_on    []string
-	recipe        string
-	runner        string
-	verifier      string
-	permissions   []string @[omitempty]
-	status        string
-	attempt_count int
-	attempts      []GoalTaskAttemptProjection
+	id                string
+	title             string
+	repository        string
+	base_sha          string
+	paths             []string
+	depends_on        []string
+	recipe            string
+	runner            string
+	verifier          string
+	permissions       []string @[omitempty]
+	status            string
+	attempt_count     int
+	attempts          []GoalTaskAttemptProjection
 	verifier_provider string
 	verifier_model    string
 }
@@ -42,17 +42,17 @@ fn project_goal_task_graph(goal GoalAdmission) !GoalTasksProjection {
 
 fn goal_task_projection_item(task GoalTask) GoalTaskProjectionItem {
 	return GoalTaskProjectionItem{
-		id:          task.id
-		title:       task.title
-		repository:  task.repository
-		base_sha:    task.base_sha
-		paths:       task.paths.clone()
-		depends_on:  task.depends_on.clone()
-		recipe:      task.recipe
-		runner:      task.runner
-		verifier:    task.verifier
-		permissions: task.permissions.clone()
-		status:      'pending'
+		id:                task.id
+		title:             task.title
+		repository:        task.repository
+		base_sha:          task.base_sha
+		paths:             task.paths.clone()
+		depends_on:        task.depends_on.clone()
+		recipe:            task.recipe
+		runner:            task.runner
+		verifier:          task.verifier
+		permissions:       task.permissions.clone()
+		status:            'pending'
 		verifier_provider: task.verifier_provider
 		verifier_model:    task.verifier_model
 	}

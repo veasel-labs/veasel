@@ -1024,9 +1024,10 @@ through the local registry before claiming work or creating a worktree/session;
 runner readiness/authentication and verifier execution remain open.
 #850 (`be8313b2`) adds the durable `verifying` state and rejects generic
 success transitions without an independent receipt. The open draft PR #861
-contains durable candidate-bound reviewer receipts and the `verified` state,
-pending merge and CI; it still does not dispatch reviewers automatically, run
-executable acceptance checks, or promote `verified` to `succeeded`. Redacted
+contains durable candidate-bound reviewer receipts, the `verified` state, and
+automatic dispatch of bound reviewer runs under the runtime's tool and
+approval policies. It still does not run
+executable acceptance checks or promote `verified` to `succeeded`. Redacted
 Codex app-server effect receipts are integrated in #851
 (`8a7900c7`); those receipts document tool effects and do not prove task
 correctness. Recovery never replays `verifying`; `verified` remains distinct
@@ -1085,9 +1086,10 @@ recording rechecks the active lease and candidate and parses a bounded strict
 result envelope. A valid `pass` receipt moves the task atomically from
 `verifying` to durable `verified`; the worker attempt remains `verifying` until
 the later Goal acceptance transition. Schema 44 adds that task state and keeps
-it through restart even after the verifier lease expires. This does not launch
-the reviewer, resolve provider/model availability, or run executable
-acceptance checks. The route binding checks that `independent-review` uses a
+it through restart even after the verifier lease expires. The server now
+dispatches bound reviewer runs and checks supported provider/model routes
+before launch, but does not run executable acceptance checks. The route
+binding checks that `independent-review` uses a
 distinct configured provider or model string, not distinct underlying model
 lineage. Fail receipts now fail the attempt and return the task to pending only
 when Goal-wide attempt budget remains; otherwise they fail the task. Uncertain
@@ -1100,9 +1102,11 @@ fence captured by its dispatching worker, so a delayed worker cannot rebind
 after a reserved binding was reclaimed. Verified task state and consumed
 bindings both block lease reacquisition. The server now scans eligible tasks
 after startup and after worker completion, prepares and durably binds a queued
-read-only reviewer before launch, renews its lease while it runs, and records
-its receipt on completion. Installed CLI reviewers are forced into `ask` mode;
-dispatch goroutines participate in shutdown draining. Startup preserves a
+reviewer before launch, renews its lease while it runs, and records its receipt
+on completion. Native Veasel reviewers are restricted to read-only tools;
+installed CLI reviewers are forced into `ask` mode and may pause for user
+approval before they can inspect files. Dispatch goroutines participate in
+shutdown draining. Startup preserves a
 completed worker candidate for retry, accepts `completed_with_denials` for
 independent review, resumes bound queued reviewers, and re-fences one only
 after confirming its lease expired and it never started. Dispatch defers rather

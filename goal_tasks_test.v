@@ -865,11 +865,20 @@ fn test_goal_task_claim_is_atomic_across_store_connections() {
 }
 
 fn goal_task_test_admission() GoalAdmission {
+	return goal_task_test_admission_with('goal-task-test', '', GoalBudget{
+		max_attempts:   2
+		wall_seconds:   60
+		provider_turns: 4
+	})
+}
+
+fn goal_task_test_admission_with(id string, deadline string, budget GoalBudget) GoalAdmission {
 	return GoalAdmission{
 		schema_version: 1
-		id:             'goal-task-test'
+		id:             id
 		title:          'Test durable goal task state'
-		budget:         GoalBudget{ max_attempts: 2, wall_seconds: 60, provider_turns: 4 }
+		deadline:       deadline
+		budget:         budget
 		tasks:          [GoalTask{
 			id:         'prepare'
 			title:      'Prepare'
@@ -901,13 +910,12 @@ fn test_goal_task_claim_deadline_lease_fence_and_reopen_are_durable() {
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
 	path := os.join_path(root, 'veasel.sqlite3')
-	mut goal := goal_task_test_admission()
-	goal.id = 'goal-task-leases'
-	goal.budget = GoalBudget{ max_attempts: 2, wall_seconds: 10, provider_turns: 2 }
-	goal.deadline = time.now().add(5 * time.minute).format_rfc3339()
+	goal := goal_task_test_admission_with('goal-task-leases',
+		time.now().add(5 * time.minute).format_rfc3339(),
+		GoalBudget{ max_attempts: 2, wall_seconds: 10, provider_turns: 2 })
 	mut store := open_store(path) or { panic(err) }
 	_ = store.admit_goal(goal) or { panic(err) }
-	claim := store.claim_goal_task(goal.id, 'prepare') or { panic(err) }
+	claim := store.claim_goal_task_for_dispatch(goal.id, 'prepare') or { panic(err) }
 	assert claim.lease_generation == 1
 	effective := time.parse_rfc3339(claim.effective_deadline) or { panic(err) }
 	lease := time.parse_rfc3339(claim.lease_expires_at) or { panic(err) }
@@ -919,9 +927,10 @@ fn test_goal_task_claim_deadline_lease_fence_and_reopen_are_durable() {
 	mut reopened := open_store(path) or { panic(err) }
 	defer { reopened.close() or {} }
 	persisted := reopened.goal_task_state(goal.id, 'prepare') or { panic(err) }
-	assert persisted.attempts[0].effective_deadline == claim.effective_deadline
-	assert persisted.attempts[0].lease_expires_at == claim.lease_expires_at
-	assert persisted.attempts[0].lease_generation == 1
+	persisted_attempt := persisted.attempts[0]
+	assert persisted_attempt.effective_deadline == claim.effective_deadline
+	assert persisted_attempt.lease_expires_at == claim.lease_expires_at
+	assert persisted_attempt.lease_generation == 1
 	renewed := reopened.renew_goal_task_attempt_lease(goal.id, 'prepare', 1, claim.fencing_token, 1, 3) or {
 		panic(err)
 	}
@@ -947,9 +956,9 @@ fn test_goal_task_expiry_is_fail_closed_and_never_retries() {
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
 	path := os.join_path(root, 'veasel.sqlite3')
-	mut goal := goal_task_test_admission()
-	goal.id = 'goal-task-expiry'
-	goal.deadline = time.now().add(5 * time.minute).format_rfc3339()
+	goal := goal_task_test_admission_with('goal-task-expiry',
+		time.now().add(5 * time.minute).format_rfc3339(),
+		GoalBudget{ max_attempts: 2, wall_seconds: 60, provider_turns: 4 })
 	mut store := open_store(path) or { panic(err) }
 	_ = store.admit_goal(goal) or { panic(err) }
 	session := store.create_session(SessionInput{ title: 'lease expiry', directory: root }) or { panic(err) }
@@ -995,9 +1004,9 @@ fn test_goal_task_claim_rejects_expired_deadline() {
 	root := os.join_path(os.temp_dir(), 'veasel-goal-task-expired-deadline-${rand.ulid()}')
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
-	mut goal := goal_task_test_admission()
-	goal.id = 'goal-task-expired-deadline'
-	goal.deadline = time.now().add(-1 * time.second).format_rfc3339()
+	goal := goal_task_test_admission_with('goal-task-expired-deadline',
+		time.now().add(-1 * time.second).format_rfc3339(),
+		GoalBudget{ max_attempts: 2, wall_seconds: 60, provider_turns: 4 })
 	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
 	defer { store.close() or {} }
 	_ = store.admit_goal(goal) or { panic(err) }

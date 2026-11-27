@@ -117,27 +117,24 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   profile had no authenticated providers or active sessions, and its runtime
   detail queries were unavailable. It proves packaged launch and visual
   framing only, not the daily-driver journey or live-agent display.
-- The packaged World currently projects the real Focus session list and
-  destinations. PR #836 projects data from the existing memory, tools, and jobs
-  APIs, makes project job state explicitly unknown when that source is
-  unavailable, and labels retained data after a backend disconnect. It also
-  replaces fixed “ready” claims with destination descriptions and improves
-  camera framing for tall compact windows while keeping Fit World as the
-  complete overview. PR #836 merged to main as `33f98183`; published release
-  `v0.106.1-next.0` is based on `709d6857`, which contains that merge. Its
-  packaged Desktop still needs the updated readiness fix below and fresh
-  visual/acceptance evidence.
-- Exact-main CI run `45726898766` for merge commit `33f98183` completed with a
-  failure in `V backend / linux`: the Linux HTTP and persistence smoke reported
-  `health version does not match the CLI version`. The smoke's readiness loop
-  could accept anonymous liveness before the API token existed, leaving a
-  response without version metadata for the later assertion. The fix waits for
-  authenticated health with the expected version and process ID. Exact branch
-  CI passed for candidate `72ca0ff4` in run `45746852114`, including required
-  Linux, macOS and Windows jobs. It is not yet integrated into `main`; rerun
-  exact-main checks and packaged acceptance after integration. The later
-  `Ensure main CI` workflow-run `45734923673` succeeded, but did not rerun the
-  failing smoke.
+- PR #836's authentic runtime-data projection and #837's authenticated health
+  readiness fix are merged. PR #837 merged as `83434b48`; its full exact-branch
+  CI passed on Linux, macOS, and Windows. The earlier Linux HTTP/persistence
+  smoke failure on #836 is historical and was fixed by #837. The packaged
+  `v0.106.3-next.0` source includes both changes. Exact-main CI on that release
+  source commit `ceed8b1f` passed in run `45810498477`; scheduled main CI run
+  `45838887847` also passed.
+- On 2026-11-26, the packaged `v0.106.3-next.0` Desktop launched fullscreen on
+  HorneroOS with fresh isolated backend data and an Electron profile. The real
+  Codex CLI provider (`0.172.0`, `gpt-6.2-sol`) returned the requested `PASS`
+  for a no-tools turn. Repository file-read attempts then failed with a
+  provider storage-quota error, so no real repository edit was completed.
+  The 1920×1080 World screenshot shows the Cozy Valley top-down pixel-art map
+  with 15 real destinations and the honest banner that unavailable live
+  runtime details are omitted; it is retained at
+  `/home/ulisesjcf/.cache/veasel-validation/v0.106.3-next.0/packaged-world-fullscreen.png`.
+  This is visual and provider-response evidence, not clean live-session
+  acceptance or a publishable unqualified Desktop screenshot.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under
@@ -146,6 +143,12 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   turn. Claude’s UI reported an authenticated MAX account but the provider
   rejected its revoked OAuth token; Cursor is detected but is not yet
   launchable through Veasel. No credentials were changed as part of acceptance.
+- Keep the World off by default and as a projection of actual Veasel sessions,
+  jobs, and destinations only. Before reusing any upstream sprite, record its
+  exact source revision, license, and attribution; exclude assets that cannot
+  be verified for compatible commercial/open-source use. Finish the #693 visual
+  review at compact window sizes and high zoom, including reduced-motion
+  behavior, after Focus/TUI state parity is proven.
 
 ### Durable goals and worker coordination
 
@@ -1000,20 +1003,34 @@ until a per-loop handoff is reviewed and accepted. HorneroOS and
 `agentic-workstation` retain privileged desktop and OS actions; Veasel must not
 duplicate those capabilities.
 
-The current local goal-task dispatch work adds the next slice: an
-authenticated task start creates a fenced attempt, an
+The local task-dispatch foundation is integrated in #845
+(`6f8845b4`): an authenticated task start creates a fenced attempt, an
 exact-base isolated worktree, and a durable session operation using the
-canonical session worker. A successful worker now transitions the linked task
-and attempt to explicit `verifying`; it never implies `succeeded` or
-`draft_ready`. Recovery never replays `verifying`, and verification does not
-satisfy dependencies. An independent receipt bound to the exact repository,
-base, and candidate SHAs is still required before promotion to `succeeded` or
-`draft_ready`; client-provided receipt promotion remains deferred until the
-verifier trust/candidate observation gate exists. Recovery, live queued
-cancellation/rejection, and concurrent attempt paths are covered fail-closed.
-It does not provide goal CLI commands, autonomous retry/recovery, leases,
-GitHub publication, or fleet concurrency. Keep those items below open until
-receipts and end-to-end acceptance exist.
+canonical session worker. A successful worker transitions the linked task and
+attempt to explicit `verifying`; it never implies `succeeded` or `draft_ready`.
+PR #856 (`87103cf7`) adds fail-closed runner/verifier identifier preflight
+through the local registry before claiming work or creating a worktree/session;
+runner readiness/authentication and verifier execution remain open.
+The independent receipt lifecycle is integrated in #850 (`be8313b2`), and
+redacted Codex app-server effect receipts are integrated in #851
+(`8a7900c7`). These Codex receipts document tool effects; they are not
+independent task-verification receipts. Recovery never replays `verifying`,
+and verification does not satisfy dependencies. An independent receipt bound
+to the exact repository, base, and candidate SHAs remains required before
+promotion to `succeeded` or `draft_ready`; client-provided receipt promotion
+remains deferred until verifier trust and candidate observation are enforced
+at the persistence boundary. The #849 candidate observer is a read-only,
+non-accepting diagnostic and does not run tests, persist evidence, or promote a
+task. Recovery, live queued cancellation/rejection, and concurrent attempt
+paths are covered fail-closed.
+
+These slices do not yet provide the operational Veasel goal CLI commands
+listed below, automatic retries, a scheduler-wide task lease with production
+heartbeat/expiry wiring, GitHub publication, or fleet concurrency. PR #858
+remains open with deadline-bound task-lease persistence groundwork; it does not
+wire worker heartbeats. Existing attempt fencing is not equivalent to an
+expiring task lease. Keep the corresponding items below open until the missing
+mechanisms and end-to-end acceptance exist.
 
 The candidate-observation slice adds a pure, non-accepting check for a ready
 attempt worktree: the requested full candidate SHA must resolve exactly, match
@@ -1027,19 +1044,32 @@ still mutate the worktree, re-observe immediately before persistence, and
 persist/promote only in one fenced transaction. The observer itself provides no
 cross-process lock against a later Git mutation.
 
-- [ ] Publish a versioned Toolkit goal/task/evidence contract with an offline
-  validator and planner; require authorized repositories, observable finish
-  conditions, playbook, deadline, budget, permissions, delivery mode, DAG,
-  base SHA, paths, runner, verifier, and evidence. Start with research, bug,
-  feature, migration, and release playbooks, reusing loop validators and
-  handoff formats where they match. Preserve current Swarm commands and states.
-  Add an optional pstack-inspired pack with provenance and compatibility
+- [x] Publish a versioned Toolkit Goal v1/task/evidence contract with an offline
+  validator and planner for authorized repositories, acceptance criteria,
+  deadline, budget, delivery mode, DAG, base SHA, paths, runner, verifier, and
+  evidence. The `ulises-jeremias/agent-toolkit` main branch provides the Goal
+  v1 schema, offline validation/planning, five recipes, and evidence schema;
+  Veasel's compatibility check landed in #846 (`d817f06e`). The checked-in
+  fixture is synthetic contract data, not execution evidence. This contract
+  does not dispatch work. Preserve existing Swarm commands and states.
+- [ ] Add explicit permission declarations and policy-ceiling fields to the
+  portable Goal contract; current Goal v1 does not encode permissions. Define
+  the portable permission vocabulary and compatibility behavior before
+  requiring it in Veasel admission or dispatch.
+- [ ] Add an optional pstack-inspired pack with provenance and compatibility
   metadata; do not copy external playbook sources into the marketplace.
 - [ ] Keep the official `veasel-labs/agent-toolkit` marketplace reference-based:
   pin plugin versions, record provenance/compatibility/permissions, and retain
   trust review before installation. Keep `agent-toolkit.io` focused on the
   portable capabilities in `ulises-jeremias/agent-toolkit`, not its retired
-  Desktop.
+  Desktop. If the optional pstack-inspired Toolkit pack is curated for the
+  marketplace, publish an immutable version referencing its portable source,
+  with source commit, license, provenance, compatibility, and permissions;
+  require independent trust review before release or installation.
+- [ ] Keep organization-wide reusable CI, release publication, and post-merge
+  verification workflows in `veasel-labs/.github`. Install the GitHub App only
+  on explicitly enabled repositories; reusable workflow availability does not
+  grant repository credentials or permissions.
 - [ ] Build an objective scheduler in V and SQLite, separate from session-turn
   operations. Persist tasks, attempts, leases/generations, evidence, decisions,
   and audit events transactionally. Validate DAGs, repository identity, base
@@ -1049,6 +1079,9 @@ cross-process lock against a later Git mutation.
   atomically, use stable automation branch identities, record cancellation
   before confirming process termination, and pause by stopping new assignments
   while preserving visible in-flight work.
+  PR #858 currently proposes deadline-bound lease persistence, but remains
+  open; production heartbeat/expiry reconciliation and scheduler-wide
+  coordination remain outstanding.
 - [ ] Define goal states separately from session operation states, including
   `queued`, `leased`, `building`, `verifying`, `draft_ready`, `accepted`,
   `blocked`, `uncertain`, `failed`, and `cancelled`. Remote leases heartbeat at
@@ -1096,17 +1129,40 @@ cross-process lock against a later Git mutation.
   effect)` owner manifest covering issue/PR create and update, assignment,
   labels, comments, commit, push, close, merge, and release publication;
   enforce it in the executor and with scoped credentials.
-  Compare the same event in both paths and prove that at most one external
-  effect occurs. Do not change loop YAML, histories, reports, or triggers until
-  ownership is confirmed on other hosts/schedulers and a one-loop rollback is
-  documented. Existing loop output stays local by default.
+  Before transferring any single `(repository,effect)` pair, run two matched
+  read-only observation executions through both paths against the same event;
+  the current owner remains the only path allowed to perform the external
+  effect. Then enable only the new owner for that pair, verify the cutover
+  caused no duplicate effect, and retain a documented one-loop rollback. Do
+  not change loop YAML, histories, reports, or triggers until ownership is
+  confirmed on other hosts/schedulers.
+  Existing loop output stays local by default. The personal
+  `oss-daily-briefing` may consume a read-only Veasel summary of ready goals,
+  pending decisions, PRs, known remaining provider budget (preserving unknown
+  as unknown), and evidence links. Include the summary timestamp; when Veasel
+  is unavailable, the briefing continues with the last known summary and its
+  age. Keep `oss-triage` at its current OSS L2 scope and require human review
+  before any external comment or assignment; Veasel Labs intake remains a
+  draft. Keep `oss-pr-monitor` at its existing OSS L3 behavior, but exclude
+  Veasel-owned repository/effect pairs from its automated mutations using both
+  executor enforcement and separately scoped credentials. Keep
+  `cna-maintenance`, `cpa-maintenance`, and `cva-maintenance` on their existing
+  L3 runbooks and budgets, with no auto-merge and outside the pilot. Keep
+  `cra-maintenance` at L1 and disabled; do not promote or reactivate it as part
+  of Veasel integration. Inspect any apparently orphaned service or link on
+  every relevant host and confirm ownership and other schedulers before
+  cleanup; preserve a documented reactivation path, and leave it untouched
+  while ownership is unknown.
 - [ ] Maintain two distinct local pilot goals: (1) the packaged Linux Claude
-  Code and Codex daily-driver journey tracked by #550, and (2) the existing
-  four-repository release-sync report goal. Add a separate product-pilot
-  manifest; do not broaden or overwrite the release-sync manifest. Record the
-  exact installed/executed binary versions, repository/workspace SHAs, session,
+  Code and Codex daily-driver journey tracked by #550, and (2) verification of
+  one already-published Veasel release across its checksums, website links,
+  Homebrew, AUR, and installed `--version` in disposable environments. Keep the
+  existing four-repository release-sync report as a separate reporting goal;
+  add distinct manifests for the product pilot and distribution journey rather
+  than broadening or overwriting the report manifest. Record the exact
+  installed/executed binary versions, repository/workspace SHAs, session,
   permissions, cancellation/recovery outcome, verifier, and evidence. Keep
-  distribution checksums and per-channel evidence separate.
+  checksums and per-channel distribution evidence separate.
   Limit the first local plan to two goals and eight tasks, at most four provider
   turns and two concurrent writers, while reserving capacity for independent
   verification and operator decisions. Before cutover, run both paths for two
@@ -1119,16 +1175,21 @@ cross-process lock against a later Git mutation.
   paths clear on each platform.
   Complete packaged TUI/Desktop workdays on macOS and Windows before claiming
   cross-platform daily-driver parity.
-- [ ] After local recovery and cancellation are proven, add the persistent
-  Linux coordinator and remote workers. Use authenticated SSH tunnels to the
-  loopback coordinator, rootless disposable checkouts, CPU/RAM/disk limits,
-  no container socket, dedicated API credentials in the runner only, and
-  tested backup/restore. Reconcile refs, PRs, releases, and process state before
+- [ ] After local recovery and cancellation are proven, add a persistent Linux
+  coordinator managed as a system service and a supervisor on each worker host.
+  Use authenticated SSH tunnels to the loopback coordinator; run each attempt
+  in a rootless container with a disposable checkout, CPU/RAM/disk limits, no
+  container socket, and dedicated API credentials in the runner only. Keep
+  publication credentials out of workers and test backup/restore. Reconcile
+  refs, PRs, releases, and process state before
   retrying any uncertain effect.
   Before remote admission, reconcile live process identity and query the
   canonical ref, PR, or release; an ambiguous effect stays `uncertain` until
-  that check resolves it. Preflight versions, authentication, coordinator
-  connection, and typed-action permissions in `agentic-workstation`/HorneroOS.
+  that check resolves it. Integrate naturally with `agentic-workstation` and
+  HorneroOS: preflight Veasel version, existing-agent authentication, coordinator
+  connection, and typed-action permissions, and add an entry point to open an
+  objective in Veasel. HorneroOS keeps its native companion, Hermes integration,
+  and privileged typed actions; Veasel does not duplicate them.
 - [ ] Test recovery and cancellation after coordinator, host, provider, and
   publisher failures; prove duplicate-event and expired-lease behavior. Stage
   concurrency at 8, 12, 16, then 24 active workers, preserving capacity for

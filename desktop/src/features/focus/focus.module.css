@@ -818,12 +818,32 @@
   padding: var(--space-5) var(--space-6) var(--space-3);
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--cw-wood-light) var(--cw-menu-950);
+  scrollbar-width: thin;
   border: 2px solid var(--cw-wood-light);
   background: linear-gradient(180deg, rgba(240, 189, 94, 0.055), transparent 10rem), var(--surface-panel);
   box-shadow:
     0 0 0 3px var(--cw-menu-950),
     0 5px 0 var(--cw-wood-dark),
     var(--shadow-raised);
+}
+
+.start::-webkit-scrollbar {
+  width: 0.625rem;
+}
+
+.start::-webkit-scrollbar-track {
+  background: var(--cw-menu-950);
+}
+
+.start::-webkit-scrollbar-thumb {
+  border: 2px solid var(--cw-menu-950);
+  background: var(--cw-wood-light);
+}
+
+.start::-webkit-scrollbar-thumb:hover {
+  background: var(--cw-wood-light);
 }
 
 .startTitle {
@@ -1094,6 +1114,7 @@
     gap: var(--space-2);
     width: min(100% - 2 * var(--space-3), 52rem);
     padding: var(--space-3) var(--space-3) var(--space-2);
+    scroll-padding-block-end: calc(var(--target-min) + var(--space-3));
   }
 
   .startTitle {
@@ -1120,6 +1141,10 @@
 
   .providerState {
     font-size: var(--text-xs);
+  }
+
+  .providers {
+    padding-block-end: calc(var(--target-min) + var(--space-3));
   }
 
   .startActions {

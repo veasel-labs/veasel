@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-27",
+  "host": "HorneroOS Linux",
+  "release": {
+    "tag": "v0.114.0-next.0",
+    "source_commit": "144acd843a655b8d16c6c2535e770074a2488df0",
+    "release_manifest_sha256": "704646fa62f440d5c15c3853916d3381e7b06cfefb5b299a0b51b2079303bde1",
+    "desktop_appimage_sha256_expected": "26e333ff266f9aaeaa34a6eaf20dd5642df68d1bc08560eb944e202701bcc5a5",
+    "desktop_appimage_sha256_observed": "26e333ff266f9aaeaa34a6eaf20dd5642df68d1bc08560eb944e202701bcc5a5"
+  },
+  "desktop": {
+    "launched": true,
+    "backend_health_http_status": 200,
+    "backend_data_profile": "temporary isolated profile",
+    "provider": "codex",
+    "cli_version": "codex-cli 0.172.0",
+    "native_auth_state": "verified using copied owner-only auth in temporary HOME",
+    "model_reported_by_tui": "gpt-6.2-sol",
+    "permission_mode": "ask",
+    "approval_shown_in_focus": true,
+    "approval_decision": "Allow once",
+    "approved_operation_status": "completed",
+    "workspace_effect": "One exact requested line appended to README.md in a disposable Git repository; independent diff check passed.",
+    "session_id": "c5856dda-558d-47ee-b016-408f4a11be56"
+  },
+  "tui": {
+    "launched": true,
+    "connected_to_same_backend_profile": true,
+    "resumed_desktop_created_session": true,
+    "sent_follow_up_in_same_session": true,
+    "assistant_reply": "TUI continuation verified.",
+    "same_session_id": "c5856dda-558d-47ee-b016-408f4a11be56"
+  },
+  "cleanup": {
+    "temporary_native_auth_copies_removed": true,
+    "isolated_processes_stopped": true,
+    "active_user_desktop_profile_untouched": true
+  },
+  "limitations": [
+    "The native folder picker was not exercised; the disposable project path was set in isolated profile storage.",
+    "The task verified a single README fixture edit, not an application-code change or project test run.",
+    "Restart recovery, installer upgrade/uninstall, and macOS/Windows user acceptance were not demonstrated.",
+    "This is prerelease evidence and does not complete the full daily-driver acceptance tracked by issue #550."
+  ],
+  "detailed_receipt": "Retained outside the repository at /home/ulisesjcf/.cache/veasel-validation/desktop-v0.114.0-next.0-2026-11-27/desktop-tui-acceptance.json",
+  "approval_screenshot": "/home/ulisesjcf/.cache/veasel-validation/desktop-v0.114.0-next.0-2026-11-27/desktop-approval.png"
+}

@@ -1,10 +1,10 @@
-/* eslint-disable no-empty-pattern -- Playwright requires an object-destructured first argument; these specs use no fixtures. */
+/* eslint-disable no-empty-pattern, import-x/named -- Playwright requires an object-destructured first argument and exports the named test helpers used here. */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { record } from './evidence';
-import type { Desktop } from './fixtures';
+import { setViewport, type Desktop } from './fixtures';
 import {
   backendApi,
   findBackend,
@@ -258,6 +258,40 @@ test('J1 clean first launch lists the installed CLI providers', async ({}, testI
     claudeAuthChecks: authChecks.filter((cli) => cli === 'claude').length,
     codexAuthChecks: authChecks.filter((cli) => cli === 'codex').length,
   });
+});
+
+test('J1b compact start form keeps every provider reachable above its sticky action bar', async ({}, testInfo) => {
+  if (!desktop) await launch();
+  const originalViewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  try {
+    await setViewport(desktop.app, 1024, 640);
+    const form = page.locator('form[aria-labelledby="focus-start-title"]');
+    const action = page.getByRole('button', { name: 'Start session' });
+    const lastProvider = page.getByRole('group', { name: /Agent/ }).getByRole('radio').last();
+    const scrollState = await form.evaluate((element) => ({
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    }));
+    expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);
+
+    await form.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(lastProvider).toBeInViewport();
+    await expect(action).toBeInViewport();
+    const rowBounds = await lastProvider.evaluate((element) => {
+      const { top, bottom } = element.closest('label')!.getBoundingClientRect();
+      return { top, bottom };
+    });
+    const footerBounds = await action.evaluate((element) => {
+      const { top, bottom } = element.parentElement!.getBoundingClientRect();
+      return { top, bottom };
+    });
+    expect(rowBounds.bottom <= footerBounds.top || rowBounds.top >= footerBounds.bottom).toBe(true);
+    await shot(testInfo, 'J1b-compact-start-form');
+  } finally {
+    await setViewport(desktop.app, originalViewport.width, originalViewport.height);
+  }
 });
 
 test('J2 choose the disposable git folder and start a session from the form', async ({}, testInfo) => {

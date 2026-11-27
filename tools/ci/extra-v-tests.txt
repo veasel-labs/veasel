@@ -12,6 +12,7 @@ cross_provider_subagent_acceptance_test.v
 execution_policy_test.v
 goal_repository_identity_test.v
 goal_tasks_test.v
+goal_toolkit_compatibility_test.v
 goals_test.v
 headless_mcp_test.v
 headless_skills_test.v

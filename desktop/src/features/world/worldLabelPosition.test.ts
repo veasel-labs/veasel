@@ -34,6 +34,27 @@ describe('worldLabelPosition', () => {
     expect(position.maxWidth).toBe(64);
   });
 
+  it('keeps a long selected resource label with detail inside a short viewport', () => {
+    const position = worldLabelPosition({
+      entity: { x: 3, y: 20, w: 2, h: 2, name: 'A very long selected resource name' },
+      zoom: 32,
+      pan: { x: -40, y: -620 },
+      viewport: { width: 180, height: 100 },
+      detail: 'waiting for approval',
+      emphasized: true,
+    });
+
+    const screenLeft = position.left - 40;
+    const screenTop = position.top - 620;
+    const fontSize = Math.max(9, Math.min(14, 32 * 0.4));
+    const maxLabelHeight = fontSize * 1.3 * 2 + 8;
+    expect(screenLeft).toBeGreaterThanOrEqual(8);
+    expect(screenLeft).toBeLessThanOrEqual(172);
+    expect(screenTop).toBeGreaterThanOrEqual(8);
+    expect(screenTop + maxLabelHeight).toBeCloseTo(92, 8);
+    expect(position.maxWidth).toBe(164);
+  });
+
   it('preserves world coordinates until the map viewport is measured', () => {
     const position = worldLabelPosition({
       entity: { x: 4, y: 3, w: 2, h: 2, name: 'Workshop' },

@@ -203,6 +203,16 @@ fn test_goal_worker_completion_dispatches_bound_reviewer_and_persists_one_receip
 			verifier:          'review'
 			verifier_provider: 'openai-compatible'
 			verifier_model:    'review-fixture'
+		}, GoalTask{
+			id:         'follow-up'
+			title:      'Continue after accepted review'
+			repository: 'owner/repo'
+			base_sha:   fixture.base_sha
+			paths:      ['docs']
+			depends_on: ['review-docs']
+			recipe:     'feature'
+			runner:     'local-v'
+			verifier:   'review'
 		}]
 	}
 	_ = store.admit_goal(goal) or { panic(err) }
@@ -289,10 +299,71 @@ fn test_goal_worker_completion_dispatches_bound_reviewer_and_persists_one_receip
 	assert store.db.q_int("SELECT COUNT(*) FROM goal_task_verification_receipts WHERE goal_id = 'goal-verifier-e2e' AND task_id = 'review-docs'") or {
 		panic(err)
 	} == 1
+	if _ := store.claim_goal_task(goal.id, 'follow-up') {
+		assert false, 'a pass receipt alone must not unblock dependent tasks'
+	} else {
+		assert err.msg().contains('dependencies')
+	}
+	if _ := store.accept_goal_task(goal.id, 'review-docs', GoalTaskAcceptanceRequest{
+		attempt:       1
+		candidate_sha: 'c'.repeat(40)
+		decision:      'accept'
+	}) {
+		assert false, 'operator acceptance must bind to the candidate that passed independent review'
+	}
+	assert (store.goal_task_state(goal.id, 'review-docs') or { panic(err) }).status == 'verified'
 	receipt_before_delete := store.get_goal_task_verification_receipt_unlocked(goal.id, 'review-docs',
 		1) or {
 		panic(err)
 	}
+	store.db.exec("CREATE TRIGGER test_reject_goal_task_acceptance BEFORE UPDATE ON goal_task_states WHEN NEW.status = 'succeeded' BEGIN SELECT RAISE(ABORT, 'injected acceptance failure'); END") or {
+		panic(err)
+	}
+	if _ := store.accept_goal_task(goal.id, 'review-docs', GoalTaskAcceptanceRequest{
+		attempt:       1
+		candidate_sha: fixture.candidate_sha
+		decision:      'accept'
+	}) {
+		assert false, 'injected state update failure must abort acceptance'
+	}
+	assert store.db.q_int("SELECT COUNT(*) FROM goal_task_acceptances WHERE goal_id = 'goal-verifier-e2e'") or {
+		panic(err)
+	} == 0
+	assert (store.goal_task_state(goal.id, 'review-docs') or { panic(err) }).status == 'verified'
+	store.db.exec('DROP TRIGGER test_reject_goal_task_acceptance') or { panic(err) }
+	// Acceptance binds the immutable candidate commit. A moved worktree HEAD
+	// cannot change which reviewed commit the operator is accepting.
+	_ = run_workspace_git_command_output(fixture.worktree,
+		['checkout', '--detach', fixture.base_sha], 1024) or { panic(err) }
+	accepted := store.accept_goal_task(goal.id, 'review-docs', GoalTaskAcceptanceRequest{
+		attempt:       1
+		candidate_sha: fixture.candidate_sha
+		decision:      'accept'
+	}) or { panic(err) }
+	assert accepted.candidate_sha == fixture.candidate_sha
+	assert accepted.actor == goal_task_acceptance_actor
+	assert accepted.integrity_checks == [goal_task_acceptance_check]
+	assert (store.goal_task_state(goal.id, 'review-docs') or { panic(err) }).status == 'succeeded'
+	assert (store.goal_task_state(goal.id, 'review-docs') or { panic(err) }).attempts[0].status == 'succeeded'
+	assert store.db.q_int("SELECT COUNT(*) FROM goal_task_acceptances WHERE goal_id = 'goal-verifier-e2e' AND task_id = 'review-docs' AND attempt = 1") or {
+		panic(err)
+	} == 1
+	if _ := store.db.exec_param_many('UPDATE goal_task_acceptances SET decision = ? WHERE goal_id = ? AND task_id = ? AND attempt = 1', [
+		'accept',
+		goal.id,
+		'review-docs',
+	]) {
+		assert false, 'acceptance evidence must be immutable'
+	}
+	accepted_replay := store.accept_goal_task(goal.id, 'review-docs', GoalTaskAcceptanceRequest{
+		attempt:       1
+		candidate_sha: fixture.candidate_sha
+		decision:      'accept'
+	}) or { panic(err) }
+	assert accepted_replay.created_at == accepted.created_at
+	follow_up := store.claim_goal_task(goal.id, 'follow-up') or { panic(err) }
+	assert follow_up.status == 'running'
+	assert follow_up.attempt_count == 1
 	store.delete_session(parent.id) or { panic(err) }
 	replayed_after_delete := store.record_goal_task_verification_receipt(binding_rows[0].val(0)) or {
 		panic(err)

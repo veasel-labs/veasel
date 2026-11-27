@@ -99,6 +99,18 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   exercised, the installed build is still a prerelease, and the host's other
   native provider checks remain partly unknown.
 
+- Current distribution synchronization on 2026-11-27 is verified for the
+  immutable `v0.114.1-next.0` release from source `f812b4e4`. Website PRs #251
+  and #250 merged as `4d5621ec` and `b9cd79df`; production CI passed and the
+  live downloads page serves the new version plus explicit macOS
+  non-notarization/Gatekeeper and Windows SmartScreen warnings. Homebrew PR #91
+  merged as `f68b5b82` with both casks at `0.114.1-next.0`. AUR PR #96 merged,
+  then publisher workflow `46076130681` verified checksums, install-tested the
+  exact approved packages, published them, and confirmed RPC reports
+  `0.114.1.next.0-1` for CLI and Desktop. Desktop installers remain unsigned
+  and macOS is not notarized. This distribution evidence does not replace
+  installing and validating the current package on HorneroOS.
+
 ### Optional cozy World (#693)
 
 - The packaged Linux preview `v0.105.0-next.0` was installed side-by-side on
@@ -160,6 +172,26 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   That change is in main but is not yet included in the published `v0.114.1-next.0`
   package; a repeat packaged approval and rejection review against a release
   containing it remains required.
+- On 2026-11-27, the locally built AUR `0.114.1.next.0-1` CLI and Desktop
+  packages passed metadata/dependency inspection and their package-file hashes
+  were recorded in
+  `~/.cache/veasel-validation/acceptance-v0.114.1-next.0/aur-packages-local-probe.json`.
+  System installation on HorneroOS is still blocked: the Codex execution
+  environment sets `NoNewPrivs=1`, and `sudo pacman -U` is rejected before
+  package installation. The Desktop package was extracted to a disposable
+  cache directory and launched under a bounded user systemd scope with a fresh
+  HOME, data directory, and loopback port. Its authenticated backend health
+  reported `0.114.1-next.0`; `/v1/providers/cli` found Codex `0.172.0` signed in
+  through ChatGPT and detected Claude Code, OpenCode, and Muse. The native
+  Electron window was not available to this session's UI capture surface, so
+  renderer inspection through a browser is not counted as Desktop UI
+  acceptance. The extracted `0.114.1-next.0` TUI then selected that native
+  Codex runner in `ask` mode and completed a real read-only turn against this
+  repository; its operation completed, the recorded workspace-edit count was
+  zero, no approvals remained pending, and the repository status matched its
+  pre-turn state. This advances TUI/provider acceptance, but does not replace
+  system installation or the full Desktop edit/review/approval/recovery
+  journey.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under
@@ -1041,16 +1073,23 @@ runner readiness/authentication and verifier execution remain open.
 success transitions without an independent receipt. The open draft PR #861
 contains durable candidate-bound reviewer receipts, the `verified` state, and
 automatic dispatch of bound reviewer runs under the runtime's tool and
-approval policies. It still does not run
-executable acceptance checks or promote `verified` to `succeeded`. Redacted
+approval policies. The current open branch adds an authenticated
+`POST /v1/goals/:id/tasks/:task_id/accept` transition: a local operator must
+explicitly accept the exact pass-receipt candidate; Veasel revalidates the
+immutable commit SHA, base ancestry, and committed path/tree boundary in the
+shared Git object store, then persists the acceptance receipt and task/attempt
+`succeeded` states in one transaction. The mutable worktree's later HEAD does
+not change which commit was accepted. The bearer token identifies only the
+local API capability, not a named person. This slice does not execute
+repository test commands or prove free-text acceptance criteria. Redacted
 Codex app-server effect receipts are integrated in #851
 (`8a7900c7`); those receipts document tool effects and do not prove task
 correctness. Recovery never replays `verifying`; `verified` remains distinct
-from success and does not satisfy dependencies. Promotion to `succeeded` or
-`draft_ready` still requires an independent receipt bound to the exact
-repository, base, and candidate SHAs, executable acceptance policy, and an
-atomic persistence-boundary transition. The #849 candidate observer is a
-read-only check and does not run tests or promote a task. Recovery, live queued
+from success and does not satisfy dependencies until the explicit acceptance
+transition. Promotion to `succeeded` still requires the exact candidate-bound
+pass receipt, repository-integrity rechecks, and local operator acceptance;
+`draft_ready` and GitHub publication remain separate. The #849 candidate
+observer is a read-only check and does not run tests. Recovery, live queued
 cancellation/rejection, and concurrent attempt paths are covered fail-closed.
 
 These slices do not yet provide the operational Veasel goal CLI commands
@@ -1066,13 +1105,14 @@ attempt worktree: the requested full candidate SHA must resolve exactly, match
 `HEAD`, descend from the admitted base, leave the worktree clean, and change
 only the task's declared paths. The open draft PR #861 adds trusted built-in
 reviewer bindings, immutable candidate-bound receipts, strict result parsing, and
-durable pass/fail/uncertain settlement. It still does not execute the reviewer
-automatically, run executable acceptance checks, or perform an atomic
-`verified` to `succeeded` transition. Candidate observation is not itself a
-receipt: dispatch must hold the verification fence, confirm no live operation
-can mutate the worktree, re-observe immediately before persistence, and bind
-acceptance to the exact candidate SHA. The observer itself provides no
-cross-process lock against a later Git mutation.
+durable pass/fail/uncertain settlement. It does not execute free-form task
+tests. The current branch adds an atomic `verified` to `succeeded` operator
+acceptance endpoint after revalidating the immutable candidate commit.
+Candidate observation is not itself a receipt: dispatch must hold the
+verification fence, confirm no live operation can mutate the worktree,
+re-observe immediately before persistence, and bind acceptance to the exact
+candidate SHA. The observer itself provides no cross-process lock against a
+later Git mutation.
 
 The worker-side lease slice renews only an attempt linked to a canonical
 durable session operation. It validates the exact fencing token and generation
@@ -1089,9 +1129,10 @@ is capped by the attempt deadline; expired, malformed, or missing verifier
 leases fail closed to `uncertain` on recovery, including a crash before the
 first verifier claim. The open draft PR #861 builds on this infrastructure
 with durable reviewer bindings, receipt persistence, schema 44's `verified` task state, and
-transactional settlement for all receipt verdicts. Automatic reviewer
-dispatch, executable acceptance checks, and promotion to `succeeded` remain
-open.
+transactional settlement for all receipt verdicts. Schema 45 on the current
+branch adds operator acceptance records and an atomic state transition to
+`succeeded`. Executable repository acceptance checks, `draft_ready`, and
+publication remain open.
 
 Schema 43 adds durable verifier-run bindings and immutable, candidate-bound
 review receipts. The server binds the built-in read-only reviewer run to the
@@ -1131,8 +1172,8 @@ automatic reviewer dispatch and receipt-backed `verified`, and runs concurrent
 recovery scans while the reviewer is active to prove they do not launch a
 duplicate. The fixture uses only a local HTTP provider and isolated Git
 checkouts. Still open:
-executable acceptance policy/checks and the atomic `verified` to `succeeded`
-acceptance transition. Provider/model lineage independence and actual CLI
+executable acceptance policy/checks and the review/acceptance evidence
+projection in TUI/Desktop. Provider/model lineage independence and actual CLI
 sandbox behavior also need stronger evidence than route identity and local
 mode selection.
 

@@ -435,6 +435,7 @@ fn test_every_declared_route_rejects_unauthenticated_requests_and_runs_no_handle
 	assert 'GET /v1/goals/canary' in routes
 	assert 'GET /v1/goals/canary/tasks' in routes
 	assert 'POST /v1/goals/canary/tasks/canary/start' in routes
+	assert 'POST /v1/goals/canary/tasks/canary/accept' in routes
 	admission_rows := store.admitted_goals() or { panic(err) }
 	assert admission_rows.len == 0
 	auth_test_goal_round_trip(port, token)
@@ -737,6 +738,16 @@ fn auth_test_goal_round_trip(port int, token string) {
 	assert projection.goal_id == 'http-goal'
 	assert projection.status == 'admitted'
 	assert projection.tasks.map(it.id) == ['b-independent', 'a-start', 'z-final']
+	invalid_acceptance := '{}'
+	invalid_acceptance_request := auth_test_request('POST',
+		'/v1/goals/http-goal/tasks/a-start/accept', [...headers,
+			'Content-Length: ${invalid_acceptance.len}'])
+	assert auth_test_status(auth_test_raw(port, invalid_acceptance_request + invalid_acceptance)).contains(' 400 ')
+	without_receipt := '{"attempt":"1","candidate_sha":"${'a'.repeat(40)}","decision":"accept"}'
+	without_receipt_request := auth_test_request('POST',
+		'/v1/goals/http-goal/tasks/a-start/accept', [...headers,
+			'Content-Length: ${without_receipt.len}'])
+	assert auth_test_status(auth_test_raw(port, without_receipt_request + without_receipt)).contains(' 409 ')
 	assert projection.tasks.map(it.status) == ['pending', 'pending', 'pending']
 	assert projection.tasks.map(it.attempt_count) == [0, 0, 0]
 	assert projection.tasks.map(it.attempts.len) == [0, 0, 0]

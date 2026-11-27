@@ -95,6 +95,97 @@ fn observe_goal_task_candidate(worktree GoalTaskWorktree, task GoalTask,
 	}
 }
 
+// observe_goal_task_candidate_commit validates only the immutable Git object
+// named by candidate_sha. Acceptance must not depend on a mutable worktree
+// HEAD or status value that another process can change between filesystem
+// observation and the SQLite commit. The candidate SHA, its base ancestry,
+// and its committed path/tree boundary are all derived from the repository's
+// shared object database.
+fn observe_goal_task_candidate_commit(worktree GoalTaskWorktree, task GoalTask,
+	candidate_sha string, deadline time.Time) !GoalTaskCandidateObservation {
+	if worktree.status != 'ready' || worktree.attempt <= 0 || worktree.path.trim_space() == '' {
+		return error('goal task candidate requires a ready worktree')
+	}
+	if !valid_goal_sha(candidate_sha) || !valid_goal_sha(worktree.base_sha)
+		|| candidate_sha == worktree.base_sha || task.base_sha != worktree.base_sha {
+		return error('goal task candidate SHA does not identify a non-base full commit')
+	}
+	if !os.is_abs_path(worktree.path) || os.is_link(worktree.path) || !os.is_dir(worktree.path)
+		|| !os.is_abs_path(worktree.repository_root) || os.is_link(worktree.repository_root)
+		|| !os.is_dir(worktree.repository_root) {
+		return error('goal task candidate paths are not canonical directories')
+	}
+	canonical_path := os.real_path(worktree.path)
+	canonical_root := os.real_path(worktree.repository_root)
+	if !goal_candidate_paths_equal(canonical_path, worktree.path)
+		|| !goal_candidate_paths_equal(canonical_root, worktree.repository_root)
+		|| goal_task_path_is_within(canonical_root, canonical_path) {
+		return error('goal task candidate paths are not canonical and isolated')
+	}
+	root_output := run_goal_git_command_output_until(canonical_root,
+		['--no-replace-objects', 'rev-parse', '--show-toplevel'], max_goal_git_output_bytes,
+		deadline) or { return error('unable to inspect goal task repository') }
+	if !goal_candidate_paths_equal(os.real_path(root_output.trim_space()), canonical_root) {
+		return error('goal task repository root changed from the admitted checkout')
+	}
+	worktree_root := run_goal_git_command_output_until(canonical_path,
+		['--no-replace-objects', 'rev-parse', '--show-toplevel'], max_goal_git_output_bytes,
+		deadline) or { return error('unable to inspect goal task worktree') }
+	if !goal_candidate_paths_equal(os.real_path(worktree_root.trim_space()), canonical_path) {
+		return error('goal task worktree root changed from the persisted attempt')
+	}
+	root_common_raw := run_goal_git_command_output_until(canonical_root,
+		['--no-replace-objects', 'rev-parse', '--git-common-dir'], max_goal_git_output_bytes,
+		deadline) or { return error('unable to inspect goal task repository object store') }
+	worktree_common_raw := run_goal_git_command_output_until(canonical_path,
+		['--no-replace-objects', 'rev-parse', '--git-common-dir'], max_goal_git_output_bytes,
+		deadline) or { return error('unable to inspect goal task worktree object store') }
+	root_common := os.real_path(if os.is_abs_path(root_common_raw.trim_space()) {
+		root_common_raw.trim_space()
+	} else {
+		os.join_path(canonical_root, root_common_raw.trim_space())
+	})
+	worktree_common := os.real_path(if os.is_abs_path(worktree_common_raw.trim_space()) {
+		worktree_common_raw.trim_space()
+	} else {
+		os.join_path(canonical_path, worktree_common_raw.trim_space())
+	})
+	if !goal_candidate_paths_equal(root_common, worktree_common) {
+		return error('goal task worktree does not share the admitted repository object store')
+	}
+	for path in task.paths {
+		if !valid_goal_relative_path(path) || workspace_has_hidden_controls(path) {
+			return error('goal task candidate scope contains an invalid path')
+		}
+	}
+	resolved := run_goal_git_command_output_until(canonical_root,
+		['--no-replace-objects', 'rev-parse', '--verify', '--end-of-options',
+			'${candidate_sha}^{commit}'], max_goal_git_output_bytes, deadline) or {
+		return error('goal task candidate commit does not exist')
+	}
+	if resolved.trim_space() != candidate_sha {
+		return error('goal task candidate commit did not resolve to the exact full SHA')
+	}
+	_ := run_goal_git_command_output_until(canonical_root,
+		['--no-replace-objects', 'merge-base', '--is-ancestor', worktree.base_sha, candidate_sha],
+		max_goal_git_output_bytes, deadline) or {
+		return error('goal task candidate is not descended from the admitted base SHA')
+	}
+	changed_paths := goal_candidate_changed_paths(canonical_root, worktree.base_sha,
+		candidate_sha, deadline)!
+	for path in changed_paths {
+		if !goal_candidate_path_in_scope(path, task.paths) {
+			return error('goal task candidate changes path outside the admitted scope: ${path}')
+		}
+		goal_candidate_tree_path_is_safe(canonical_root, candidate_sha, path, deadline)!
+	}
+	return GoalTaskCandidateObservation{
+		base_sha:      worktree.base_sha
+		candidate_sha: candidate_sha
+		changed_paths: changed_paths
+	}
+}
+
 fn goal_candidate_paths_equal(left string, right string) bool {
 	return goal_task_path_is_within(left, right) && goal_task_path_is_within(right, left)
 }

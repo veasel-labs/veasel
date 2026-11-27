@@ -2606,7 +2606,7 @@ components:
           minItems: 1
           items:
             type: object
-            required: [id, title, repository, base_sha, paths, recipe, runner, verifier]
+            required: [id, title, repository, base_sha, paths, depends_on, recipe, runner, verifier]
             properties:
               id: { type: string, minLength: 1 }
               title: { type: string, minLength: 1, maxLength: 200 }
@@ -2653,6 +2653,17 @@ components:
     GoalPermissionEffect:
       type: string
       enum: [repository.read, repository.write, process.execute, network.access, git.commit, git.push, github.read, github.issue.create, github.issue.update, github.pr.create, github.pr.update, github.comment.create, github.label.set, github.assign, github.close, github.merge, release.publish]
+              verifier_provider: { type: string, minLength: 1, maxLength: 128 }
+              verifier_model: { type: string, minLength: 1, maxLength: 256 }
+            allOf:
+              - if:
+                  required: [verifier_provider]
+                then:
+                  required: [verifier_model]
+              - if:
+                  required: [verifier_model]
+                then:
+                  required: [verifier_provider]
     GoalTasksProjection:
       type: object
       required: [goal_id, status, tasks]
@@ -2668,7 +2679,7 @@ components:
             $ref: '#/components/schemas/GoalTaskProjectionItem'
     GoalTaskProjectionItem:
       type: object
-      required: [id, title, repository, base_sha, paths, depends_on, recipe, runner, verifier, status, attempt_count, attempts]
+      required: [id, title, repository, base_sha, paths, depends_on, recipe, runner, verifier, verifier_provider, verifier_model, status, attempt_count, attempts]
       properties:
         id: { type: string }
         title: { type: string }
@@ -2682,18 +2693,23 @@ components:
         permissions:
           type: array
           items: { $ref: '#/components/schemas/GoalPermissionEffect' }
-        status: { enum: [pending, running, succeeded, failed, uncertain] }
+        status: { enum: [pending, running, verifying, verified, succeeded, failed, uncertain] }
+        verifier_provider: { type: string }
+        verifier_model: { type: string }
         attempt_count: { type: integer, minimum: 0 }
         attempts:
           type: array
           items:
             type: object
-            required: [attempt, status, started_at, ended_at]
+            required: [attempt, status, started_at, ended_at, effective_deadline, lease_expires_at, lease_generation]
             properties:
               attempt: { type: integer, minimum: 1 }
-              status: { enum: [running, succeeded, failed, uncertain] }
+              status: { enum: [running, verifying, succeeded, failed, uncertain] }
               started_at: { type: string }
               ended_at: { type: string }
+              effective_deadline: { type: string }
+              lease_expires_at: { type: string }
+              lease_generation: { type: integer, minimum: 0 }
     GoalPreflightReport:
       type: object
       required: [goal_id, checkouts_validated, repositories, diagnostics]

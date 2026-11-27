@@ -154,9 +154,17 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Implement authenticated read-only repository identity preflight for
   local roots and scoped paths (PR #830). The result remains point-in-time
   diagnostic evidence and must be revalidated by any future dispatcher.
-- [ ] Bind repository identity/base-SHA revalidation to every dispatch. Resolve
-  runner and verifier IDs against registered capabilities and enforce policy
-  ceilings and deadlines in V.
+- [x] Revalidate repository identity, exact base SHA, and scoped paths on each
+  task dispatch before claiming an attempt or creating its worktree/session.
+- [x] Resolve dispatch runner IDs through the local provider protocol and
+  permission registry, and reject unknown verifier IDs before claiming work.
+  The `review` and `independent-review` verifier IDs are declarative preflight
+  identities only in this slice: no verifier is executed and no receipt is
+  produced.
+- [ ] Probe real runner readiness/authentication and persist exact runner and
+  verifier identities/versions on attempts. Execute a separate verifier and
+  enforce policy ceilings, provider-turn reservations, per-attempt deadlines,
+  wall-clock budgets, and worker leases/fencing before promoting task state.
 - [x] Persist per-task status and attempt history, initialize it idempotently,
   and atomically claim only dependency-ready tasks within the goal-wide attempt
   budget (all tasks and retries count). Classify claims with missing, exited,
@@ -166,8 +174,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   operation lifecycle with fencing tokens and goal-specific events. It still
   does not launch workers.
 - [x] Link claimed attempts to the existing operation lifecycle (PR #840).
-  Runner and verifier resolution, policy enforcement, dispatch and UI remain
-  separate milestones.
+  Registered runner/verifier ID preflight now precedes claims and worktree
+  creation; policy enforcement, verifier execution, receipt persistence and UI
+  remain separate milestones.
 - [x] Prepare an isolated, clean worktree for each claimed task at its exact
   admitted full base SHA (PR #841, merged at `22574497`). The implementation
   adds fail-closed checkout revalidation, repository-config refusal, collision

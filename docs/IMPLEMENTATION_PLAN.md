@@ -1006,6 +1006,18 @@ It does not provide goal CLI commands, autonomous retry/recovery, leases,
 GitHub publication, or fleet concurrency. Keep those items below open until
 receipts and end-to-end acceptance exist.
 
+The candidate-observation slice adds a pure, non-accepting check for a ready
+attempt worktree: the requested full candidate SHA must resolve exactly, match
+`HEAD`, descend from the admitted base, leave the worktree clean, and change
+only the task's declared paths. It never runs tests, persists evidence, or
+promotes a task. A later receipt slice still needs trusted verifier identities,
+idempotent evidence storage, and an atomic `verifying` to `succeeded`
+transition. The observation is a diagnostic snapshot, not a receipt: its
+caller must hold a fenced task/worker lease, confirm that no live operation can
+still mutate the worktree, re-observe immediately before persistence, and
+persist/promote only in one fenced transaction. The observer itself provides no
+cross-process lock against a later Git mutation.
+
 - [ ] Publish a versioned Toolkit goal/task/evidence contract with an offline
   validator and planner; require authorized repositories, observable finish
   conditions, playbook, deadline, budget, permissions, delivery mode, DAG,

@@ -640,6 +640,11 @@ fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id
 	if store.db.get_affected_rows_count() != 1 {
 		return error('goal task attempt is not running or fencing token is stale')
 	}
+	// Generic completion has no verifier provenance or candidate-SHA proof. Keep
+	// success reserved for the future receipt-backed transition.
+	if result == .succeeded {
+		return error('goal task success requires an independent verification receipt')
+	}
 	linked := store.db.exec_param_many('SELECT session_id, session_operation_id FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
 		goal_id,
 		task_id,

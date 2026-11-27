@@ -741,6 +741,36 @@ fn auth_test_goal_round_trip(port int, token string) {
 	assert projection.tasks.map(it.attempt_count) == [0, 0, 0]
 	assert projection.tasks.map(it.attempts.len) == [0, 0, 0]
 	assert projection.tasks.last().depends_on == ['a-start']
+	v2_goal := GoalAdmission{
+		...goal
+		schema_version: 2
+		id:             'http-goal-v2'
+		policy_ceiling: ['repository.read']
+		tasks:          goal.tasks.map(GoalTask{ ...it, permissions: ['repository.read'] })
+	}
+	v2_body := json2.encode(v2_goal, escape_unicode: true, time_as_unix: true)
+	v2_post := auth_test_request('POST', '/v1/goals', [...headers, 'Content-Length: ${v2_body.len}'])
+	assert auth_test_status(auth_test_raw(port, v2_post + v2_body)).contains(' 201 ')
+	v2_start_body := json2.encode(GoalTaskStartRequest{
+		title:  'Must not start'
+		prompt: 'Review the task'
+	})
+	v2_start_request := auth_test_request('POST', '/v1/goals/http-goal-v2/tasks/a-start/start', [
+		...headers,
+		'Content-Length: ${v2_start_body.len}',
+	])
+	v2_start_response := auth_test_raw(port, v2_start_request + v2_start_body)
+	assert auth_test_status(v2_start_response).contains(' 409 ')
+	assert v2_start_response.contains('disabled until task permissions are enforced')
+	v2_tasks_response := auth_test_raw(port, auth_test_request('GET', '/v1/goals/http-goal-v2/tasks',
+		headers))
+	v2_projection := json2.decode[GoalTasksProjection](v2_tasks_response.all_after('\r\n\r\n')) or {
+		panic(err)
+	}
+	assert v2_projection.policy_ceiling == ['repository.read']
+	assert v2_projection.tasks[0].permissions == ['repository.read']
+	assert v2_projection.tasks[0].status == 'pending'
+	assert v2_projection.tasks[0].attempt_count == 0
 	assert auth_test_status(auth_test_raw(port, auth_test_request('GET', '/v1/goals/missing', headers))).contains(' 404 ')
 	assert auth_test_status(auth_test_raw(port, auth_test_request('GET', '/v1/goals/missing/tasks', headers))).contains(' 404 ')
 

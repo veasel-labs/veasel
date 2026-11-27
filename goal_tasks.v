@@ -5,9 +5,10 @@ import veb
 
 pub struct GoalTasksProjection {
 pub:
-	goal_id string
-	status  string
-	tasks   []GoalTaskProjectionItem
+	goal_id        string
+	status         string
+	policy_ceiling []string @[omitempty]
+	tasks          []GoalTaskProjectionItem
 }
 
 pub struct GoalTaskProjectionItem {
@@ -21,6 +22,7 @@ pub:
 	recipe        string
 	runner        string
 	verifier      string
+	permissions   []string @[omitempty]
 	status        string
 	attempt_count int
 	attempts      []GoalTaskAttemptProjection
@@ -29,24 +31,26 @@ pub:
 fn project_goal_task_graph(goal GoalAdmission) !GoalTasksProjection {
 	ordered := ordered_goal_tasks(goal.tasks)!
 	return GoalTasksProjection{
-		goal_id: goal.id
-		status:  'admitted'
-		tasks:   ordered.map(goal_task_projection_item(it))
+		goal_id:        goal.id
+		status:         'admitted'
+		policy_ceiling: goal.policy_ceiling.clone()
+		tasks:          ordered.map(goal_task_projection_item(it))
 	}
 }
 
 fn goal_task_projection_item(task GoalTask) GoalTaskProjectionItem {
 	return GoalTaskProjectionItem{
-		id:         task.id
-		title:      task.title
-		repository: task.repository
-		base_sha:   task.base_sha
-		paths:      task.paths.clone()
-		depends_on: task.depends_on.clone()
-		recipe:     task.recipe
-		runner:     task.runner
-		verifier:   task.verifier
-		status:     'pending'
+		id:          task.id
+		title:       task.title
+		repository:  task.repository
+		base_sha:    task.base_sha
+		paths:       task.paths.clone()
+		depends_on:  task.depends_on.clone()
+		recipe:      task.recipe
+		runner:      task.runner
+		verifier:    task.verifier
+		permissions: task.permissions.clone()
+		status:      'pending'
 	}
 }
 

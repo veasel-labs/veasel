@@ -39,6 +39,102 @@ fn test_goal_admission_rejects_bad_scope_and_cyclic_dependencies() {
 	}
 }
 
+fn test_goal_v2_permissions_validate_and_survive_admission_and_projection() {
+	base := example_goal_admission()
+	goal := GoalAdmission{
+		...base
+		schema_version: 2
+		policy_ceiling: ['repository.read', 'repository.write', 'process.execute']
+		tasks:          base.tasks.map(GoalTask{
+			...it
+			permissions: ['repository.read', 'repository.write']
+		})
+	}
+	validate_goal_admission(goal) or { panic(err) }
+	validate_goal_permission_json_fields(json2.encode(goal), goal) or { panic(err) }
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	assert (store.admit_goal(goal) or { panic(err) }) == .created
+	stored := json2.decode[GoalAdmission](store.admitted_goal_manifest(goal.id) or { panic(err) }) or {
+		panic(err)
+	}
+	assert stored.policy_ceiling == goal.policy_ceiling
+	assert stored.tasks[0].permissions == goal.tasks[0].permissions
+	projection := project_goal_task_graph(stored) or { panic(err) }
+	assert projection.policy_ceiling == goal.policy_ceiling
+	assert projection.tasks[0].permissions == goal.tasks[0].permissions
+}
+
+fn test_agent_toolkit_goal_v2_export_fixture_is_accepted_and_preserved() {
+	raw := os.read_file(os.join_path(os.dir(@FILE), 'testdata', 'agent-toolkit-goal-v2-permissions.json')) or {
+		panic(err)
+	}
+	goal := json2.decode[GoalAdmission](raw) or { panic(err) }
+	validate_goal_permission_json_fields(raw, goal) or { panic(err) }
+	validate_goal_admission(goal) or { panic(err) }
+	projection := project_goal_task_graph(goal) or { panic(err) }
+	assert projection.policy_ceiling == ['repository.read', 'repository.write', 'process.execute']
+	assert projection.tasks[0].permissions == ['repository.read', 'repository.write']
+}
+
+fn test_goal_permission_contract_rejects_unsafe_versions_and_effects() {
+	base := example_goal_admission()
+	for invalid in [
+		GoalAdmission{ ...base, schema_version: 1, policy_ceiling: ['repository.read'] },
+		GoalAdmission{ ...base, schema_version: 2, policy_ceiling: ['repository.write'] },
+		GoalAdmission{ ...base, schema_version: 2, policy_ceiling: ['repository.read', 'shell.bypass'] },
+		GoalAdmission{
+			...base
+			schema_version: 2
+			policy_ceiling: ['repository.read', 'repository.read']
+		},
+		GoalAdmission{
+			...base
+			schema_version: 2
+			policy_ceiling: ['repository.read']
+			tasks:          [GoalTask{
+				...base.tasks[0]
+				permissions: [
+					'repository.read',
+					'github.merge',
+				]
+			}]
+		},
+	] {
+		validate_goal_admission(invalid) or { continue }
+		assert false, 'accepted invalid Goal permission declarations'
+	}
+	permission_goal := GoalAdmission{
+		...base
+		schema_version: 2
+		policy_ceiling: ['repository.read']
+		tasks:          [GoalTask{ ...base.tasks[0], permissions: ['repository.read'] }]
+	}
+	for raw in [
+		'{"schema_version":1,"policy_ceiling":[],"tasks":[]}',
+		'{"schema_version":1,"tasks":[{"permissions":[]}]}',
+	] {
+		validate_goal_permission_json_fields(raw, base) or { continue }
+		assert false, 'accepted v1 permission fields'
+	}
+	missing_task_permissions := GoalAdmission{
+		...permission_goal
+		tasks: [base.tasks[0]]
+	}
+	validate_goal_permission_json_fields('{"schema_version":2,"policy_ceiling":["repository.read"],"tasks":[{}]}', missing_task_permissions) or {
+		return
+	}
+	assert false, 'accepted Goal v2 without per-task permissions'
+	missing_ceiling := GoalAdmission{
+		...permission_goal
+		policy_ceiling: []
+	}
+	validate_goal_permission_json_fields('{"schema_version":2,"tasks":[{"permissions":["repository.read"]}]}', missing_ceiling) or {
+		return
+	}
+	assert false, 'accepted Goal v2 without a policy ceiling'
+}
+
 fn example_goal_admission() GoalAdmission {
 	return GoalAdmission{
 		schema_version:          1

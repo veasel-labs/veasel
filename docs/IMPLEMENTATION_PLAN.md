@@ -1003,20 +1003,34 @@ until a per-loop handoff is reviewed and accepted. HorneroOS and
 `agentic-workstation` retain privileged desktop and OS actions; Veasel must not
 duplicate those capabilities.
 
-The current local goal-task dispatch work adds the next slice: an
-authenticated task start creates a fenced attempt, an
+The local task-dispatch foundation is integrated in #845
+(`6f8845b4`): an authenticated task start creates a fenced attempt, an
 exact-base isolated worktree, and a durable session operation using the
-canonical session worker. A successful worker now transitions the linked task
-and attempt to explicit `verifying`; it never implies `succeeded` or
-`draft_ready`. Recovery never replays `verifying`, and verification does not
-satisfy dependencies. An independent receipt bound to the exact repository,
-base, and candidate SHAs is still required before promotion to `succeeded` or
-`draft_ready`; client-provided receipt promotion remains deferred until the
-verifier trust/candidate observation gate exists. Recovery, live queued
-cancellation/rejection, and concurrent attempt paths are covered fail-closed.
-It does not provide goal CLI commands, autonomous retry/recovery, leases,
-GitHub publication, or fleet concurrency. Keep those items below open until
-receipts and end-to-end acceptance exist.
+canonical session worker. A successful worker transitions the linked task and
+attempt to explicit `verifying`; it never implies `succeeded` or `draft_ready`.
+PR #856 (`87103cf7`) adds fail-closed runner/verifier identifier preflight
+through the local registry before claiming work or creating a worktree/session;
+runner readiness/authentication and verifier execution remain open.
+The independent receipt lifecycle is integrated in #850 (`be8313b2`), and
+redacted Codex app-server effect receipts are integrated in #851
+(`8a7900c7`). These Codex receipts document tool effects; they are not
+independent task-verification receipts. Recovery never replays `verifying`,
+and verification does not satisfy dependencies. An independent receipt bound
+to the exact repository, base, and candidate SHAs remains required before
+promotion to `succeeded` or `draft_ready`; client-provided receipt promotion
+remains deferred until verifier trust and candidate observation are enforced
+at the persistence boundary. The #849 candidate observer is a read-only,
+non-accepting diagnostic and does not run tests, persist evidence, or promote a
+task. Recovery, live queued cancellation/rejection, and concurrent attempt
+paths are covered fail-closed.
+
+These slices do not yet provide the operational Veasel goal CLI commands
+listed below, automatic retries, a scheduler-wide task lease with production
+heartbeat/expiry wiring, GitHub publication, or fleet concurrency. PR #858
+remains open with deadline-bound task-lease persistence groundwork; it does not
+wire worker heartbeats. Existing attempt fencing is not equivalent to an
+expiring task lease. Keep the corresponding items below open until the missing
+mechanisms and end-to-end acceptance exist.
 
 The candidate-observation slice adds a pure, non-accepting check for a ready
 attempt worktree: the requested full candidate SHA must resolve exactly, match
@@ -1030,13 +1044,19 @@ still mutate the worktree, re-observe immediately before persistence, and
 persist/promote only in one fenced transaction. The observer itself provides no
 cross-process lock against a later Git mutation.
 
-- [ ] Publish a versioned Toolkit goal/task/evidence contract with an offline
-  validator and planner; require authorized repositories, observable finish
-  conditions, playbook, deadline, budget, permissions, delivery mode, DAG,
-  base SHA, paths, runner, verifier, and evidence. Start with research, bug,
-  feature, migration, and release playbooks, reusing loop validators and
-  handoff formats where they match. Preserve current Swarm commands and states.
-  Add an optional pstack-inspired pack with provenance and compatibility
+- [x] Publish a versioned Toolkit Goal v1/task/evidence contract with an offline
+  validator and planner for authorized repositories, acceptance criteria,
+  deadline, budget, delivery mode, DAG, base SHA, paths, runner, verifier, and
+  evidence. The `ulises-jeremias/agent-toolkit` main branch provides the Goal
+  v1 schema, offline validation/planning, five recipes, and evidence schema;
+  Veasel's compatibility check landed in #846 (`d817f06e`). The checked-in
+  fixture is synthetic contract data, not execution evidence. This contract
+  does not dispatch work. Preserve existing Swarm commands and states.
+- [ ] Add explicit permission declarations and policy-ceiling fields to the
+  portable Goal contract; current Goal v1 does not encode permissions. Define
+  the portable permission vocabulary and compatibility behavior before
+  requiring it in Veasel admission or dispatch.
+- [ ] Add an optional pstack-inspired pack with provenance and compatibility
   metadata; do not copy external playbook sources into the marketplace.
 - [ ] Keep the official `veasel-labs/agent-toolkit` marketplace reference-based:
   pin plugin versions, record provenance/compatibility/permissions, and retain
@@ -1059,6 +1079,9 @@ cross-process lock against a later Git mutation.
   atomically, use stable automation branch identities, record cancellation
   before confirming process termination, and pause by stopping new assignments
   while preserving visible in-flight work.
+  PR #858 currently proposes deadline-bound lease persistence, but remains
+  open; production heartbeat/expiry reconciliation and scheduler-wide
+  coordination remain outstanding.
 - [ ] Define goal states separately from session operation states, including
   `queued`, `leased`, `building`, `verifying`, `draft_ready`, `accepted`,
   `blocked`, `uncertain`, `failed`, and `cancelled`. Remote leases heartbeat at

@@ -2535,11 +2535,14 @@ fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id strin
 		assistant_content, output.provider, output.model, trace_json, result.usage, outcome) or {
 		return error('unable to persist session messages')
 	}
-	// A successful model turn is intentionally left in the running goal state
-	// until an independent verifier emits a receipt. Model completion alone is
-	// never acceptance or draft_ready.
+	// A successful model turn advances a linked goal attempt only to verifying.
+	// Model completion alone is never acceptance, draft_ready, or succeeded; an
+	// independent verifier must later emit a candidate-SHA-bound receipt.
 	turn_facts_registry.finish(id)
 	mut store := app.store
+	store.reconcile_goal_task_operation(operation_id, .verifying) or {
+		eprintln('veasel: unable to reconcile successful goal task operation (${err.msg()})')
+	}
 	// Finishing a parent turn cancels any queued children; only clean workspaces
 	// that have never been claimed, preserving any child that may have executed.
 	store.cleanup_unstarted_subagent_workspaces()

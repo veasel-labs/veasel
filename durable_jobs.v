@@ -4,6 +4,16 @@ import context as vcontext
 import json2
 import time
 
+const goal_task_lease_heartbeat_interval = 20 * time.second
+const goal_task_lease_heartbeat_seconds = 90
+const goal_task_lease_heartbeat_poll_interval = 25 * time.millisecond
+
+struct GoalTaskLeaseHeartbeat {
+	active bool
+	stop   chan int
+	done   chan int
+}
+
 // Durable Prefer: respond-async turns persist as queued with request_json before a
 // worker claims them. Queued jobs resume after restart. Running/cancelling rows
 // remain fail-closed as uncertain because provider or tool effects may already
@@ -134,6 +144,22 @@ fn (app &App) schedule_durable_session_operation(operation_id string, cancel vco
 			app.finish_turn_operation(operation_id)
 			cancel()
 		}
+		// Only a linked goal-task attempt owns a lease. The lookup is deliberately
+		// by operation ID so ordinary durable session turns remain unchanged.
+		heartbeat := app.start_goal_task_lease_heartbeat(operation_id, cancel) or {
+			// A malformed or failed linked lookup must never fall through to
+			// provider work without a lease. Cancel/classify a still-queued row;
+			// the worker defer then joins all already-started operation state.
+			mut store := app.store
+			_ = store.cancel_session_operation(id, operation_id) or {
+				eprintln('veasel: unable to cancel lease-less session operation (${err.msg()})')
+				''
+			}
+			return
+		}
+		if heartbeat.active {
+			defer { app.stop_goal_task_lease_heartbeat(heartbeat) }
+		}
 		// Keep the durable row queued while it waits for this session's active turn.
 		// A restart can then safely resume it because no provider or tool effect began.
 		mut turn_lock := app.session_turn_lock(id)
@@ -196,4 +222,97 @@ fn (app &App) schedule_durable_session_operation(operation_id string, cancel vco
 			return
 		}
 	}(app, operation_id, cancel, turn_done, id, session, input)
+}
+
+// start_goal_task_lease_heartbeat starts only when operation_id is linked to a
+// running goal-task attempt. It runs before the session semaphore is acquired,
+// because the lease starts at claim time and must cover durable queue waits too.
+fn (app &App) start_goal_task_lease_heartbeat(operation_id string,
+	cancel vcontext.CancelFn) !GoalTaskLeaseHeartbeat {
+	return app.start_goal_task_lease_heartbeat_with_timing(operation_id, cancel,
+		goal_task_lease_heartbeat_interval, goal_task_lease_heartbeat_seconds)
+}
+
+fn (app &App) start_goal_task_lease_heartbeat_with_timing(operation_id string,
+	cancel vcontext.CancelFn, interval time.Duration, lease_seconds int) !GoalTaskLeaseHeartbeat {
+	mut store := app.store
+	lookup := store.linked_running_goal_task_lease(operation_id)!
+	if !lookup.linked {
+		return GoalTaskLeaseHeartbeat{}
+	}
+	mut binding := lookup.binding
+	// Renew before any queue wait so a lease that spent most of its initial
+	// window waiting cannot admit provider work with only a few seconds left.
+	renewed := store.renew_goal_task_attempt_lease(binding.goal_id, binding.task_id,
+		binding.attempt, binding.fencing_token, binding.generation, lease_seconds) or {
+		if err.msg() in ['goal task lease has expired', 'goal task attempt deadline has expired'] {
+			store.expire_goal_task_attempt_lease(binding.goal_id, binding.task_id, binding.attempt,
+				binding.fencing_token, binding.generation) or { false }
+		}
+		return err
+	}
+	binding.fencing_token = renewed.fencing_token
+	binding.generation = renewed.generation
+	stop := chan int{cap: 1}
+	done := chan int{cap: 1}
+	spawn goal_task_lease_heartbeat(app, binding, stop, done, cancel,
+		interval, lease_seconds)
+	return GoalTaskLeaseHeartbeat{
+		active: true
+		stop:   stop
+		done:   done
+	}
+}
+
+fn (app &App) stop_goal_task_lease_heartbeat(heartbeat GoalTaskLeaseHeartbeat) {
+	_ = heartbeat.stop.try_push(0)
+	_ = <-heartbeat.done
+	heartbeat.stop.close()
+	heartbeat.done.close()
+}
+
+// goal_task_lease_heartbeat waits in short, interruptible slices instead of a
+// single 20-second sleep. Shutdown and cancellation therefore join promptly.
+fn goal_task_lease_heartbeat(app &App, initial GoalTaskLeaseBinding, stop chan int,
+	done chan int, cancel vcontext.CancelFn, interval time.Duration, lease_seconds int) {
+	mut binding := initial
+	for goal_task_lease_heartbeat_wait(stop, interval) {
+		mut store := app.store
+		renewed := store.renew_goal_task_attempt_lease(binding.goal_id, binding.task_id,
+			binding.attempt, binding.fencing_token, binding.generation,
+			lease_seconds) or {
+			// A failure with this exact fence may mean the lease expired between
+			// polling and renewal. The fenced expiry path classifies that case
+			// uncertain; stale token/generation failures are rejected there and
+			// cannot mutate a newer attempt owner.
+			if err.msg() in ['goal task lease has expired', 'goal task attempt deadline has expired'] {
+				store.expire_goal_task_attempt_lease(binding.goal_id, binding.task_id,
+					binding.attempt, binding.fencing_token, binding.generation) or { false }
+			}
+			cancel()
+			break
+		}
+		binding.fencing_token = renewed.fencing_token
+		binding.generation = renewed.generation
+	}
+	done <- 0
+	done.close()
+}
+
+fn goal_task_lease_heartbeat_wait(stop chan int, interval time.Duration) bool {
+	mut remaining := interval
+	for remaining > 0 {
+		mut ignored := 0
+		if stop.try_pop(mut ignored) != .not_ready {
+			return false
+		}
+		slice := if remaining < goal_task_lease_heartbeat_poll_interval {
+			remaining
+		} else {
+			goal_task_lease_heartbeat_poll_interval
+		}
+		time.sleep(slice)
+		remaining -= slice
+	}
+	return true
 }

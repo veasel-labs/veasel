@@ -90,6 +90,23 @@ pub:
 	fencing_token      string
 }
 
+// GoalTaskLeaseBinding is the exact fence a worker currently owns. The token
+// and generation are advanced together on every renewal; callers must retain
+// both values and never reuse an older pair for a terminal transition.
+struct GoalTaskLeaseBinding {
+mut:
+	goal_id       string
+	task_id       string
+	attempt       int
+	fencing_token string
+	generation    int
+}
+
+struct GoalTaskLeaseLookup {
+	linked  bool
+	binding GoalTaskLeaseBinding
+}
+
 const goal_task_initial_lease_seconds = 90
 
 struct GoalTaskEventData {
@@ -611,16 +628,20 @@ fn (mut store Store) renew_goal_task_attempt_lease(goal_id string, task_id strin
 	defer { store.mu.unlock() }
 	store.db.exec('BEGIN IMMEDIATE')!
 	defer { store.db.rollback() or {} }
-	rows := store.db.exec_param_many('SELECT status, effective_deadline, lease_generation, fencing_token FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+	rows := store.db.exec_param_many('SELECT status, effective_deadline, lease_expires_at, lease_generation, fencing_token FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
 		goal_id,
 		task_id,
 		attempt.str(),
 	])!
-	if rows.len != 1 || rows[0].val(0) != 'running' || rows[0].val(2).int() != generation || rows[0].val(3) != fencing_token {
+	if rows.len != 1 || rows[0].val(0) != 'running' || rows[0].val(3).int() != generation || rows[0].val(4) != fencing_token {
 		return error('goal task lease is stale or not running')
 	}
 	now := time.now()
 	effective := time.parse_rfc3339(rows[0].val(1)) or { return error('goal task effective deadline is invalid') }
+	lease_expiry := time.parse_rfc3339(rows[0].val(2)) or { return error('goal task lease expiry is invalid') }
+	if now >= lease_expiry {
+		return error('goal task lease has expired')
+	}
 	if now >= effective {
 		return error('goal task attempt deadline has expired')
 	}
@@ -643,6 +664,69 @@ fn (mut store Store) renew_goal_task_attempt_lease(goal_id string, task_id strin
 	}
 	store.db.commit()!
 	return GoalTaskLease{ effective_deadline: effective.format_rfc3339(), lease_expires_at: expires.format_rfc3339(), generation: new_generation, fencing_token: new_token }
+}
+
+// linked_running_goal_task_lease discovers the sole goal-task attempt linked
+// to an operation. Ordinary session operations have no such row and therefore
+// deliberately return none; they do not start a heartbeat.
+fn (mut store Store) linked_running_goal_task_lease(operation_id string) !GoalTaskLeaseLookup {
+	if operation_id.trim_space().len == 0 {
+		return GoalTaskLeaseLookup{}
+	}
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	rows := store.db.exec_param_many('SELECT goal_id, task_id, attempt, status, fencing_token, lease_generation FROM goal_task_attempts WHERE session_operation_id = ?', [
+		operation_id,
+	])!
+	if rows.len == 0 {
+		return GoalTaskLeaseLookup{}
+	}
+	if rows.len != 1 {
+		return error('goal task operation has multiple running lease links')
+	}
+	if rows[0].val(3) != 'running' {
+		return error('goal task operation is linked to a non-running attempt')
+	}
+	if rows[0].val(4).len == 0 || rows[0].val(5).int() <= 0 {
+		return error('goal task operation lease link is malformed')
+	}
+	return GoalTaskLeaseLookup{
+		linked:  true
+		binding: GoalTaskLeaseBinding{
+			goal_id:       rows[0].val(0)
+			task_id:       rows[0].val(1)
+			attempt:       rows[0].val(2).int()
+			fencing_token: rows[0].val(4)
+			generation:    rows[0].val(5).int()
+		}
+	}
+}
+
+fn (mut store Store) validate_goal_task_attempt_lease(binding GoalTaskLeaseBinding) ! {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	rows := store.db.exec_param_many('SELECT status, effective_deadline, lease_expires_at, fencing_token, lease_generation FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+		binding.goal_id,
+		binding.task_id,
+		binding.attempt.str(),
+	])!
+	if rows.len != 1 || rows[0].val(0) != 'running' || rows[0].val(3) != binding.fencing_token
+		|| rows[0].val(4).int() != binding.generation {
+		return error('goal task lease is stale or not running')
+	}
+	now := time.now()
+	lease_expiry := time.parse_rfc3339(rows[0].val(2)) or {
+		return error('goal task lease expiry is invalid')
+	}
+	if now >= lease_expiry {
+		return error('goal task lease has expired')
+	}
+	effective := time.parse_rfc3339(rows[0].val(1)) or {
+		return error('goal task effective deadline is invalid')
+	}
+	if now >= effective {
+		return error('goal task attempt deadline has expired')
+	}
 }
 
 fn (mut store Store) expire_goal_task_attempt_lease(goal_id string, task_id string, attempt int,
@@ -812,19 +896,19 @@ fn (mut store Store) attach_goal_task_attempt_session(goal_id string, task_id st
 // the task to pending while budget remains; uncertain results are never retried.
 fn (mut store Store) complete_goal_task_attempt(goal_id string, task_id string, attempt int, result GoalTaskResult) ! {
 	store.mu.lock()
+	defer { store.mu.unlock() }
+	store.db.exec('BEGIN IMMEDIATE')!
+	defer { store.db.rollback() or {} }
 	rows := store.db.exec_param_many('SELECT fencing_token FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
 		goal_id,
 		task_id,
 		attempt.str(),
-	]) or {
-		store.mu.unlock()
-		return err
-	}
-	store.mu.unlock()
+	])!
 	if rows.len != 1 {
 		return error('goal task attempt not found')
 	}
-	return store.complete_goal_task_attempt_internal(goal_id, task_id, attempt, rows[0].val(0), result)
+	store.complete_goal_task_attempt_in_transaction(goal_id, task_id, attempt, rows[0].val(0), result)!
+	store.db.commit()!
 }
 
 fn (mut store Store) complete_linked_goal_task_attempt(goal_id string, task_id string, attempt int,
@@ -832,8 +916,12 @@ fn (mut store Store) complete_linked_goal_task_attempt(goal_id string, task_id s
 	if fencing_token.len == 0 {
 		return error('goal task fencing token is required')
 	}
-	return store.complete_goal_task_attempt_internal(goal_id, task_id, attempt, fencing_token,
-		result)
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	store.db.exec('BEGIN IMMEDIATE')!
+	defer { store.db.rollback() or {} }
+	store.complete_goal_task_attempt_in_transaction(goal_id, task_id, attempt, fencing_token, result)!
+	store.db.commit()!
 }
 
 // reconcile_goal_task_operation closes a dispatched attempt when the canonical
@@ -848,30 +936,30 @@ fn (mut store Store) reconcile_goal_task_operation(operation_id string, result G
 		result
 	}
 	store.mu.lock()
-	rows := store.db.exec_param("SELECT goal_id, task_id, attempt, fencing_token FROM goal_task_attempts WHERE session_operation_id = ? AND status = 'running'", operation_id) or {
-		store.mu.unlock()
-		return err
-	}
-	store.mu.unlock()
+	defer { store.mu.unlock() }
+	store.db.exec('BEGIN IMMEDIATE')!
+	defer { store.db.rollback() or {} }
+	rows := store.db.exec_param("SELECT goal_id, task_id, attempt, fencing_token FROM goal_task_attempts WHERE session_operation_id = ? AND status = 'running'", operation_id)!
 	if rows.len == 0 {
+		store.db.commit()!
 		return
 	}
-	return store.complete_linked_goal_task_attempt(rows[0].val(0), rows[0].val(1), rows[0].val(2).int(), rows[0].val(3), goal_result)
+	store.complete_goal_task_attempt_in_transaction(rows[0].val(0), rows[0].val(1), rows[0].val(2).int(), rows[0].val(3), goal_result)!
+	store.db.commit()!
 }
 
-fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id string,
+fn (mut store Store) complete_goal_task_attempt_in_transaction(goal_id string, task_id string,
 	attempt int, fencing_token string, result GoalTaskResult) ! {
-	store.mu.lock()
-	defer { store.mu.unlock() }
-	store.db.begin()!
-	defer { store.db.rollback() or {} }
-	lease_rows := store.db.exec_param_many("SELECT effective_deadline, lease_expires_at, session_id, session_operation_id FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running'", [
+	lease_rows := store.db.exec_param_many("SELECT effective_deadline, lease_expires_at, session_id, session_operation_id, fencing_token, lease_generation FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running'", [
 		goal_id,
 		task_id,
 		attempt.str(),
 	])!
 	if lease_rows.len != 1 {
 		return error('goal task attempt is not running')
+	}
+	if lease_rows[0].val(4) != fencing_token {
+		return error('goal task attempt is not running or fencing token is stale')
 	}
 	now := time.now()
 	effective := time.parse_rfc3339(lease_rows[0].val(0)) or { return error('goal task effective deadline is invalid') }
@@ -1030,7 +1118,6 @@ fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id
 			attempt.str(),
 		])!
 	}
-	store.db.commit()!
 }
 
 fn (mut store Store) goal_task_state_unlocked(goal_id string, task_id string) !GoalTaskProjectionState {

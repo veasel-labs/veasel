@@ -1,7 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import type { LiveText } from '../features/focus/timeline';
-import type { FocusBridge, FocusEvent, FocusLiveUpdate, FocusProviderStatus, FocusThread } from '../types/focus';
+import type {
+  FocusBridge,
+  FocusEvent,
+  FocusLiveUpdate,
+  FocusOperation,
+  FocusProviderStatus,
+  FocusThread,
+} from '../types/focus';
 import { useBackend } from './backend';
 
 /**
@@ -314,5 +321,16 @@ export function useFocusProviders() {
     queryKey: ['focus', 'providers'],
     queryFn: () => (bridge ? bridge.providers() : Promise.resolve([])),
     staleTime: 60_000,
+  });
+}
+
+/** Recent canonical operations provide restart-safe status for World and Focus summaries. */
+export function useFocusOperations() {
+  const bridge = useFocusBridge();
+  return useQuery<FocusOperation[]>({
+    queryKey: ['focus', 'operations'],
+    queryFn: () => (bridge ? bridge.listOperations() : Promise.resolve([])),
+    enabled: bridge !== undefined,
+    refetchInterval: 5_000,
   });
 }

@@ -1,21 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { flushSync } from 'react-dom';
-import { useFocusThreads } from '../../data/focus';
-import { useJobs } from '../../data/jobs';
-import { useTools } from '../../data/catalog';
+import { useFocusBackendDown, useFocusOperations, useFocusProviders, useFocusThreads } from '../../data/focus';
 import { useMemoryFile, useMemoryList } from '../../data/memory';
 import { useBackend } from '../../data/backend';
 import { useSessionContext } from '../../shell/useSessionContext';
 import { EmptyState } from '../../ui';
 import { MemoryRecordInspector } from './MemoryRecordInspector';
 import { ToolRecordInspector } from './ToolRecordInspector';
-import { installTargetForTool, worldDetailBackExtra, worldDetailBackLabel } from './inspectors';
+import { worldDetailBackExtra, worldDetailBackLabel } from './inspectors';
 import { buildWorldModel, layoutWorld, type LaidOutEntity, type MemorySummary, type ProjectRecord } from './model';
 import { WORLD_THEME_PACKS, worldThemePack } from './theme/cyberpunkCity';
 import { useWorldDetailEscape } from './useWorldDetailEscape';
 import { WorldEntityList, WorldEntityMap } from './WorldEntityMap';
 import styles from './world.module.css';
+
+function activityStatusFromOperation(threadStatus: string, operationStatus?: string): string {
+  if (!operationStatus) return threadStatus;
+  if (operationStatus === 'queued' || operationStatus === 'running' || operationStatus === 'cancelling') {
+    return threadStatus === 'awaiting-approval' || threadStatus === 'awaiting-input' ? threadStatus : 'running';
+  }
+  if (operationStatus === 'cancelled') return 'interrupted';
+  if (operationStatus === 'failed' || operationStatus === 'uncertain') return 'error';
+  if (operationStatus === 'completed') return 'idle';
+  return threadStatus;
+}
 
 function projectNameOf(cwd: string, projectName: string | null): string {
   if (projectName) return projectName;
@@ -26,13 +35,76 @@ function projectNameOf(cwd: string, projectName: string | null): string {
   return parts[parts.length - 1] ?? cwd;
 }
 
+function projectNamesByTarget(threads: readonly { cwd: string; projectName: string | null }[]): Map<string, string> {
+  const baseByTarget = new Map<string, string>();
+  for (const thread of threads) {
+    if (thread.cwd && !baseByTarget.has(thread.cwd)) {
+      baseByTarget.set(thread.cwd, projectNameOf(thread.cwd, thread.projectName));
+    }
+  }
+
+  const targetsByBase = new Map<string, string[]>();
+  for (const [target, base] of baseByTarget) {
+    targetsByBase.set(base, [...(targetsByBase.get(base) ?? []), target]);
+  }
+
+  const names = new Map<string, string>();
+  const usedLabels = new Set<string>();
+  for (const [base, unsortedTargets] of [...targetsByBase].sort(([a], [b]) => a.localeCompare(b))) {
+    const targets = [...unsortedTargets].sort((a, b) => a.localeCompare(b));
+    if (targets.length === 1) {
+      names.set(targets[0]!, base);
+      usedLabels.add(base);
+      continue;
+    }
+
+    const components = new Map(
+      targets.map((target) => {
+        const parts = target.replace(/\\/g, '/').split('/').filter(Boolean);
+        return [target, parts.slice(0, -1).length ? parts.slice(0, -1) : [target]] as const;
+      }),
+    );
+    let depth = 1;
+    const suffixes = () => targets.map((target) => components.get(target)!.slice(-depth).join('/'));
+    while (
+      depth < Math.max(...[...components.values()].map((parts) => parts.length)) &&
+      new Set(suffixes()).size !== targets.length
+    ) {
+      depth += 1;
+    }
+
+    for (const target of targets) {
+      const suffix = suffixes()[targets.indexOf(target)] ?? target;
+      let label = `${base} · ${suffix}`;
+      if (usedLabels.has(label)) label = `${base} · ${target}`;
+      names.set(target, label);
+      usedLabels.add(label);
+    }
+  }
+
+  let hasCollisions = true;
+  while (hasCollisions) {
+    const targetsByLabel = new Map<string, string[]>();
+    for (const [target, label] of names) {
+      targetsByLabel.set(label, [...(targetsByLabel.get(label) ?? []), target]);
+    }
+    const collisions = [...targetsByLabel].filter(([, targets]) => targets.length > 1);
+    hasCollisions = collisions.length > 0;
+    for (const [, targets] of collisions) {
+      for (const target of targets) {
+        names.set(target, `${names.get(target) ?? baseByTarget.get(target) ?? ''} · ${target}`);
+      }
+    }
+  }
+  return names;
+}
+
 /**
  * World: semantic spatial home, projected only from real Veasel runtime
  * state (#693). Projects are the distinct working directories of real Focus
- * threads; people and job characters come from the existing session and job
- * APIs with their real provider, model and status. There is no second state
- * store and no invented activity: without real sessions or jobs, no workers
- * appear in the world.
+ * threads; people and activity come from the canonical session and operation
+ * APIs. Optional legacy Toolkit catalogs are not treated as Veasel runtime
+ * health, and no activity is invented when the runtime has none.
  */
 export default function WorldView() {
   const { client } = useBackend();
@@ -43,10 +115,11 @@ export default function WorldView() {
   const memoryPath = params.get('memory')?.trim() || '';
   const toolId = params.get('tool')?.trim() || '';
   const { threads, loaded } = useFocusThreads();
-  const memoryQuery = useMemoryList();
+  const focusBackendDown = useFocusBackendDown();
+  const operationsQuery = useFocusOperations();
+  const providersQuery = useFocusProviders();
+  const memoryQuery = useMemoryList({ enabled: Boolean(memoryPath) });
   const memoryFileQuery = useMemoryFile(memoryPath);
-  const toolsQuery = useTools();
-  const jobsQuery = useJobs();
   const navigate = useNavigate();
 
   const workspacePath = context.workspace || threads[0]?.workspace || threads[0]?.cwd || '';
@@ -96,10 +169,11 @@ export default function WorldView() {
   // Focus uses — never from a second registry.
   const projects: ProjectRecord[] = useMemo(() => {
     const byTarget = new Map<string, ProjectRecord>();
+    const namesByTarget = projectNamesByTarget(threads);
     for (const thread of threads) {
       if (!thread.cwd || byTarget.has(thread.cwd)) continue;
       byTarget.set(thread.cwd, {
-        name: projectNameOf(thread.cwd, thread.projectName),
+        name: namesByTarget.get(thread.cwd) ?? projectNameOf(thread.cwd, thread.projectName),
         target: thread.cwd,
         status: 'ok',
       });
@@ -118,62 +192,58 @@ export default function WorldView() {
 
   const tools = useMemo(
     () =>
-      toolsQuery.isSuccess && toolsQuery.data.ok
-        ? toolsQuery.data.tools.map((tool) => ({
-            id: tool.id,
-            toolName: tool.tool_name,
-            detected: tool.detected,
-            configured: tool.configured,
-            enabled: tool.enabled,
-            verified: tool.verified,
-            version: tool.version,
-          }))
-        : [],
-    [toolsQuery.data, toolsQuery.isSuccess],
-  );
-
-  const jobs = useMemo(
-    () =>
-      jobsQuery.isSuccess
-        ? Object.values(jobsQuery.data).map((job) => ({
-            id: job.id,
-            cmd: job.cmd,
-            args: job.args,
-            status: job.status,
-            workspace: job.workspace,
-          }))
-        : [],
-    [jobsQuery.data, jobsQuery.isSuccess],
-  );
-
-  const personSessions = useMemo(
-    () =>
-      threads.map((thread) => ({
-        id: thread.id,
-        personId: thread.id,
-        name: thread.title || projectNameOf(thread.cwd, thread.projectName),
-        role: thread.provider,
-        cwd: thread.cwd,
-        projectId: projectNameOf(thread.cwd, thread.projectName),
-        provider: thread.provider,
-        model: thread.resolvedModel ?? thread.model ?? undefined,
-        status: thread.status,
-        focusThreadId: thread.id,
+      (providersQuery.data ?? []).map((provider) => ({
+        id: provider.id,
+        toolName: provider.label,
+        detected: provider.installed,
+        configured: provider.auth === 'ready',
+        enabled: provider.installed ? 'true' : 'false',
+        verified: provider.auth === 'ready',
+        version: provider.version ?? '',
+        authStatus: provider.auth,
+        authDetail: provider.authDetail,
+        signInHint: provider.signInHint,
+        launchBlocker: provider.launchBlocker ?? null,
+        binary: provider.binary,
       })),
-    [threads],
+    [providersQuery.data],
   );
+
+  const latestOperationBySession = useMemo(() => {
+    const latest = new Map<string, string>();
+    for (const operation of operationsQuery.data ?? []) {
+      if (!latest.has(operation.sessionId)) latest.set(operation.sessionId, operation.status);
+    }
+    return latest;
+  }, [operationsQuery.data]);
+
+  const personSessions = useMemo(() => {
+    const namesByTarget = projectNamesByTarget(threads);
+    return threads.map((thread) => ({
+      id: thread.id,
+      personId: thread.id,
+      name: thread.title || projectNameOf(thread.cwd, thread.projectName),
+      role: thread.provider,
+      cwd: thread.cwd,
+      projectId: namesByTarget.get(thread.cwd) ?? projectNameOf(thread.cwd, thread.projectName),
+      provider: thread.provider,
+      model: thread.resolvedModel ?? thread.model ?? undefined,
+      status: activityStatusFromOperation(thread.status, latestOperationBySession.get(thread.id)),
+      focusThreadId: thread.id,
+    }));
+  }, [latestOperationBySession, threads]);
 
   const model = useMemo(
     () =>
       buildWorldModel({
         workspacePath,
         projects,
-        projectsKnown: loaded,
+        projectsKnown: loaded || threads.length > 0,
         memory,
         tools,
-        toolsKnown: toolsQuery.isSuccess && toolsQuery.data.ok,
-        jobs,
-        jobsKnown: jobsQuery.isSuccess,
+        toolsKnown: providersQuery.isSuccess,
+        jobs: [],
+        activityKnown: operationsQuery.isSuccess,
         personSessions,
         focusProjectId: focusProject,
       }),
@@ -181,12 +251,11 @@ export default function WorldView() {
       workspacePath,
       projects,
       loaded,
+      threads,
       memory,
       tools,
-      toolsQuery.data,
-      toolsQuery.isSuccess,
-      jobs,
-      jobsQuery.isSuccess,
+      providersQuery.isSuccess,
+      operationsQuery.isSuccess,
       personSessions,
       focusProject,
     ],
@@ -226,22 +295,18 @@ export default function WorldView() {
   // Queries are disabled while there is no connected backend. Do not keep a
   // perpetual loading overlay in that state; the shell already reports the
   // backend connection status.
-  const gathering =
-    client !== null && (!loaded || memoryQuery.isPending || toolsQuery.isPending || jobsQuery.isPending);
+  const gathering = client !== null && (!loaded || operationsQuery.isPending || providersQuery.isPending);
   const showingLastKnownState =
-    client === null &&
+    (client === null || focusBackendDown) &&
     (threads.length > 0 ||
-      Object.keys(jobsQuery.data ?? {}).length > 0 ||
-      memoryQuery.data !== undefined ||
-      toolsQuery.data !== undefined);
+      operationsQuery.data !== undefined ||
+      providersQuery.data !== undefined ||
+      (memoryPath !== '' && memoryFileQuery.data !== undefined));
   const liveDataUnavailable =
     showingLastKnownState ||
     (client !== null &&
-      (memoryQuery.isError ||
-        toolsQuery.isError ||
-        jobsQuery.isError ||
-        (memoryQuery.isSuccess && !memoryQuery.data.ok) ||
-        (toolsQuery.isSuccess && !toolsQuery.data.ok)));
+      !focusBackendDown &&
+      (operationsQuery.isError || providersQuery.isError || (memoryPath !== '' && memoryFileQuery.isError)));
 
   const openEntity = (entity: LaidOutEntity) => {
     if (!entity.hrefPath) return;
@@ -249,8 +314,7 @@ export default function WorldView() {
     navigateWorld(href(entity.hrefPath, entity.hrefExtra), crossesProjectDoor);
   };
 
-  const toolEntry =
-    toolId && toolsQuery.data?.ok ? toolsQuery.data.tools.find((tool) => tool.id === toolId) : undefined;
+  const toolEntry = toolId ? tools.find((tool) => tool.id === toolId) : undefined;
   const detailOpen = Boolean(memoryPath || toolId);
   const goBackFromDetail = useCallback(() => {
     navigate(href('/world', worldDetailBackExtra(focusProject)));
@@ -336,17 +400,11 @@ export default function WorldView() {
           <ToolRecordInspector
             toolId={toolId}
             tool={toolEntry}
-            error={toolsQuery.error as Error | null}
-            isPending={toolsQuery.isPending}
+            error={providersQuery.error as Error | null}
+            isPending={providersQuery.isPending}
             onBack={() => navigate(href('/world', worldDetailBackExtra(focusProject)))}
             backLabel={worldDetailBackLabel(focusProject)}
-            onRetry={() => void toolsQuery.refetch()}
-            onReviewInstall={
-              installTargetForTool(toolId)
-                ? () =>
-                    navigate(href('/library', { install_target: installTargetForTool(toolId)!, install_review: '1' }))
-                : undefined
-            }
+            onRetry={() => void providersQuery.refetch()}
           />
         ) : (
           <>
@@ -406,7 +464,7 @@ export default function WorldView() {
         <summary>
           <span className={styles.worldTitle}>World index</span>{' '}
           <span className={styles.worldMeta}>
-            — {layout.entities.length} destinations, resources, sessions, and jobs
+            — {layout.entities.length} destinations, resources, sessions, and activity
           </span>
         </summary>
         {layout.entities.length === 0 ? (

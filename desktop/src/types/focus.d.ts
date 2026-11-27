@@ -88,6 +88,17 @@ export interface FocusThread {
   usage: FocusUsage;
 }
 
+/** Canonical persisted operation state for a session, used by activity views. */
+export interface FocusOperation {
+  id: string;
+  sessionId: string;
+  status: string;
+  provider: string;
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type FocusToolKind = 'command' | 'edit' | 'read' | 'search' | 'web' | 'agent' | 'other';
 
 export type FocusApprovalDecision = 'allow' | 'allow-session' | 'deny';
@@ -218,6 +229,7 @@ export interface FocusGitDiff {
 export interface FocusBridge {
   providers: (options?: { refresh?: boolean }) => Promise<FocusProviderStatus[]>;
   listThreads: () => Promise<FocusThread[]>;
+  listOperations: () => Promise<FocusOperation[]>;
   createThread: (input: FocusCreateThreadInput) => Promise<FocusResult<FocusThread>>;
   readThread: (id: string) => Promise<FocusThreadSnapshot | null>;
   updateThread: (id: string, patch: FocusThreadPatch) => Promise<FocusResult<FocusThread>>;

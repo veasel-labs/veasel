@@ -1,51 +1,40 @@
-import type { ToolEnabled, ToolInfo } from '../../lib/api';
 import { Button, ErrorState, KeyValue, LoadingState, Mono, Panel, Stack, StatusBadge, type Tone } from '../../ui';
+import type { ToolRecord } from './model/types';
 import styles from './world.module.css';
 
 function yesNo(value: boolean): { tone: Tone; label: string } {
   return value ? { tone: 'ok', label: 'yes' } : { tone: 'idle', label: 'no' };
 }
 
-function enabledBadge(value: ToolEnabled): { tone: Tone; label: string } {
-  if (value === 'true') return { tone: 'ok', label: 'true' };
-  if (value === 'false') return { tone: 'idle', label: 'false' };
-  return { tone: 'idle', label: 'unknown' };
-}
-
 export interface ToolRecordInspectorProps {
   toolId: string;
-  /** Row from GET /api/v1/tools — only catalog fields are shown. */
-  tool?: ToolInfo | null;
+  /** Installed CLI provider from the canonical Veasel provider probe. */
+  tool?: ToolRecord | null;
   isPending?: boolean;
   error?: Error | null;
-  /** Opens Library's reviewed install flow for this tool. */
-  onReviewInstall?: () => void;
   /** Visible Back control — returns to project interior or world. */
   onBack: () => void;
   backLabel?: string;
   onRetry?: () => void;
 }
 
-/**
- * Cozy Pixel World inspector for one coding tool. Renders only fields the tools
- * payload already has: id, detected, configured, enabled, verified, install_hint.
- */
+/** Cozy World inspector for one discovered native coding provider. */
 export function ToolRecordInspector({
   toolId,
   tool,
   isPending,
   error,
-  onReviewInstall,
   onBack,
   backLabel = 'Back',
   onRetry,
 }: ToolRecordInspectorProps) {
-  const hint = tool?.install_hint?.trim() ?? '';
+  const auth = tool?.authStatus ?? 'unknown';
+  const authTone: Tone = auth === 'ready' ? 'ok' : auth === 'signed-out' ? 'warn' : 'idle';
 
   return (
     <Panel
       tone="notice"
-      title="Coding tool"
+      title="Coding agent"
       meta={toolId}
       actions={
         <Button type="button" onClick={onBack} aria-label={backLabel}>
@@ -53,15 +42,15 @@ export function ToolRecordInspector({
         </Button>
       }
     >
-      <div className={styles.detailInspector} role="region" aria-label={`Coding tool ${toolId}`}>
+      <div className={styles.detailInspector} role="region" aria-label={`Coding agent ${toolId}`}>
         {isPending ? (
-          <LoadingState label="Reading tools catalog" />
+          <LoadingState label="Checking installed agents" />
         ) : error ? (
-          <ErrorState title="Could not load tools catalog" error={error} onRetry={onRetry} />
+          <ErrorState title="Could not check installed agents" error={error} onRetry={onRetry} />
         ) : !tool ? (
           <ErrorState
-            title="Tool not in catalog"
-            error={new Error(`GET /api/v1/tools has no row for ${toolId}`)}
+            title="Agent not in provider list"
+            error={new Error(`GET /v1/providers/cli has no row for ${toolId}`)}
             onRetry={onRetry}
           />
         ) : (
@@ -70,43 +59,21 @@ export function ToolRecordInspector({
               items={[
                 { label: 'Id', value: <Mono>{tool.id}</Mono> },
                 {
-                  label: 'Detected',
+                  label: 'Installed',
                   value: <StatusBadge tone={yesNo(tool.detected).tone} label={yesNo(tool.detected).label} />,
                 },
-                {
-                  label: 'Configured',
-                  value: <StatusBadge tone={yesNo(tool.configured).tone} label={yesNo(tool.configured).label} />,
-                },
-                {
-                  label: 'Enabled',
-                  value: (
-                    <StatusBadge tone={enabledBadge(tool.enabled).tone} label={enabledBadge(tool.enabled).label} />
-                  ),
-                },
-                {
-                  label: 'Verified',
-                  value: <StatusBadge tone={yesNo(tool.verified).tone} label={yesNo(tool.verified).label} />,
-                },
-                {
-                  label: 'Toolkit capabilities',
-                  value: hint ? 'Available for reviewed install' : 'Not offered by Toolkit',
-                },
+                { label: 'Native sign-in', value: <StatusBadge tone={authTone} label={auth} /> },
+                { label: 'Executable', value: tool.binary ? <Mono>{tool.binary}</Mono> : 'unknown' },
+                { label: 'Version', value: tool.version || 'unknown' },
               ]}
             />
-            {hint ? (
-              onReviewInstall ? (
-                <>
-                  <p className={styles.detailEmpty}>
-                    Review exact destinations and file changes before Toolkit writes user configuration.
-                  </p>
-                  <Button variant="primary" onClick={onReviewInstall}>
-                    Review installation in Library
-                  </Button>
-                </>
-              ) : (
-                <p className={styles.detailEmpty}>No reviewed installation flow is available from this inspector.</p>
-              )
+            {tool.authDetail ? <p className={styles.detailEmpty}>{tool.authDetail}</p> : null}
+            {tool.signInHint ? (
+              <p className={styles.detailEmpty}>
+                Sign in with <Mono>{tool.signInHint}</Mono>
+              </p>
             ) : null}
+            {tool.launchBlocker ? <p className={styles.detailEmpty}>{tool.launchBlocker}</p> : null}
           </Stack>
         )}
       </div>

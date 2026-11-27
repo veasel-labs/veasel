@@ -29,6 +29,7 @@ import type {
   FocusThread,
   FocusThreadPatch,
   FocusThreadSnapshot,
+  FocusOperation,
   FocusUsage,
 } from '../types/focus';
 
@@ -53,6 +54,18 @@ export interface VeaselMessage {
   role: string;
   content: string;
   created_at?: string;
+}
+
+interface VeaselGlobalOperation {
+  operation: {
+    id: string;
+    session_id: string;
+    status: string;
+    provider?: string;
+    model?: string;
+    created_at?: string;
+    updated_at?: string;
+  };
 }
 
 export interface VeaselCliProviderStatus {
@@ -552,6 +565,38 @@ export function createVeaselFocusBridge(options: {
     async listThreads(): Promise<FocusThread[]> {
       const sessions = asArray<VeaselSession>(await request('/v1/sessions'));
       return sessions.map((session) => sessionToThread(session, { provider }));
+    },
+
+    async listOperations(): Promise<FocusOperation[]> {
+      const operations: VeaselGlobalOperation[] = [];
+      const seenCursors = new Set<string>();
+      let before: string | null = '';
+      while (before !== null) {
+        const cursorParam: string = before ? `&before=${encodeURIComponent(before)}` : '';
+        const page: { operations?: VeaselGlobalOperation[]; next_before?: string } = await request<{
+          operations?: VeaselGlobalOperation[];
+          next_before?: string;
+        }>(`/v1/operations/latest?limit=100${cursorParam}`);
+        operations.push(...asArray<VeaselGlobalOperation>(page.operations));
+        const nextCursor: string = page.next_before ?? '';
+        if (!nextCursor) {
+          before = null;
+          continue;
+        }
+        if (seenCursors.has(nextCursor)) throw new Error('Veasel repeated an operation history cursor');
+        seenCursors.add(nextCursor);
+        before = nextCursor;
+      }
+
+      return operations.map(({ operation }) => ({
+        id: operation.id,
+        sessionId: operation.session_id,
+        status: operation.status,
+        provider: operation.provider ?? '',
+        model: operation.model ?? '',
+        createdAt: operation.created_at ?? '',
+        updatedAt: operation.updated_at ?? '',
+      }));
     },
 
     createThread(input: FocusCreateThreadInput): Promise<FocusResult<FocusThread>> {

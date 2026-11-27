@@ -27,7 +27,7 @@ function jobCommandLine(job: WorldDomainInput['jobs'][number]): string {
 }
 
 function characterTheme(status: string): SemanticEntity['themeKey'] {
-  if (status === 'failed' || status === 'rejected') return 'agent.blocked';
+  if (status === 'failed' || status === 'rejected' || status === 'error') return 'agent.blocked';
   if (status === 'queued' || status === 'running') return 'agent.working';
   return 'agent.idle';
 }
@@ -42,19 +42,34 @@ function provenanceDetail(entry: MemoryEntryRecord): string {
   return parts.join(' · ') || entry.id;
 }
 
-/** Match a job to a project via workspace path — never invent ownership. */
+/** Match work only when its normalized workspace is at or under the project root. */
 export function jobBelongsToProject(job: { workspace: string }, project: ProjectRecord): boolean {
-  const ws = job.workspace.trim();
-  if (!ws) return false;
-  if (
-    project.target &&
-    (ws === project.target || ws.startsWith(`${project.target}/`) || ws.startsWith(`${project.target}\\`))
-  ) {
-    return true;
-  }
-  const needle = `/${project.name}`;
-  const needleWin = `\\${project.name}`;
-  return ws.includes(needle) || ws.includes(needleWin) || ws.endsWith(project.name);
+  return Boolean(
+    job.workspace.trim() && project.target.trim() && pathIsWithin(job.workspace.trim(), project.target.trim()),
+  );
+}
+
+function normalizedRootLength(root: string): number {
+  return root.replace(/\\/g, '/').replace(/\/+$/, '').length;
+}
+
+function mostSpecificProject(path: string, projects: readonly ProjectRecord[]): ProjectRecord | undefined {
+  if (!path.trim()) return undefined;
+  return projects
+    .filter((project) => project.target.trim() && pathIsWithin(path, project.target))
+    .sort((a, b) => normalizedRootLength(b.target) - normalizedRootLength(a.target) || a.name.localeCompare(b.name))[0];
+}
+
+function sessionBelongsToProject(
+  session: NonNullable<WorldDomainInput['personSessions']>[number],
+  project: ProjectRecord,
+  projects: readonly ProjectRecord[],
+): boolean {
+  if (!session.cwd.trim() || !project.target.trim() || !pathIsWithin(session.cwd, project.target)) return false;
+  const explicit = projects.find((candidate) => candidate.name === session.projectId);
+  return explicit && explicit.target.trim() && pathIsWithin(session.cwd, explicit.target)
+    ? explicit.name === project.name
+    : mostSpecificProject(session.cwd, projects)?.name === project.name;
 }
 
 function activityForJobs(jobs: WorldDomainInput['jobs']): PlaceActivity {
@@ -69,20 +84,53 @@ function activityForJobs(jobs: WorldDomainInput['jobs']): PlaceActivity {
   return 'calm';
 }
 
+function activityForProject(
+  jobs: WorldDomainInput['jobs'],
+  sessions: NonNullable<WorldDomainInput['personSessions']>,
+): PlaceActivity {
+  const jobsActivity = activityForJobs(jobs);
+  if (
+    jobsActivity === 'blocked' ||
+    sessions.some((session) => session.status === 'failed' || session.status === 'error')
+  )
+    return 'blocked';
+  if (jobsActivity === 'working' || sessions.some((session) => session.status === 'running')) return 'working';
+  return 'calm';
+}
+
 function projectWorldState(
   project: ProjectRecord,
   activity: PlaceActivity,
   jobCount: number,
   personCount: number,
-  jobsKnown: boolean,
+  activityKnown: boolean,
+  runningSessions: number,
+  stoppedSessions: number,
+  awaitingApproval: number,
+  awaitingInput: number,
 ): string {
   if (project.status === 'broken') return 'broken';
-  if (!jobsKnown)
-    return personCount > 0
-      ? `${personCount} Person session${personCount === 1 ? '' : 's'} open · job state unknown`
-      : 'job state unknown';
-  if (activity === 'working') return `${jobCount} job${jobCount === 1 ? '' : 's'} active`;
   if (activity === 'blocked') return 'needs attention';
+  const stopped = stoppedSessions ? `${stoppedSessions} session${stoppedSessions === 1 ? '' : 's'} stopped` : '';
+  if (awaitingApproval || awaitingInput) {
+    const waiting = [
+      awaitingApproval ? `${awaitingApproval} awaiting approval` : '',
+      awaitingInput ? `${awaitingInput} awaiting input` : '',
+      stopped,
+      !activityKnown ? 'agent activity unknown' : '',
+    ].filter(Boolean);
+    return waiting.join(' · ');
+  }
+  if (!activityKnown)
+    return `${runningSessions ? `${runningSessions} session${runningSessions === 1 ? '' : 's'} working · ` : ''}${personCount ? `${personCount} Person session${personCount === 1 ? '' : 's'} open · ` : ''}${stopped ? `${stopped} · ` : ''}agent activity unknown`;
+  if (activity === 'working') {
+    const active = [
+      jobCount ? `${jobCount} job${jobCount === 1 ? '' : 's'} active` : '',
+      runningSessions ? `${runningSessions} session${runningSessions === 1 ? '' : 's'} working` : '',
+    ].filter(Boolean);
+    return active.join(' · ');
+  }
+  if (stopped) return stopped;
   if (personCount > 0) return `${personCount} Person session${personCount === 1 ? '' : 's'} open`;
   return 'calm';
 }
@@ -96,9 +144,8 @@ function pushPersonCharacters(
   for (const session of sessions) {
     // Activity is claimed only from the real session status: a running
     // session works, a failed one needs attention, anything else is idle.
-    const working =
-      session.status === 'running' || session.status === 'awaiting-approval' || session.status === 'awaiting-input';
-    const blocked = session.status === 'failed';
+    const working = session.status === 'running';
+    const blocked = session.status === 'failed' || session.status === 'error';
     entities.push({
       id: `character:person:${session.personId}:${session.id}`,
       kind: 'character',
@@ -346,12 +393,27 @@ function buildGrounds(input: WorldDomainInput): SemanticEntity[] {
   } else {
     const facades = projectFacades(input.projects.map((project) => project.name));
     for (const project of input.projects) {
-      const projectJobs = input.jobs.filter((job) => jobBelongsToProject(job, project));
-      const projectSessions = (input.personSessions ?? []).filter(
-        (session) => session.projectId === project.name && pathIsWithin(session.cwd, project.target),
+      const projectJobs = input.jobs.filter(
+        (job) =>
+          jobBelongsToProject(job, project) &&
+          mostSpecificProject(job.workspace, input.projects)?.name === project.name,
       );
-      const jobsKnown = input.jobsKnown ?? true;
-      const activity = jobsKnown ? activityForJobs(projectJobs) : 'unknown';
+      const projectSessions = (input.personSessions ?? []).filter((session) =>
+        sessionBelongsToProject(session, project, input.projects),
+      );
+      const activityKnown = input.activityKnown ?? true;
+      const awaitingApproval = projectSessions.filter((session) => session.status === 'awaiting-approval').length;
+      const awaitingInput = projectSessions.filter((session) => session.status === 'awaiting-input').length;
+      const runningSessions = projectSessions.filter((session) => session.status === 'running').length;
+      const stoppedSessions = projectSessions.filter((session) => session.status === 'interrupted').length;
+      const hasFailedSession = projectSessions.some(
+        (session) => session.status === 'failed' || session.status === 'error',
+      );
+      const activity = activityKnown
+        ? activityForProject(projectJobs, projectSessions)
+        : hasFailedSession || projectSessions.some((session) => session.status === 'running')
+          ? activityForProject([], projectSessions)
+          : 'unknown';
       const liveCount = projectJobs.filter((job) => !isTerminalJobStatus(job.status)).length;
       const projectPlaceId = `place:project:${project.name}`;
       entities.push({
@@ -359,7 +421,17 @@ function buildGrounds(input: WorldDomainInput): SemanticEntity[] {
         kind: 'place',
         concept: 'Project',
         name: project.name,
-        state: projectWorldState(project, activity, liveCount, projectSessions.length, jobsKnown),
+        state: projectWorldState(
+          project,
+          activity,
+          liveCount,
+          projectSessions.length,
+          activityKnown,
+          runningSessions,
+          stoppedSessions,
+          awaitingApproval,
+          awaitingInput,
+        ),
         themeKey: 'project.building',
         availability: 'present',
         hrefPath: '/world',
@@ -424,12 +496,24 @@ function buildInterior(input: WorldDomainInput, focus: string): SemanticEntity[]
     return entities;
   }
 
-  const projectJobs = input.jobs.filter((job) => jobBelongsToProject(job, project));
-  const projectSessions = (input.personSessions ?? []).filter(
-    (session) => session.projectId === project.name && pathIsWithin(session.cwd, project.target),
+  const projectJobs = input.jobs.filter(
+    (job) =>
+      jobBelongsToProject(job, project) && mostSpecificProject(job.workspace, input.projects)?.name === project.name,
   );
-  const jobsKnown = input.jobsKnown ?? true;
-  const activity = jobsKnown ? activityForJobs(projectJobs) : 'unknown';
+  const projectSessions = (input.personSessions ?? []).filter((session) =>
+    sessionBelongsToProject(session, project, input.projects),
+  );
+  const activityKnown = input.activityKnown ?? true;
+  const awaitingApproval = projectSessions.filter((session) => session.status === 'awaiting-approval').length;
+  const awaitingInput = projectSessions.filter((session) => session.status === 'awaiting-input').length;
+  const runningSessions = projectSessions.filter((session) => session.status === 'running').length;
+  const stoppedSessions = projectSessions.filter((session) => session.status === 'interrupted').length;
+  const hasFailedSession = projectSessions.some((session) => session.status === 'failed' || session.status === 'error');
+  const activity = activityKnown
+    ? activityForProject(projectJobs, projectSessions)
+    : hasFailedSession || projectSessions.some((session) => session.status === 'running')
+      ? activityForProject([], projectSessions)
+      : 'unknown';
   const liveCount = projectJobs.filter(
     (job) => !isTerminalJobStatus(job.status) || job.status === 'failed' || job.status === 'rejected',
   ).length;
@@ -439,7 +523,17 @@ function buildInterior(input: WorldDomainInput, focus: string): SemanticEntity[]
     kind: 'place',
     concept: 'Project overview board',
     name: project.name,
-    state: projectWorldState(project, activity, liveCount, projectSessions.length, jobsKnown),
+    state: projectWorldState(
+      project,
+      activity,
+      liveCount,
+      projectSessions.length,
+      activityKnown,
+      runningSessions,
+      stoppedSessions,
+      awaitingApproval,
+      awaitingInput,
+    ),
     themeKey: 'project.building',
     availability: 'present',
     hrefPath: '/workspace',
@@ -534,7 +628,17 @@ function buildInterior(input: WorldDomainInput, focus: string): SemanticEntity[]
 }
 
 export function pathIsWithin(path: string, root: string): boolean {
-  const normalize = (value: string) => value.replace(/\\/g, '/').replace(/\/+$/, '') || '/';
+  const normalize = (value: string) => {
+    const slashed = value.replace(/\\/g, '/');
+    const prefix = /^[a-z]:\//i.test(slashed) ? slashed.slice(0, 3) : slashed.startsWith('/') ? '/' : '';
+    const parts: string[] = [];
+    for (const part of slashed.slice(prefix.length).split('/')) {
+      if (!part || part === '.') continue;
+      if (part === '..' && parts.length && parts[parts.length - 1] !== '..') parts.pop();
+      else if (part !== '..' || !prefix) parts.push(part);
+    }
+    return `${prefix}${parts.join('/')}`.replace(/\/+$/, '') || '/';
+  };
   const candidate = normalize(path);
   const parent = normalize(root);
   const windowsPath = /^[a-z]:\//i.test(candidate) || /^[a-z]:\//i.test(parent);

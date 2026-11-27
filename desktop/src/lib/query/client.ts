@@ -1,3 +1,4 @@
+// eslint-disable-next-line import-x/named -- The package's ESM export barrel exposes this runtime class; the resolver cannot follow its conditional export map.
 import { QueryClient } from '@tanstack/react-query';
 import { ApiClient, ApiError } from '../api';
 

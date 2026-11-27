@@ -2471,6 +2471,14 @@ fn (mut store Store) list_session_operations(session_id string) ![]SessionOperat
 }
 
 fn (mut store Store) list_global_session_operations(limit int, before string, search string) !GlobalSessionOperationsPage {
+	return store.list_global_session_operations_filtered(limit, before, search, false)
+}
+
+fn (mut store Store) list_latest_session_operations(limit int, before string) !GlobalSessionOperationsPage {
+	return store.list_global_session_operations_filtered(limit, before, '', true)
+}
+
+fn (mut store Store) list_global_session_operations_filtered(limit int, before string, search string, latest_per_session bool) !GlobalSessionOperationsPage {
 	if limit < 1 || limit > max_global_operation_history_page_size {
 		return error('global operation history page bounds are invalid')
 	}
@@ -2489,6 +2497,9 @@ fn (mut store Store) list_global_session_operations(limit int, before string, se
 	mut query := 'SELECT o.id, o.session_id, o.status, o.provider, o.model, o.error, o.input_tokens, o.output_tokens, o.usage_reported, o.cache_read_tokens, o.cache_creation_tokens, o.cache_reported, o.reasoning_tokens, o.reasoning_reported, o.created_at, o.updated_at, o.resolved_provider, o.resolved_model, o.permission_mode, o.target_source, o.outcome, o.outcome_detail, s.title FROM session_operations o JOIN sessions s ON s.id = o.session_id'
 	mut filters := []string{}
 	mut params := []string{}
+	if latest_per_session {
+		filters << 'NOT EXISTS (SELECT 1 FROM session_operations newer WHERE newer.session_id = o.session_id AND (newer.created_at > o.created_at OR (newer.created_at = o.created_at AND newer.id > o.id)))'
+	}
 	if before.len > 0 {
 		filters << '(o.created_at < ? OR (o.created_at = ? AND o.id < ?))'
 		params << cursor_created_at

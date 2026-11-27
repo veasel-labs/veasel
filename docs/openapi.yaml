@@ -1001,6 +1001,41 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /v1/operations/latest:
+    get:
+      operationId: listLatestSessionOperations
+      description: >-
+        Lists the newest durable turn operation for each session, newest first.
+        Pages are bounded to at most 100 sessions and use the last operation id
+        as the before cursor. Use this endpoint when projecting current session
+        activity; unlike the history endpoint, older operations from a session
+        are omitted. A pruned cursor returns 400 so clients can restart from
+        the newest page.
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+        - in: query
+          name: before
+          description: Operation id returned as next_before by the preceding page.
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Bounded page of the latest operation for each session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalSessionOperationsPage'
+        '400':
+          description: Invalid limit/cursor or cursor no longer retained.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Unable to list latest session operations.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/sessions/{id}/fork:
     post:
       operationId: forkSession

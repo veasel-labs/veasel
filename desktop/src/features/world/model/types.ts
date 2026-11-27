@@ -29,7 +29,7 @@ export type EntityKind = 'place' | 'object' | 'character' | 'marker';
 
 export type EntityAvailability = 'present' | 'empty' | 'unavailable' | 'omitted';
 
-/** House / place activity derived only from proven jobs (never invented). */
+/** House / place activity derived only from proven sessions or jobs (never invented). */
 export type PlaceActivity = 'calm' | 'working' | 'blocked' | 'unknown';
 
 export interface SemanticEntity {
@@ -55,8 +55,8 @@ export interface SemanticEntity {
   /** Real activity for houses / lamps — omitted when calm/unknown. */
   activity?: PlaceActivity;
   /**
-   * Optional layout anchor: entity id this character stands at when the job
-   * cmd names that object. Missing → house porch / default slot.
+   * Optional layout anchor: entity id this character stands at when the
+   * activity command names that object. Missing → house porch / default slot.
    */
   standAtId?: string;
   /**
@@ -114,7 +114,7 @@ export interface MemoryEntryRecord {
 
 export interface MemorySummary {
   /**
-   * True when GET /api/v1/memory succeeded. False on 404 / transport failure —
+   * True when the optional memory endpoint succeeded. False on 404 / transport failure —
    * the world omits the memory place entirely (never fabricates an archive).
    */
   available: boolean;
@@ -124,7 +124,7 @@ export interface MemorySummary {
   projectKeys: string[];
 }
 
-/** Coding tool row from GET /api/v1/tools — only real detections. */
+/** Installed coding provider row from the canonical Veasel CLI probe. */
 export interface ToolRecord {
   id: string;
   toolName: string;
@@ -133,6 +133,11 @@ export interface ToolRecord {
   enabled: string;
   verified: boolean;
   version: string;
+  authStatus?: 'ready' | 'signed-out' | 'unknown';
+  authDetail?: string;
+  signInHint?: string | null;
+  launchBlocker?: string | null;
+  binary?: string | null;
 }
 
 export interface WorldDomainInput {
@@ -141,7 +146,7 @@ export interface WorldDomainInput {
   projects: ProjectRecord[];
   projectsKnown: boolean;
   memory: MemorySummary;
-  /** Detected tools from GET /api/v1/tools; empty when the call failed. */
+  /** Detected providers; empty when the canonical provider probe failed. */
   tools: ToolRecord[];
   toolsKnown: boolean;
   jobs: ReadonlyArray<{
@@ -151,8 +156,8 @@ export interface WorldDomainInput {
     status: string;
     workspace: string;
   }>;
-  /** False when the live job registry failed or has not loaded yet. */
-  jobsKnown?: boolean;
+  /** False when canonical session-operation status has not loaded or failed. */
+  activityKnown?: boolean;
   personSessions?: ReadonlyArray<{
     id: string;
     personId: string;

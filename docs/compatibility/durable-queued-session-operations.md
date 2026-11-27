@@ -28,6 +28,7 @@ loopback HTTP API (`queued` → `running` → terminal).
 - Enqueue: `POST /v1/sessions/{id}/messages` with `Prefer: respond-async` → `202` + `status: queued`
 - List: `GET /v1/sessions/{id}/operations`
 - Cross-session history: `GET /v1/operations?limit=50&before=<operation-id>&search=<term>`
+- Current activity projection: `GET /v1/operations/latest?limit=100&before=<operation-id>` returns only each session's newest operation, paged by the same stable `(created_at, id)` ordering.
   returns newest-first pages (maximum 100), includes session titles, and exposes
   `next_before` when more durable rows are available. A deleted or pruned cursor
   returns 400; clients restart at the newest page. Search spans retained

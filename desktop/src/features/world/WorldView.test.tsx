@@ -1,3 +1,4 @@
+// eslint-disable-next-line import-x/named -- screen is re-exported by Testing Library React at runtime.
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,7 +7,20 @@ import WorldView from './WorldView';
 const live = vi.hoisted(() => ({
   client: {} as object | null,
   session: { workspace: '/workspace' },
+  backendDown: false,
   focus: { loaded: true, threads: [] as Array<Record<string, unknown>> },
+  operations: {
+    isPending: false,
+    isError: false,
+    isSuccess: true,
+    data: [] as Array<Record<string, unknown>> | undefined,
+  },
+  providers: {
+    isPending: false,
+    isError: false,
+    isSuccess: true,
+    data: [] as Array<Record<string, unknown>> | undefined,
+  },
   memory: {
     isPending: false,
     isError: false,
@@ -20,25 +34,15 @@ const live = vi.hoisted(() => ({
     data: undefined as unknown,
     refetch: vi.fn(),
   },
-  tools: {
-    isPending: false,
-    isError: false,
-    isSuccess: true,
-    data: { ok: true, tools: [] as Array<Record<string, unknown>> } as
-      { ok: boolean; tools: Array<Record<string, unknown>> } | undefined,
-  },
-  jobs: {
-    isPending: false,
-    isError: false,
-    isSuccess: true,
-    data: {} as Record<string, Record<string, unknown>> | undefined,
-  },
 }));
 
-vi.mock('../../data/focus', () => ({ useFocusThreads: () => live.focus }));
+vi.mock('../../data/focus', () => ({
+  useFocusThreads: () => live.focus,
+  useFocusOperations: () => live.operations,
+  useFocusProviders: () => live.providers,
+  useFocusBackendDown: () => live.backendDown,
+}));
 vi.mock('../../data/memory', () => ({ useMemoryList: () => live.memory, useMemoryFile: () => live.memoryFile }));
-vi.mock('../../data/catalog', () => ({ useTools: () => live.tools }));
-vi.mock('../../data/jobs', () => ({ useJobs: () => live.jobs }));
 vi.mock('../../shell/useSessionContext', () => ({
   useSessionContext: () => ({ context: live.session, href: (path: string) => path }),
 }));
@@ -57,26 +61,37 @@ vi.mock('./WorldEntityMap', () => ({
   WorldEntityList: () => null,
 }));
 
-function renderWorld() {
+function renderWorld(entry = '/world') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}>
       <WorldView />
     </MemoryRouter>,
   );
 }
 
+const thread = (status = 'idle') => ({
+  id: 'thread-1',
+  title: 'Veasel work',
+  cwd: '/repo/veasel',
+  workspace: '/repo/veasel',
+  projectName: 'veasel',
+  provider: 'codex',
+  status,
+});
+
 describe('WorldView live state', () => {
   beforeEach(() => {
     live.client = {};
     live.session = { workspace: '/workspace' };
+    live.backendDown = false;
     live.focus = { loaded: true, threads: [] };
+    live.operations = { isPending: false, isError: false, isSuccess: true, data: [] };
+    live.providers = { isPending: false, isError: false, isSuccess: true, data: [] };
     live.memory = { isPending: false, isError: false, isSuccess: true, data: { ok: true, entries: [] } };
-    live.tools = { isPending: false, isError: false, isSuccess: true, data: { ok: true, tools: [] } };
-    live.jobs = { isPending: false, isError: false, isSuccess: true, data: {} };
     live.memoryFile = { isPending: false, error: null, data: undefined, refetch: vi.fn() };
   });
 
-  it('opens the canonical memory-file inspector from a world deep link', () => {
+  it('opens a memory-file inspector from a deep link', () => {
     live.memoryFile.data = {
       entry: {
         id: 'notes.md',
@@ -88,58 +103,49 @@ describe('WorldView live state', () => {
         provenance: { file: 'notes.md', author: 'user', timestamp: '', project: '', agent: '' },
       },
     };
-
-    render(
-      <MemoryRouter initialEntries={['/world?memory=notes.md']}>
-        <WorldView />
-      </MemoryRouter>,
-    );
-
+    renderWorld('/world?memory=notes.md');
     expect(screen.getByRole('region', { name: 'Memory record notes.md' })).toBeInTheDocument();
     expect(screen.getByText('from the typed memory endpoint')).toBeInTheDocument();
-    expect(screen.queryByTestId('entity:place:memory')).not.toBeInTheDocument();
   });
 
-  it('opens the live tool catalog inspector and routes reviewed installs to Library', () => {
-    live.tools.data = {
-      ok: true,
-      tools: [
-        {
-          id: 'claude',
-          tool_name: 'Claude Code',
-          detected: true,
-          configured: true,
-          enabled: 'true',
-          verified: true,
-          version: '1.0',
-          resolved_path: '/bin/claude',
-          config_paths: [],
-          reason: '',
-          install_hint: 'reviewed',
-        },
-      ],
-    };
-
-    render(
-      <MemoryRouter initialEntries={['/world?tool=claude']}>
-        <WorldView />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByRole('region', { name: 'Coding tool claude' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Review installation in Library' })).toBeInTheDocument();
-  });
-
-  it('projects real memory, detected tools, and running jobs into the map', () => {
-    live.focus.threads = [
+  it('opens provider details from the canonical CLI probe', () => {
+    live.providers.data = [
       {
-        id: 'thread-1',
-        title: 'Veasel work',
-        cwd: '/repo/veasel',
-        workspace: '/repo/veasel',
-        projectName: 'veasel',
-        provider: 'codex',
-        status: 'running',
+        id: 'claude',
+        label: 'Claude Code',
+        installed: true,
+        binary: '/bin/claude',
+        version: '1.0',
+        auth: 'ready',
+        authDetail: 'Signed in',
+        signInHint: null,
+        models: [],
+        capabilities: {},
+        checkedAt: '',
+      },
+    ];
+    renderWorld('/world?tool=claude');
+    expect(screen.getByRole('region', { name: 'Coding agent claude' })).toBeInTheDocument();
+    expect(screen.getByText('Signed in')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /installation in Library/i })).not.toBeInTheDocument();
+  });
+
+  it('projects canonical sessions, operations, providers, and optional memory', () => {
+    live.focus.threads = [{ ...thread(), status: 'idle' }];
+    live.operations.data = [{ id: 'op-1', sessionId: 'thread-1', status: 'running' }];
+    live.providers.data = [
+      {
+        id: 'codex',
+        label: 'Codex CLI',
+        installed: true,
+        binary: '/bin/codex',
+        version: '1.0',
+        auth: 'ready',
+        authDetail: '',
+        signInHint: null,
+        models: [],
+        capabilities: {},
+        checkedAt: '',
       },
     ];
     live.memory.data = {
@@ -155,115 +161,87 @@ describe('WorldView live state', () => {
         },
       ],
     };
-    live.tools.data = {
-      ok: true,
-      tools: [
-        {
-          id: 'codex',
-          tool_name: 'Codex CLI',
-          detected: true,
-          configured: true,
-          enabled: 'unknown',
-          verified: true,
-          version: '1.0',
-          resolved_path: '/bin/codex',
-          config_paths: [],
-          reason: '',
-          install_hint: '',
-        },
-      ],
-    };
-    live.jobs.data = {
-      'job-1': {
-        id: 'job-1',
-        cmd: 'veasel',
-        args: ['check'],
-        status: 'running',
-        workspace: '/repo/veasel',
-        started_at: '',
-        ended_at: '',
-        exit_code: 0,
-        retry_of: '',
-      },
-    };
 
     renderWorld();
 
     expect(screen.getByTestId('entity:place:memory')).toHaveTextContent('1 records');
     expect(screen.getByTestId('entity:object:workshop')).toHaveTextContent('1 detected');
-    expect(screen.getByTestId('entity:character:job:job-1')).toHaveTextContent('running');
     expect(screen.getByTestId('entity:character:person:thread-1:thread-1')).toHaveTextContent('running');
+    expect(screen.getByTestId('entity:place:project:veasel')).toHaveTextContent('1 session working');
     expect(screen.queryByText(/live runtime details are unavailable/i)).not.toBeInTheDocument();
   });
 
-  it('offers the real workspace picker when there is no workspace context', () => {
-    live.session = { workspace: '' };
+  it('keeps same-named repositories in separate houses and assigns each session to its path', () => {
+    live.focus.threads = [
+      { ...thread(), id: 'session-main', cwd: '/a/x', projectName: 'x' },
+      { ...thread(), id: 'session-worktree', cwd: '/b/x', projectName: 'x' },
+      { ...thread(), id: 'session-collision', cwd: '/c/x', projectName: 'x · a' },
+      { ...thread(), id: 'session-path-collision', cwd: '/a/a', projectName: 'x · /a/x' },
+    ];
 
     renderWorld();
 
-    expect(screen.getByRole('heading', { name: 'Your valley is waiting for a workspace' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open Focus to choose a workspace' })).toHaveAttribute('href', '/focus');
+    expect(screen.getByTestId('entity:place:project:x · a · /a/x')).toBeInTheDocument();
+    expect(screen.getByTestId('entity:place:project:x · b')).toBeInTheDocument();
+    expect(screen.getByTestId('entity:place:project:x · a · /c/x')).toBeInTheDocument();
+    expect(screen.getByTestId('entity:place:project:x · /a/x')).toBeInTheDocument();
+    expect(screen.getByTestId('entity:character:person:session-main:session-main')).toBeInTheDocument();
+    expect(screen.getByTestId('entity:character:person:session-worktree:session-worktree')).toBeInTheDocument();
+    expect(screen.getByTestId('entity:character:person:session-collision:session-collision')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('entity:character:person:session-path-collision:session-path-collision'),
+    ).toBeInTheDocument();
   });
 
-  it('reports unavailable live sources instead of presenting missing activity as known empty', () => {
-    live.focus.threads = [
-      {
-        id: 'thread-1',
-        title: 'Veasel work',
-        cwd: '/repo/veasel',
-        workspace: '/repo/veasel',
-        projectName: 'veasel',
-        provider: 'codex',
-        status: 'idle',
-      },
-    ];
+  it('surfaces error sessions and omits work-like state when operations are unavailable', () => {
+    live.focus.threads = [{ ...thread('error') }];
+    live.operations = { isPending: false, isError: true, isSuccess: false, data: undefined };
+    live.providers = { isPending: false, isError: true, isSuccess: false, data: undefined };
     live.memory = { isPending: false, isError: true, isSuccess: false, data: { ok: false, entries: [] } };
-    live.tools = { isPending: false, isError: true, isSuccess: false, data: { ok: false, tools: [] } };
-    live.jobs = { isPending: false, isError: true, isSuccess: false, data: {} };
 
     renderWorld();
 
     expect(screen.getByRole('status')).toHaveTextContent('Some live runtime details are unavailable');
     expect(screen.getByTestId('entity:object:workshop')).toHaveTextContent('unknown');
-    expect(screen.getByTestId('entity:place:project:veasel')).toHaveTextContent('job state unknown');
-    expect(screen.queryByTestId('entity:place:memory')).not.toBeInTheDocument();
+    expect(screen.getByTestId('entity:place:project:veasel')).toHaveTextContent('needs attention');
     expect(screen.queryByTestId(/^entity:character:job:/)).not.toBeInTheDocument();
+  });
+
+  it('does not treat an unavailable legacy memory endpoint as runtime failure', () => {
+    live.focus.threads = [thread()];
+    live.memory = { isPending: false, isError: true, isSuccess: false, data: { ok: false, entries: [] } };
+
+    renderWorld();
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('entity:place:memory')).not.toBeInTheDocument();
+  });
+
+  it('offers the real workspace picker when there is no workspace context', () => {
+    live.session = { workspace: '' };
+    renderWorld();
+    expect(screen.getByRole('heading', { name: 'Your valley is waiting for a workspace' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Focus to choose a workspace' })).toHaveAttribute('href', '/focus');
   });
 
   it('does not leave a loading banner when the backend is disconnected', () => {
     live.client = null;
     live.focus = { loaded: false, threads: [] };
-    live.memory = { isPending: true, isError: false, isSuccess: false, data: undefined };
-    live.tools = { isPending: true, isError: false, isSuccess: false, data: undefined };
-    live.jobs = { isPending: true, isError: false, isSuccess: false, data: undefined };
-
+    live.operations = { isPending: false, isError: false, isSuccess: false, data: undefined };
+    live.providers = { isPending: false, isError: false, isSuccess: false, data: undefined };
     renderWorld();
-
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
-  it('marks cached activity as last known after the backend disconnects', () => {
+  it('labels cached canonical activity as last known after disconnect', () => {
     live.client = null;
-    live.focus = { loaded: false, threads: [] };
-    live.memory = { isPending: false, isError: false, isSuccess: false, data: undefined };
-    live.tools = { isPending: false, isError: false, isSuccess: false, data: undefined };
-    live.jobs.data = {
-      'job-1': {
-        id: 'job-1',
-        cmd: 'veasel',
-        args: ['check'],
-        status: 'running',
-        workspace: '/repo/veasel',
-        started_at: '',
-        ended_at: '',
-        exit_code: 0,
-        retry_of: '',
-      },
-    };
+    live.backendDown = true;
+    live.focus = { loaded: false, threads: [thread('running')] };
+    live.operations.data = [{ id: 'op-1', sessionId: 'thread-1', status: 'running' }];
 
     renderWorld();
 
     expect(screen.getByRole('status')).toHaveTextContent('Connection lost; showing last known workspace data.');
-    expect(screen.getByTestId('entity:character:job:job-1')).toHaveTextContent('running');
+    expect(screen.getByTestId('entity:character:person:thread-1:thread-1')).toHaveTextContent('running');
   });
 });

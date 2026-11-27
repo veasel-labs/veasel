@@ -157,6 +157,72 @@ describe('veasel Focus bridge HTTP behavior', () => {
     expect(threads[0]?.id).toBe('s1');
   });
 
+  it('lists latest operation status per session from the canonical API', async () => {
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/operations/latest?limit=100': {
+          operations: [
+            {
+              operation: {
+                id: 'op1',
+                session_id: 's1',
+                status: 'running',
+                provider: 'codex',
+                model: 'gpt-codex',
+                created_at: '2026-11-16T00:00:00Z',
+                updated_at: '2026-11-16T00:00:01Z',
+              },
+            },
+          ],
+        },
+      }),
+    });
+    await expect(bridge.listOperations()).resolves.toEqual([
+      {
+        id: 'op1',
+        sessionId: 's1',
+        status: 'running',
+        provider: 'codex',
+        model: 'gpt-codex',
+        createdAt: '2026-11-16T00:00:00Z',
+        updatedAt: '2026-11-16T00:00:01Z',
+      },
+    ]);
+  });
+
+  it('follows latest-operation cursors until every page is read', async () => {
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/operations/latest?limit=100': {
+          operations: [{ operation: { id: 'op-new', session_id: 's-new', status: 'completed' } }],
+          next_before: 'cursor-1',
+        },
+        '/v1/operations/latest?limit=100&before=cursor-1': {
+          operations: [{ operation: { id: 'op-old', session_id: 's-old', status: 'running' } }],
+        },
+      }),
+    });
+
+    await expect(bridge.listOperations()).resolves.toMatchObject([
+      { id: 'op-new', sessionId: 's-new', status: 'completed' },
+      { id: 'op-old', sessionId: 's-old', status: 'running' },
+    ]);
+  });
+
+  it('fails closed when the latest-operation endpoint repeats a page cursor', async () => {
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/operations/latest?limit=100': { operations: [], next_before: 'cursor-1' },
+        '/v1/operations/latest?limit=100&before=cursor-1': { operations: [], next_before: 'cursor-1' },
+      }),
+    });
+
+    await expect(bridge.listOperations()).rejects.toThrow('repeated an operation history cursor');
+  });
+
   it('loads completion outcomes from the durable session history endpoint', async () => {
     const bridge = createVeaselFocusBridge({
       baseUrl: 'http://veasel.test',

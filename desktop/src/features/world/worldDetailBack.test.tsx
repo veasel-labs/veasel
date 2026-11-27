@@ -1,13 +1,14 @@
+// eslint-disable-next-line import-x/named -- screen is re-exported by Testing Library React at runtime.
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { withContext } from '../../shell/sessionContext';
-import { installTargetForTool, worldDetailBackExtra, worldDetailBackLabel } from './inspectors';
+import { worldDetailBackExtra, worldDetailBackLabel } from './inspectors';
 import { MemoryRecordInspector } from './MemoryRecordInspector';
 import { ToolRecordInspector } from './ToolRecordInspector';
 import { useWorldDetailEscape } from './useWorldDetailEscape';
-import { ReceiptsProvider } from '../../ui';
-import type { MemoryReadResponse, ToolInfo } from '../../lib/api';
+import type { MemoryReadResponse } from '../../lib/api';
+import type { ToolRecord } from './model/types';
 
 const memoryFixture: MemoryReadResponse = {
   ok: true,
@@ -28,28 +29,18 @@ const memoryFixture: MemoryReadResponse = {
   },
 };
 
-const toolFixture: ToolInfo = {
+const toolFixture: ToolRecord = {
   id: 'claude',
-  tool_name: 'Claude Code',
+  toolName: 'Claude Code',
   detected: true,
   configured: false,
-  enabled: 'unknown',
+  enabled: 'false',
   verified: false,
-  resolved_path: '',
-  config_paths: [],
   version: '',
-  reason: '',
-  install_hint: '',
+  authStatus: 'signed-out',
 };
 
 describe('worldDetailBackExtra', () => {
-  it('maps tool catalog ids to canonical Library installation targets', () => {
-    expect(installTargetForTool('claude')).toBe('claude-code');
-    expect(installTargetForTool('cursor')).toBe('cursor');
-    expect(installTargetForTool('muse')).toBe('muse-code');
-    expect(installTargetForTool('unknown')).toBeNull();
-  });
-
   it('keeps project when leaving memory or tool detail', () => {
     const session = { workspace: '/ws', agent: '', run: '' };
     const withProject = withContext('/world', session, {
@@ -95,11 +86,7 @@ describe('detail Back control', () => {
   it('Back from tool returns via onBack (world path)', async () => {
     const onBack = vi.fn();
     const user = userEvent.setup();
-    render(
-      <ReceiptsProvider>
-        <ToolRecordInspector toolId="claude" tool={toolFixture} onBack={onBack} backLabel="Back to world" />
-      </ReceiptsProvider>,
-    );
+    render(<ToolRecordInspector toolId="claude" tool={toolFixture} onBack={onBack} backLabel="Back to world" />);
     await user.click(screen.getByRole('button', { name: 'Back to world' }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });

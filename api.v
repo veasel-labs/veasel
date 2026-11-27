@@ -1763,6 +1763,21 @@ pub fn (app &App) list_global_operations(mut ctx Context) veb.Result {
 	return ctx.json(page)
 }
 
+@['/v1/operations/latest'; get]
+pub fn (app &App) list_latest_global_operations(mut ctx Context) veb.Result {
+	limit, before, _ := parse_global_operation_history_query(ctx.query) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	mut store := app.store
+	page := store.list_latest_session_operations(limit, before) or {
+		if err.msg() == 'operation cursor not found' {
+			return json_request_error(mut ctx, 'Operation cursor was not found; restart history from the newest page')
+		}
+		return json_server_error(mut ctx, 'Unable to list latest session operations')
+	}
+	return ctx.json(page)
+}
+
 fn parse_global_operation_history_query(query map[string]string) !(int, string, string) {
 	mut limit := max_global_operation_history_page_size
 	if raw_limit := query['limit'] {

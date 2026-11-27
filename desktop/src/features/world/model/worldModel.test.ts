@@ -788,11 +788,11 @@ describe('buildWorldModel', () => {
       baseInput({
         projects: [{ name: 'only', target: '/r', status: 'ok' }],
         memory: emptyMemory(true, []),
-        jobsKnown: false,
+        activityKnown: false,
       }),
     );
     const project = model.entities.find((e) => e.id === 'place:project:only');
-    expect(project?.state).toBe('job state unknown');
+    expect(project?.state).toBe('agent activity unknown');
     expect(project?.activity).toBe('unknown');
     expect(model.entities.filter((e) => e.kind === 'character')).toEqual([]);
   });
@@ -802,7 +802,7 @@ describe('buildWorldModel', () => {
       baseInput({
         projects: [{ name: 'only', target: '/r', status: 'ok' }],
         memory: emptyMemory(true, []),
-        jobsKnown: false,
+        activityKnown: false,
         personSessions: [{ id: 'broken', personId: 'p1', name: 'Worker', role: 'agent', cwd: '/r', status: 'error' }],
       }),
     );
@@ -816,14 +816,14 @@ describe('buildWorldModel', () => {
       baseInput({
         projects: [{ name: 'only', target: '/r', status: 'ok' }],
         memory: emptyMemory(true, []),
-        jobsKnown: false,
+        activityKnown: false,
         personSessions: [
           { id: 'waiting', personId: 'p1', name: 'Worker', role: 'agent', cwd: '/r', status: 'awaiting-approval' },
         ],
       }),
     );
     const project = model.entities.find((e) => e.id === 'place:project:only');
-    expect(project?.state).toBe('1 awaiting approval · job state unknown');
+    expect(project?.state).toBe('1 awaiting approval · agent activity unknown');
     expect(project?.activity).toBe('unknown');
   });
 

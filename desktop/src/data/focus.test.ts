@@ -33,6 +33,7 @@ function bridge(overrides: Partial<FocusBridge> = {}): {
   const base: FocusBridge = {
     providers: async () => [],
     listThreads: async () => [],
+    listOperations: async () => [],
     createThread: async () => ({ ok: false, error: 'unused' }),
     readThread: async () => null,
     updateThread: async () => ({ ok: false, error: 'unused' }),

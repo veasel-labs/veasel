@@ -103,7 +103,7 @@ function projectWorldState(
   activity: PlaceActivity,
   jobCount: number,
   personCount: number,
-  jobsKnown: boolean,
+  activityKnown: boolean,
   runningSessions: number,
   stoppedSessions: number,
   awaitingApproval: number,
@@ -117,12 +117,12 @@ function projectWorldState(
       awaitingApproval ? `${awaitingApproval} awaiting approval` : '',
       awaitingInput ? `${awaitingInput} awaiting input` : '',
       stopped,
-      !jobsKnown ? 'job state unknown' : '',
+      !activityKnown ? 'agent activity unknown' : '',
     ].filter(Boolean);
     return waiting.join(' · ');
   }
-  if (!jobsKnown)
-    return `${runningSessions ? `${runningSessions} session${runningSessions === 1 ? '' : 's'} working · ` : ''}${personCount ? `${personCount} Person session${personCount === 1 ? '' : 's'} open · ` : ''}${stopped ? `${stopped} · ` : ''}job state unknown`;
+  if (!activityKnown)
+    return `${runningSessions ? `${runningSessions} session${runningSessions === 1 ? '' : 's'} working · ` : ''}${personCount ? `${personCount} Person session${personCount === 1 ? '' : 's'} open · ` : ''}${stopped ? `${stopped} · ` : ''}agent activity unknown`;
   if (activity === 'working') {
     const active = [
       jobCount ? `${jobCount} job${jobCount === 1 ? '' : 's'} active` : '',
@@ -401,7 +401,7 @@ function buildGrounds(input: WorldDomainInput): SemanticEntity[] {
       const projectSessions = (input.personSessions ?? []).filter((session) =>
         sessionBelongsToProject(session, project, input.projects),
       );
-      const jobsKnown = input.jobsKnown ?? true;
+      const activityKnown = input.activityKnown ?? true;
       const awaitingApproval = projectSessions.filter((session) => session.status === 'awaiting-approval').length;
       const awaitingInput = projectSessions.filter((session) => session.status === 'awaiting-input').length;
       const runningSessions = projectSessions.filter((session) => session.status === 'running').length;
@@ -409,10 +409,10 @@ function buildGrounds(input: WorldDomainInput): SemanticEntity[] {
       const hasFailedSession = projectSessions.some(
         (session) => session.status === 'failed' || session.status === 'error',
       );
-      const activity = jobsKnown
+      const activity = activityKnown
         ? activityForProject(projectJobs, projectSessions)
-        : hasFailedSession
-          ? 'blocked'
+        : hasFailedSession || projectSessions.some((session) => session.status === 'running')
+          ? activityForProject([], projectSessions)
           : 'unknown';
       const liveCount = projectJobs.filter((job) => !isTerminalJobStatus(job.status)).length;
       const projectPlaceId = `place:project:${project.name}`;
@@ -426,7 +426,7 @@ function buildGrounds(input: WorldDomainInput): SemanticEntity[] {
           activity,
           liveCount,
           projectSessions.length,
-          jobsKnown,
+          activityKnown,
           runningSessions,
           stoppedSessions,
           awaitingApproval,
@@ -503,16 +503,16 @@ function buildInterior(input: WorldDomainInput, focus: string): SemanticEntity[]
   const projectSessions = (input.personSessions ?? []).filter((session) =>
     sessionBelongsToProject(session, project, input.projects),
   );
-  const jobsKnown = input.jobsKnown ?? true;
+  const activityKnown = input.activityKnown ?? true;
   const awaitingApproval = projectSessions.filter((session) => session.status === 'awaiting-approval').length;
   const awaitingInput = projectSessions.filter((session) => session.status === 'awaiting-input').length;
   const runningSessions = projectSessions.filter((session) => session.status === 'running').length;
   const stoppedSessions = projectSessions.filter((session) => session.status === 'interrupted').length;
   const hasFailedSession = projectSessions.some((session) => session.status === 'failed' || session.status === 'error');
-  const activity = jobsKnown
+  const activity = activityKnown
     ? activityForProject(projectJobs, projectSessions)
-    : hasFailedSession
-      ? 'blocked'
+    : hasFailedSession || projectSessions.some((session) => session.status === 'running')
+      ? activityForProject([], projectSessions)
       : 'unknown';
   const liveCount = projectJobs.filter(
     (job) => !isTerminalJobStatus(job.status) || job.status === 'failed' || job.status === 'rejected',
@@ -528,7 +528,7 @@ function buildInterior(input: WorldDomainInput, focus: string): SemanticEntity[]
       activity,
       liveCount,
       projectSessions.length,
-      jobsKnown,
+      activityKnown,
       runningSessions,
       stoppedSessions,
       awaitingApproval,

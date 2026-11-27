@@ -2324,6 +2324,43 @@ fn test_global_operation_history_pages_across_sessions_without_duplicates() {
 	assert searched_next.next_before == ''
 }
 
+fn test_latest_global_operations_returns_one_current_operation_per_session() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	alpha := store.create_session(SessionInput{ title: 'Alpha project', directory: '/tmp/alpha' }) or {
+		panic(err)
+	}
+	beta := store.create_session(SessionInput{ title: 'Beta project', directory: '/tmp/beta' }) or {
+		panic(err)
+	}
+	alpha_old := '00000000-0000-4000-8000-000000000001'
+	alpha_new := '00000000-0000-4000-8000-000000000002'
+	beta_current := '00000000-0000-4000-8000-000000000003'
+	_ = store.create_session_operation(alpha.id, alpha_old) or { panic(err) }
+	_ = store.create_session_operation(alpha.id, alpha_new) or { panic(err) }
+	_ = store.create_session_operation(beta.id, beta_current) or { panic(err) }
+	for id in [alpha_old, alpha_new, beta_current] {
+		_ = store.db.exec_param_many('UPDATE session_operations SET created_at = ? WHERE id = ?', [
+			'2026-11-27T00:00:00Z',
+			id,
+		]) or { panic(err) }
+	}
+	first := store.list_latest_session_operations(1, '') or { panic(err) }
+	assert first.operations.len == 1
+	assert first.operations[0].operation.id == beta_current
+	assert first.next_before == first.operations[0].operation.id
+	second := store.list_latest_session_operations(1, first.next_before) or { panic(err) }
+	assert second.operations.len == 1
+	assert second.operations[0].operation.id == alpha_new
+	assert second.next_before == ''
+	latest_ids := [first.operations[0].operation.id, second.operations[0].operation.id]
+	assert latest_ids.contains(alpha_new)
+	assert latest_ids.contains(beta_current)
+	assert !latest_ids.contains(alpha_old)
+}
+
 fn test_global_operation_history_query_rejects_unbounded_or_invalid_cursors() {
 	limit, before, search := parse_global_operation_history_query(map[string]string{}) or { panic(err) }
 	assert limit == max_global_operation_history_page_size

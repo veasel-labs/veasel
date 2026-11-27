@@ -142,6 +142,26 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   reference the same release and their package/deployment checks passed. The
   manual runner-selection attempt did not reach a provider turn, so this
   release evidence still does not establish the edit/review/approval journey.
+- On 2026-11-27, the published `v0.108.1-next.0` AppImage, CLI archive, and
+  standalone TUI digests were verified against release metadata. Installed
+  version commands and Desktop launcher metadata consistently reported
+  `0.108.1-next.0`; installed CLI, TUI, and Desktop hashes are recorded in the
+  evidence artifact.
+  The packaged shared-listener harness passed both AppImage-first and TUI-first
+  journeys using isolated data. Native Codex CLI `0.172.0` reported signed in
+  with ChatGPT, and the TUI completed a real `gpt-6.2-sol` turn in `ask` mode.
+  Its review panel displayed the exact proposed command, which was approved once.
+  The approved command's independently verified file effect was only
+  `VEASEL_TUI_NATIVE_APPROVAL.md`; its expected contents and SHA-256 were checked
+  independently. A packaged Desktop Focus view on the
+  same isolated backend then rendered that TUI session, its new message, and
+  both untracked files. The sanitized artifact and operation details are in
+  [`HorneroOS v0.108.1 installed smoke evidence`](desktop/evidence/hornero-installed-smoke-2026-11-27.json).
+  This remains partial acceptance: the released Codex adapter persisted one
+  approved action but recorded `edits_applied=[]`, `commands_ran=[]`, and
+  `effects_observed=false` despite the independent file check. The next release
+  must include a Codex app-server effect receipt and repeat this packaged journey
+  before #550 or the daily-driver gate can close.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under

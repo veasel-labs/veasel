@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-27",
+  "host": "HorneroOS (Arch Linux, Hyprland/Wayland)",
+  "acceptance_status": "partial",
+  "release": {
+    "tag": "v0.108.1-next.0",
+    "source_commit": "be67ed64fafdf84f44c626f325e80e0cca09ffcd",
+    "release_manifest_sha256": "f7d609441679cb297f379bb2088527683a6ab817d30edf9e04e96b06167cf893",
+    "appimage_sha256": "73a0ed211f6632cfa976aec20d8688806a82a4ad4eb2cf767058ee26642beaff",
+    "cli_archive_sha256": "89bfb5870bfa7c35d7dbfed6fbd5959c18fd06ec75d2f543048773f00ebe6b0c",
+    "standalone_tui_sha256": "661c4e6c636e1c9396f9995a350b7fea0917385a59abf496f356afd3cee640f9"
+  },
+  "installed_artifacts": {
+    "cli_version": "Veasel Code 0.108.1-next.0",
+    "cli_sha256": "51e3fd383e3eb71684f2d31ae2e88d86787602a4ed73acc08968aa43e724a471",
+    "tui_version": "Veasel Code Terminal 0.108.1-next.0",
+    "tui_sha256": "661c4e6c636e1c9396f9995a350b7fea0917385a59abf496f356afd3cee640f9",
+    "desktop_appimage_sha256": "73a0ed211f6632cfa976aec20d8688806a82a4ad4eb2cf767058ee26642beaff",
+    "desktop_entry_valid": true,
+    "desktop_entry_version": "0.108.1-next.0",
+    "desktop_entry_paths_consistent": true
+  },
+  "packaged_shared_listener": {
+    "evidence_file": "/home/ulisesjcf/.cache/veasel-validation/v0.108.1-next.0/packaged-smoke/summary.json",
+    "appimage_first": "passed",
+    "tui_first": "passed",
+    "both_clients_visible": true,
+    "one_backend_pid_per_journey": true,
+    "backend_version": "0.108.1-next.0",
+    "isolated_data_profiles": true,
+    "default_data_path_used": false
+  },
+  "provider": {
+    "selected_runner": "codex",
+    "cli_version": "codex-cli 0.172.0",
+    "native_auth_state": "signed in with ChatGPT",
+    "model": "gpt-6.2-sol",
+    "credentials_changed": false
+  },
+  "tui_approval_turn": {
+    "session_id": "0ab4adde-2431-4b6a-b4f1-2109ed4b9aa7",
+    "operation_id": "e14d5d76-8e84-4aad-97d9-4c7e19f672e7",
+    "permission_mode": "ask",
+    "approval_id": "55e0f092-e790-41c8-9915-67367b3f72f5",
+    "approval_decision": "approved once from the TUI review panel",
+    "operation_status": "completed",
+    "operation_provider": "codex",
+    "operation_model": "gpt-6.2-sol",
+    "created_file": "VEASEL_TUI_NATIVE_APPROVAL.md",
+    "created_file_sha256": "d794c62c3a0b827bf0e548725b9961d08d3aad8d332b3cab050a60345897637d",
+    "exact_expected_content_verified": true,
+    "approved_command_only_expected_file_created": true,
+    "persisted_outcome_facts": {
+      "approvals_approved": 1,
+      "edits_applied": [],
+      "commands_ran": [],
+      "effects_observed": false,
+      "verification": "not_reported"
+    }
+  },
+  "desktop_same_session": {
+    "same_backend_profile_and_loopback_port": true,
+    "same_session_rendered": true,
+    "latest_tui_message_visible": true,
+    "working_tree_files_visible": [
+      "VEASEL_HOST_ACCEPTANCE.md",
+      "VEASEL_TUI_NATIVE_APPROVAL.md"
+    ],
+    "verification_method": "Desktop Focus renderer on an isolated Electron profile, routed to the TUI session",
+    "visual_screenshot_retained": false
+  },
+  "known_gaps": [
+    "The first Codex native file-edit request did not expose an approval-capable edit tool. The ask-mode shell approval route succeeded in the later turn.",
+    "The successful Codex turn reported the created file and its SHA-256 was independently verified, but Veasel persisted no effect receipt: effects_observed stayed false and both edits_applied and commands_ran stayed empty. The accepted command's effect therefore remains unverified by Veasel itself.",
+    "This package predates the Codex app-server effect-receipt fix being prepared; repeat the packaged acceptance on a later release before closing the daily-driver gate.",
+    "The isolated test created one file through an approved shell command; it did not exercise a project test suite, rejection, cancellation, crash recovery, or a user's default data profile."
+  ]
+}

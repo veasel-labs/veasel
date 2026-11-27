@@ -215,9 +215,9 @@ const P = {
   gd2: [0x5d, 0x98, 0x56],
   meadowBase: [0x70, 0x9f, 0x55],
   meadowSoft: [0x97, 0xbf, 0x68],
-  meadowShade: [0x55, 0x82, 0x49],
-  meadowSun: [0xb6, 0xc8, 0x6f],
-  meadowDeep: [0x38, 0x6d, 0x5a],
+  meadowShade: [0x5d, 0x8b, 0x50],
+  meadowSun: [0xa1, 0xb8, 0x68],
+  meadowDeep: [0x4a, 0x76, 0x55],
   gd: [0x4f, 0x8b, 0x4b],
   gl: [0x83, 0xbd, 0x70],
   gt: [0xb2, 0xd3, 0x87],
@@ -1054,7 +1054,7 @@ function grassTile(seed) {
   // leaf texture to read as a living meadow at normal zoom. Deterministic
   // clumps avoid the confetti effect of isolated noise pixels and soften the
   // broad moisture bands without obscuring paths or semantic objects.
-  const count = 8 + random(5);
+  const count = 5 + random(3);
   for (let i = 0; i < count; i++) {
     const motif = random(3) === 0 ? tufts[random(tufts.length)] : clovers[random(clovers.length)];
     const left = 1 + random(12);

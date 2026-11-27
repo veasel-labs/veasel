@@ -170,9 +170,10 @@ function baseGround(p: Painter) {
         p.set(x, y, ['flowers-poppy', 'flowers-daisy', 'flowers-lavender', 'flowers-gold'][h2(x, y, 12) % 4]!, blocked);
       } else {
         const grass = Math.max(0, Math.min(5, Math.floor((moisture - 0.22) * 9)));
-        // Each moisture band has four authored tile patterns. Spatially
-        // seeded choice breaks up repeated 16px stamps without adding noise.
-        const texture = Math.min(3, Math.floor(meadowField(x, y, 5, 59) * 4));
+        // Each moisture band has four authored tile patterns. Keep one
+        // pattern across broad patches so the meadow reads as a material,
+        // not a checker of alternating stamps.
+        const texture = Math.min(3, Math.floor(meadowField(x, y, 7, 59) * 4));
         p.set(x, y, `grass-${grass * 4 + texture}`, blocked);
       }
     }
@@ -605,6 +606,26 @@ function feather(p: Painter) {
     else if (s2) p.set(x, y, 'dirt-s');
     else if (w) p.set(x, y, 'dirt-w');
     else if (e) p.set(x, y, 'dirt-e');
+  }
+}
+
+/** Finish creek bends with the matching bank tile on all four sides. */
+function shorelineTransitions(p: Painter, bridgeRows: ReadonlySet<number>) {
+  const snapshot = new Map(p.cells);
+  const directions = [
+    { dx: 0, dy: -1, edge: 'water-edge-n' },
+    { dx: 0, dy: 1, edge: 'water-edge-s' },
+    { dx: -1, dy: 0, edge: 'water-edge-w' },
+    { dx: 1, dy: 0, edge: 'water-edge-e' },
+  ] as const;
+  for (const [at, tile] of snapshot) {
+    if ((!tile.startsWith('grass') && !tile.startsWith('flowers')) || p.paths.has(at)) continue;
+    const [xs, ys] = at.split(',');
+    const x = Number(xs);
+    const y = Number(ys);
+    if (bridgeRows.has(y) || p.isBlocked(x, y)) continue;
+    const bank = directions.find(({ dx, dy }) => snapshot.get(key(x + dx, y + dy)) === 'water');
+    if (bank) p.set(x, y, bank.edge);
   }
 }
 
@@ -1736,6 +1757,7 @@ export function paintTerrain(entities: readonly LaidOutEntity[], cols: number, r
   flowerGlades(p);
   forest(p, projects.length === 0);
   flowerPatchSprites(p);
+  shorelineTransitions(p, new Set([roadY]));
   wildlife(p, hall);
   renderCourtyardStones(p);
 

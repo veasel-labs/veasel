@@ -1055,6 +1055,27 @@ describe('layoutWorld', () => {
       }
     }
     const bridgeRoadY = bridge!.y + 1;
+    const terrainAt = new Map(first.cells.map(({ x, y, tile }) => [`${x},${y}`, tile]));
+    const shoreDirections = [
+      { dx: 0, dy: -1, edge: 'water-edge-n' },
+      { dx: 0, dy: 1, edge: 'water-edge-s' },
+      { dx: -1, dy: 0, edge: 'water-edge-w' },
+      { dx: 1, dy: 0, edge: 'water-edge-e' },
+    ];
+    for (const cell of first.cells) {
+      if (cell.y === bridgeRoadY || (!cell.tile.startsWith('grass') && !cell.tile.startsWith('flowers'))) continue;
+      if (
+        layout.entities.some(
+          (entity) =>
+            cell.x >= entity.x && cell.x < entity.x + entity.w && cell.y >= entity.y && cell.y < entity.y + entity.h,
+        )
+      )
+        continue;
+      const adjacentBank = shoreDirections.find(
+        ({ dx, dy }) => terrainAt.get(`${cell.x + dx},${cell.y + dy}`) === 'water',
+      );
+      if (adjacentBank) expect(cell.tile, `shore at ${cell.x},${cell.y}`).toBe(adjacentBank.edge);
+    }
     const upstreamStarts = [...waterRows.entries()].filter(([y]) => y < bridgeRoadY).map(([, xs]) => Math.min(...xs));
     const downstreamStarts = [...waterRows.entries()].filter(([y]) => y > bridgeRoadY).map(([, xs]) => Math.min(...xs));
     expect(Math.min(...upstreamStarts)).toBeLessThan(bridge!.x);

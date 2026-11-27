@@ -162,6 +162,7 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ### Durable goals and worker coordination
 
+- [ ] Admit and project the portable Goal v2 permission contract while preserving v1 behavior. V2 dispatch remains fail-closed before claims, worktrees, or sessions until runtime policy intersection and enforcement are implemented. Compatibility is pinned in [`compatibility/agent-toolkit-goals-v2.md`](compatibility/agent-toolkit-goals-v2.md).
 - [x] Add Veasel-specific, authenticated admission, listing and manifest replay for portable goals.
   Admission records preserve the declared scope and survive restart.
 - [x] Implement authenticated read-only repository identity preflight for

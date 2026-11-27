@@ -14,6 +14,7 @@ struct GoalAdmission {
 	deadline                string
 	budget                  GoalBudget
 	delivery_mode           string
+	policy_ceiling          []string @[omitempty]
 	tasks                   []GoalTask
 }
 
@@ -36,15 +37,16 @@ struct GoalBudget {
 }
 
 struct GoalTask {
-	id         string
-	title      string
-	repository string
-	base_sha   string
-	paths      []string
-	depends_on []string
-	recipe     string
-	runner     string
-	verifier   string
+	id          string
+	title       string
+	repository  string
+	base_sha    string
+	paths       []string
+	depends_on  []string
+	recipe      string
+	runner      string
+	verifier    string
+	permissions []string @[omitempty]
 }
 
 struct AdmittedGoal {
@@ -59,6 +61,26 @@ enum GoalAdmissionResult {
 	replayed
 	conflict
 }
+
+const goal_permission_effects = [
+	'repository.read',
+	'repository.write',
+	'process.execute',
+	'network.access',
+	'git.commit',
+	'git.push',
+	'github.read',
+	'github.issue.create',
+	'github.issue.update',
+	'github.pr.create',
+	'github.pr.update',
+	'github.comment.create',
+	'github.label.set',
+	'github.assign',
+	'github.close',
+	'github.merge',
+	'release.publish',
+]
 
 fn migrate_goal_admissions(mut db sqlite.DB) ! {
 	db.begin()!
@@ -102,7 +124,7 @@ fn valid_goal_sha(value string) bool {
 }
 
 fn valid_goal_relative_path(value string) bool {
-	if value.contains_any('\\:\0') {
+	if value.contains_any('\\:\x00') {
 		return false
 	}
 	for segment in value.split('/') {
@@ -114,9 +136,10 @@ fn valid_goal_relative_path(value string) bool {
 }
 
 fn validate_goal_admission(goal GoalAdmission) ! {
-	if goal.schema_version != 1 || !valid_goal_id(goal.id) || !valid_session_title(goal.title) {
-		return error('Goal requires schema_version 1, a valid id and a title')
+	if goal.schema_version !in [1, 2] || !valid_goal_id(goal.id) || !valid_session_title(goal.title) {
+		return error('Goal requires schema_version 1 or 2, a valid id and a title')
 	}
+	validate_goal_permission_fields(goal)!
 	if goal.delivery_mode !in ['report', 'draft'] {
 		return error('Goal delivery_mode must be report or draft')
 	}
@@ -131,7 +154,7 @@ fn validate_goal_admission(goal GoalAdmission) ! {
 	for repository in goal.authorized_repositories {
 		key := '${repository.owner}/${repository.name}'.to_lower()
 		if !valid_goal_id(repository.owner) || !valid_goal_id(repository.name)
-			|| repository.path.trim_space() == '' || repository.path.contains('\0') || repositories[key] {
+			|| repository.path.trim_space() == '' || repository.path.contains('\x00') || repositories[key] {
 			return error('Goal has an invalid or repeated authorized repository')
 		}
 		repositories[key] = true
@@ -145,6 +168,69 @@ fn validate_goal_admission(goal GoalAdmission) ! {
 		criteria[criterion.id] = true
 	}
 	validate_goal_tasks(goal.tasks, repositories)!
+}
+
+fn validate_goal_permission_fields(goal GoalAdmission) ! {
+	if goal.schema_version == 1 {
+		if goal.policy_ceiling.len > 0 || goal.tasks.any(it.permissions.len > 0) {
+			return error('Goal permission declarations require schema_version 2')
+		}
+		return
+	}
+	validate_goal_permission_list(goal.policy_ceiling, 'policy_ceiling')!
+	if 'repository.read' !in goal.policy_ceiling {
+		return error('Goal v2 policy_ceiling must include repository.read')
+	}
+	for task in goal.tasks {
+		validate_goal_permission_list(task.permissions, 'task ${task.id} permissions')!
+		if 'repository.read' !in task.permissions {
+			return error('Goal v2 task ${task.id} permissions must include repository.read')
+		}
+		for effect in task.permissions {
+			if effect !in goal.policy_ceiling {
+				return error('Goal task ${task.id} requests effect outside policy_ceiling: ${effect}')
+			}
+		}
+	}
+}
+
+fn validate_goal_permission_list(effects []string, label string) ! {
+	mut seen := map[string]bool{}
+	for effect in effects {
+		if effect !in goal_permission_effects {
+			return error('${label} contains unknown effect: ${effect}')
+		}
+		if seen[effect] {
+			return error('${label} repeats effect: ${effect}')
+		}
+		seen[effect] = true
+	}
+}
+
+// Validate presence separately from typed decoding: empty permission arrays
+// are still forbidden in v1, and required in v2.
+fn validate_goal_permission_json_fields(raw string, goal GoalAdmission) ! {
+	fields := json2.decode[map[string]json2.Any](raw) or {
+		return error('Goal manifest must be a JSON object')
+	}
+	has_ceiling := 'policy_ceiling' in fields
+	tasks_value := fields['tasks'] or { return error('Goal tasks are required') }
+	if tasks_value !is []json2.Any {
+		return error('Goal tasks must be an array')
+	}
+	mut task_permissions_present := []bool{}
+	for value in tasks_value as []json2.Any {
+		if value !is map[string]json2.Any {
+			return error('Goal tasks must contain objects')
+		}
+		task_permissions_present << ('permissions' in (value as map[string]json2.Any))
+	}
+	if goal.schema_version == 1 && (has_ceiling || task_permissions_present.any(it)) {
+		return error('Goal permission declarations require schema_version 2')
+	}
+	if goal.schema_version == 2 && (!has_ceiling || task_permissions_present.any(!it)) {
+		return error('Goal v2 requires policy_ceiling and permissions on every task')
+	}
 }
 
 fn validate_goal_tasks(tasks []GoalTask, repositories map[string]bool) ! {
@@ -222,8 +308,11 @@ fn (mut store Store) admit_goal(goal GoalAdmission) !GoalAdmissionResult {
 		store.db.commit()!
 		return if rows[0].val(0) == manifest { .replayed } else { .conflict }
 	}
-	store.db.exec_param_many('INSERT INTO goal_admissions (id, title, manifest) VALUES (?, ?, ?)',
-		[goal.id, goal.title, manifest])!
+	store.db.exec_param_many('INSERT INTO goal_admissions (id, title, manifest) VALUES (?, ?, ?)', [
+		goal.id,
+		goal.title,
+		manifest,
+	])!
 	seed_goal_task_state(mut store.db, goal)!
 	store.db.commit()!
 	return .created
@@ -249,7 +338,10 @@ pub fn (app &App) admit_goal(mut ctx Context) veb.Result {
 		return json_request_error(mut ctx, 'Goal manifest exceeds 1 MiB')
 	}
 	goal := json2.decode[GoalAdmission](ctx.req.data) or {
-		return json_request_error(mut ctx, 'Expected a Goal v1 JSON object')
+		return json_request_error(mut ctx, 'Expected a Goal v1 or v2 JSON object')
+	}
+	validate_goal_permission_json_fields(ctx.req.data, goal) or {
+		return json_request_error(mut ctx, err.msg())
 	}
 	validate_goal_admission(goal) or { return json_request_error(mut ctx, err.msg()) }
 	mut store := app.store

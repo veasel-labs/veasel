@@ -61,6 +61,9 @@ fn test_goal_task_projection_is_stable_topological_order() {
 	assert first.tasks.map(it.status) == ['pending', 'pending', 'pending', 'pending']
 	assert first.tasks[3].depends_on == ['m-middle', 'a-start']
 	assert first.tasks.map(it.id) == second.tasks.map(it.id)
+	encoded := json2.encode(first)
+	assert !encoded.contains('policy_ceiling')
+	assert !encoded.contains('permissions')
 }
 
 fn test_goal_task_projection_rejects_cycles_and_preserves_large_admitted_graphs() {

@@ -64,6 +64,9 @@ pub fn (app &App) start_goal_task(mut ctx Context, id string, task_id string) ve
 		ctx.res.set_status(.not_found)
 		return ctx.json(APIError{ error: 'Goal task not found' })
 	}
+	goal_task_dispatch_policy_supported(goal) or {
+		return json_conflict_error(mut ctx, err.msg())
+	}
 	capabilities := resolve_goal_task_dispatch_capabilities(task, request.permission_mode) or {
 		return json_conflict_error(mut ctx, 'Goal task capability preflight failed: ${err.msg()}')
 	}
@@ -103,8 +106,7 @@ pub fn (app &App) start_goal_task(mut ctx Context, id string, task_id string) ve
 	mut uncertain := true
 	defer {
 		if uncertain {
-			store.complete_linked_goal_task_attempt(id, task_id, claim.state.attempt_count,
-				claim.fencing_token, .uncertain) or {}
+			store.complete_linked_goal_task_attempt(id, task_id, claim.state.attempt_count, claim.fencing_token, .uncertain) or {}
 		}
 	}
 	worktree := store.prepare_goal_task_attempt_worktree(id, task_id, claim) or {
@@ -124,8 +126,7 @@ pub fn (app &App) start_goal_task(mut ctx Context, id string, task_id string) ve
 		return json_server_error(mut ctx, 'Unable to create task session')
 	}
 	request_json := json2.encode[ChatMessageInput](ChatMessageInput{ content: request.prompt })
-	operation_id := store.attach_goal_task_attempt_session(id, task_id, claim.state.attempt_count,
-		claim.fencing_token, session.id, request_json) or {
+	operation_id := store.attach_goal_task_attempt_session(id, task_id, claim.state.attempt_count, claim.fencing_token, session.id, request_json) or {
 		return json_server_error(mut ctx, 'Unable to link task session operation')
 	}
 	uncertain = false
@@ -143,4 +144,10 @@ pub fn (app &App) start_goal_task(mut ctx Context, id string, task_id string) ve
 		base_sha:         worktree.base_sha
 		operation_status: 'queued'
 	})
+}
+
+fn goal_task_dispatch_policy_supported(goal GoalAdmission) ! {
+	if goal.schema_version == 2 {
+		return error('Goal v2 dispatch is disabled until task permissions are enforced by the runtime')
+	}
 }

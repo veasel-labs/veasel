@@ -140,11 +140,26 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   request was explicitly denied; the fixture workspace remained unchanged.
   The sanitized receipt is retained outside the repository at
   `/home/ulisesjcf/.cache/veasel-validation/acceptance-v0.111.0-next.0/tui-approval-denial.json`.
-  The current worktree adds bounded correlation of Codex v2
+  A second run on 2026-11-27 used the official immutable `v0.114.0-next.0`
+  standalone TUI and CLI/runtime release assets in a fresh temporary HOME,
+  data directory, loopback port, and disposable Git repository. SHA-256 checks
+  matched the release manifest. The packaged TUI discovered installed
+  `codex-cli 0.172.0` authenticated with ChatGPT, used `gpt-6.2-sol` in `ask`
+  mode, displayed a non-empty exact Bash proposal in its live review, and
+  approving it completed a real repository edit. Independent filesystem and
+  Git checks confirmed the exact added README line, one insertion, and a clean
+  `git diff --check`. The subsequent rejection attempt cancelled its turn
+  before a denial outcome could be observed; rejection semantics remain
+  unverified in this packaged real-provider journey. Temporary copied native
+  authentication and API-token files were removed during teardown. This proves
+  one approved packaged TUI coding edit, not installed Desktop parity or full
+  daily-driver acceptance.
+  Merged PR #860 adds bounded correlation of Codex v2
   `item/fileChange/patchUpdated` snapshots to approval by exact thread, turn,
   and item IDs, and denies malformed, stale, missing, or oversized snapshots.
-  This local change is not yet merged, packaged, or verified by the pinned V
-  compiler; CI and a repeat packaged approval review remain required.
+  That change is in main but is not yet included in the tested `v0.114.0-next.0`
+  package; a repeat packaged approval and rejection review against a release
+  containing it remains required.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under

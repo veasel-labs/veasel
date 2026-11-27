@@ -289,12 +289,14 @@ fn test_goal_task_candidate_observer_rejects_scoped_ancestor_symlink() {
 		1024) or { panic(err) }
 	task := GoalTask{
 		base_sha:   fixture.commit
-		paths:      ['docs/README.md']
+		paths:      ['docs']
 		repository: 'owner/repo'
 	}
 	if _ := observe_goal_task_candidate(GoalTaskWorktree{ ...worktree, status: 'ready' }, task,
 		candidate.trim_space(), time.now().add(max_goal_preflight_elapsed)) {
 		assert false, 'accepted a scoped ancestor symlink candidate'
+	} else {
+		assert err.msg().contains('symlink or gitlink'), err.msg()
 	}
 }
 

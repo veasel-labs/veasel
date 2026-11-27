@@ -1107,11 +1107,15 @@ completed worker candidate for retry, accepts `completed_with_denials` for
 independent review, resumes bound queued reviewers, and re-fences one only
 after confirming its lease expired and it never started. Dispatch defers rather
 than failing a Goal task when the per-session active subagent limit is reached.
-Focused candidate, receipt, lease-recovery, and subagent preparation tests pass.
-Still open: an end-to-end automatic dispatch-to-receipt test, executable
-acceptance policy/checks, and the atomic `verified` to `succeeded` acceptance
-transition. Provider/model lineage independence and actual CLI sandbox behavior
-also need stronger evidence than route identity and local mode selection.
+An end-to-end test now completes a real parent session provider turn, observes
+automatic reviewer dispatch and receipt-backed `verified`, and runs concurrent
+recovery scans while the reviewer is active to prove they do not launch a
+duplicate. The fixture uses only a local HTTP provider and isolated Git
+checkouts. Still open:
+executable acceptance policy/checks and the atomic `verified` to `succeeded`
+acceptance transition. Provider/model lineage independence and actual CLI
+sandbox behavior also need stronger evidence than route identity and local
+mode selection.
 
 - [x] Publish a versioned Toolkit Goal v1/task/evidence contract with an offline
   validator and planner for authorized repositories, acceptance criteria,

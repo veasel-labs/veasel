@@ -30,7 +30,18 @@ fn observe_goal_task_candidate(worktree GoalTaskWorktree, task GoalTask,
 		return error('goal task candidate worktree is not a canonical directory')
 	}
 	canonical_path := os.real_path(worktree.path)
-	if canonical_path != worktree.path || goal_task_path_is_within(worktree.repository_root, canonical_path) {
+	if !goal_candidate_paths_equal(canonical_path, worktree.path) {
+		return error('goal task candidate worktree is not canonical')
+	}
+	if !os.is_abs_path(worktree.repository_root) || os.is_link(worktree.repository_root)
+		|| !os.is_dir(worktree.repository_root) {
+		return error('goal task candidate repository root is not a canonical directory')
+	}
+	canonical_repository_root := os.real_path(worktree.repository_root)
+	if !goal_candidate_paths_equal(canonical_repository_root, worktree.repository_root) {
+		return error('goal task candidate repository root is not canonical')
+	}
+	if goal_task_path_is_within(canonical_repository_root, canonical_path) {
 		return error('goal task candidate worktree is not isolated')
 	}
 	for path in task.paths {
@@ -41,7 +52,7 @@ fn observe_goal_task_candidate(worktree GoalTaskWorktree, task GoalTask,
 	root := run_goal_git_command_output_until(canonical_path,
 		['--no-replace-objects', 'rev-parse', '--show-toplevel'], max_goal_git_output_bytes,
 		deadline) or { return error('unable to inspect goal task candidate worktree') }
-	if os.real_path(root.trim_space()) != canonical_path {
+	if !goal_candidate_paths_equal(os.real_path(root.trim_space()), canonical_path) {
 		return error('goal task candidate worktree Git root does not match the persisted path')
 	}
 	resolved := run_goal_git_command_output_until(canonical_path,
@@ -66,6 +77,7 @@ fn observe_goal_task_candidate(worktree GoalTaskWorktree, task GoalTask,
 		if !goal_candidate_path_in_scope(path, task.paths) {
 			return error('goal task candidate changes path outside the admitted scope: ${path}')
 		}
+		goal_candidate_tree_path_is_safe(canonical_path, candidate_sha, path, deadline)!
 	}
 	first_status := goal_candidate_worktree_status(canonical_path, deadline)!
 	if first_status.len != 0 {
@@ -80,6 +92,40 @@ fn observe_goal_task_candidate(worktree GoalTaskWorktree, task GoalTask,
 		base_sha:      worktree.base_sha
 		candidate_sha: candidate_sha
 		changed_paths: changed_paths
+	}
+}
+
+fn goal_candidate_paths_equal(left string, right string) bool {
+	return goal_task_path_is_within(left, right) && goal_task_path_is_within(right, left)
+}
+
+// goal_candidate_tree_path_is_safe checks every tree prefix for the candidate
+// commit. A changed path name alone is insufficient: a candidate can replace a
+// scoped file or directory with a symlink or gitlink and thereby escape the
+// admitted scope for later consumers.
+fn goal_candidate_tree_path_is_safe(worktree_path string, candidate_sha string, path string,
+	deadline time.Time) ! {
+	mut prefix := ''
+	segments := path.split('/')
+	for index, segment in segments {
+		prefix = if prefix.len == 0 { segment } else { '${prefix}/${segment}' }
+		entry_output := run_goal_git_command_output_until(worktree_path,
+			['--no-replace-objects', 'ls-tree', '-z', candidate_sha, '--', ':(literal)${prefix}'], max_goal_git_output_bytes, deadline)!
+		if entry_output.len == 0 {
+			break
+		}
+		entry := entry_output.split('\0')[0]
+		tab := entry.index('\t') or { return error('candidate Git tree entry is malformed') }
+		metadata := entry[..tab].split(' ')
+		if metadata.len < 2 {
+			return error('candidate Git tree entry is malformed')
+		}
+		if metadata[0] in ['120000', '160000'] {
+			return error('goal task candidate scope contains a symlink or gitlink')
+		}
+		if index < segments.len - 1 && metadata[1] != 'tree' {
+			return error('candidate Git tree path parent is not a directory')
+		}
 	}
 }
 

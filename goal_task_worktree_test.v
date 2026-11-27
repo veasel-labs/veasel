@@ -211,6 +211,52 @@ fn test_goal_task_candidate_observer_rejects_dirty_and_out_of_scope_commits() {
 	}
 }
 
+fn test_goal_task_candidate_observer_rejects_scoped_symlink_and_malformed_root() {
+	fixture := new_goal_task_worktree_fixture('https://github.com/owner/repo.git') or {
+		panic(err)
+	}
+	defer { os.rmdir_all(os.dir(fixture.root)) or {} }
+	outside := os.join_path(os.dir(fixture.root), 'outside-target')
+	os.write_file(outside, 'outside') or { panic(err) }
+	worktree_path := os.join_path(os.dir(fixture.root), 'candidate-observer-symlink')
+	worktree := create_goal_task_worktree(fixture.root, GoalTaskWorktree{
+		goal_id:         'candidate-goal'
+		task_id:         'prepare'
+		attempt:         1
+		repository_root: fixture.root
+		path:            worktree_path
+		base_sha:        fixture.commit
+		status:          'preparing'
+	}) or { panic(err) }
+	os.rm(os.join_path(worktree.path, 'docs/README.md')) or { panic(err) }
+	os.symlink(outside, os.join_path(worktree.path, 'docs/README.md')) or { panic(err) }
+	_ = run_workspace_git_command_output(worktree.path, ['add', '--', 'docs/README.md'], 1024) or {
+		panic(err)
+	}
+	_ = run_workspace_git_command_output(worktree.path,
+		['-c', 'commit.gpgsign=false', 'commit', '--no-gpg-sign', '-m', 'scoped symlink'], 1024) or {
+		panic(err)
+	}
+	candidate := run_workspace_git_command_output(worktree.path, ['rev-parse', '--verify', 'HEAD'],
+		1024) or { panic(err) }
+	task := GoalTask{
+		base_sha:   fixture.commit
+		paths:      ['docs/README.md']
+		repository: 'owner/repo'
+	}
+	if _ := observe_goal_task_candidate(GoalTaskWorktree{ ...worktree, status: 'ready' }, task,
+		candidate.trim_space(), time.now().add(max_goal_preflight_elapsed)) {
+		assert false, 'accepted a scoped symlink candidate'
+	}
+	if _ := observe_goal_task_candidate(GoalTaskWorktree{
+		...worktree
+		repository_root: 'relative/repository'
+		status:          'ready'
+	}, task, candidate.trim_space(), time.now().add(max_goal_preflight_elapsed)) {
+		assert false, 'accepted a malformed persisted repository root'
+	}
+}
+
 fn test_goal_task_candidate_observer_rejects_base_and_nonexistent_candidate() {
 	fixture := new_goal_task_worktree_fixture('https://github.com/owner/repo.git') or {
 		panic(err)

@@ -22,7 +22,7 @@
     "desktop_entry_paths_consistent": true
   },
   "packaged_shared_listener": {
-    "evidence_file": "/home/ulisesjcf/.cache/veasel-validation/v0.108.1-next.0/packaged-smoke/summary.json",
+    "evidence_file": "~/.cache/veasel-validation/v0.108.1-next.0/packaged-smoke/summary.json",
     "appimage_first": "passed",
     "tui_first": "passed",
     "both_clients_visible": true,

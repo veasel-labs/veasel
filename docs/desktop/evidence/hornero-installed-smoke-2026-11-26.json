@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-26",
+  "host": "HorneroOS Linux",
+  "release": {
+    "tag": "v0.107.0-next.0",
+    "source_commit": "495f57cbc8208e51955ee6c53f2f8ff4f5cad086",
+    "desktop_appimage_release_sha256": "7e4f49a6dff786aacd2c82b13aaf4f649bf517307cb7011c41850c015c0d5eb1",
+    "cli_archive_sha256": "cd8a537d5ea19a2eeb8e4fb87554105b5d3c6e4a86c26423e9fa3c1d26016f12",
+    "installed_cli_sha256": "6baa9e05df222e58ed9124d8c40c3fb84a4089fd33ee9578060ab82c4c2e21f5",
+    "installed_cli_reported_version": "Veasel Code 0.107.0-next.0",
+    "installed_tui_sha256": "20696f2795206c94cd55143f460fd8146c59f9552f9f06ce4af3dbced1a0777e",
+    "installed_tui_reported_version": "Veasel Code Terminal 0.107.0-next.0",
+    "installed_desktop_executable_sha256": "0a009921284b3e0324b658a3f23e8c9b846fb9bb7fa52dbd3d5155beb958ec4c"
+  },
+  "desktop": {
+    "launched": true,
+    "backend_health_http_status": 200,
+    "backend_data_profile": "temporary isolated profile",
+    "desktop_entry_points_to_current_release": true,
+    "desktop_entry_valid": true,
+    "provider_discovery": {
+      "codex_installed": true,
+      "codex_cli_version": "codex-cli 0.172.0",
+      "native_auth_state": "verified",
+      "auth_method": "chatgpt",
+      "launchable": true
+    }
+  },
+  "desktop_composer_smoke": {
+    "workspace": "Veasel repository worktree",
+    "entry_point": "Desktop Focus new-session form",
+    "project_selection": "preselected from the isolated Desktop profile's remembered folders",
+    "provider": "codex",
+    "permission_mode": "plan",
+    "operation_status": "completed",
+    "task": "Read README.md and report its first Markdown heading exactly; no shell commands, network access, or file edits requested.",
+    "result": "The authenticated Codex CLI returned '## Start here', matching the first Markdown heading in README.md.",
+    "worktree_clean_afterward": true
+  },
+  "tui": {
+    "tui_launched": true,
+    "tui_connected_to_same_backend_profile": true,
+    "tui_observed_shared_session_count": 1,
+    "shared_session_created_via": "Desktop Focus composer"
+  },
+  "limitations": [
+    "The Desktop composer flow used a project path already remembered in the isolated profile; the native folder picker was not exercised in this run.",
+    "The installed package is a prerelease; stable release and downstream distribution synchronization remain outstanding.",
+    "This smoke does not establish verified native authentication for every installed provider or full daily-driver acceptance."
+  ]
+}

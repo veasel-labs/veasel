@@ -82,6 +82,22 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   not acceptance of the current `v0.103.3-next.0` package. Attach the exact
   installed/executed version, source and workspace SHAs, session, permissions,
   and receipts for any repeat.
+- HorneroOS smoke on 2026-11-26 used installed `v0.107.0-next.0` Desktop and
+  TUI builds with an isolated temporary backend profile. The AppImage and CLI
+  archive SHA-256 values matched the published release manifest, and both
+  installed version commands reported `0.107.0-next.0`. Desktop health was
+  HTTP 200 and native discovery verified the installed Codex CLI. The Desktop
+  Focus composer submitted a read-only `plan` task to Codex; it returned the first Markdown
+  heading in `README.md` exactly (`## Start here`). The TUI connected to the
+  same backend profile and observed that shared session. The repository
+  worktree stayed clean. The stale Desktop launcher now points to the extracted
+  `v0.107.0-next.0` AppDir and passes `desktop-file-validate`.
+  Evidence and installed executable hashes are recorded in
+  [`desktop/evidence/hornero-installed-smoke-2026-11-26.json`](desktop/evidence/hornero-installed-smoke-2026-11-26.json).
+  This does not complete daily-driver acceptance: the project path was already
+  remembered by the isolated profile so the native folder picker was not
+  exercised, the installed build is still a prerelease, and the host's other
+  native provider checks remain partly unknown.
 
 ### Optional cozy World (#693)
 
@@ -152,13 +168,12 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Link claimed attempts to the existing operation lifecycle (PR #840).
   Runner and verifier resolution, policy enforcement, dispatch and UI remain
   separate milestones.
-- [ ] Prepare an isolated, clean worktree for each claimed task at its exact
-  admitted full base SHA. PR #841 adds fail-closed checkout
-  revalidation, repository-config refusal, collision and symlink checks,
-  durable attempt/worktree identity, and uncertain recovery; focused tests pass
-  in the development compiler. This PR remains unmerged and does not launch an
-  agent. Expose no public start/claim path until the full dispatch acceptance
-  gates below are implemented.
+- [x] Prepare an isolated, clean worktree for each claimed task at its exact
+  admitted full base SHA (PR #841, merged at `22574497`). The implementation
+  adds fail-closed checkout revalidation, repository-config refusal, collision
+  and symlink checks, durable attempt/worktree identity, and uncertain recovery.
+  It does not launch an agent or expose a public dispatch path; dispatch
+  acceptance gates below remain incomplete.
 - [ ] Surface goals, review requests and evidence in TUI and Desktop. Run
   progressive concurrency acceptance with live agents and independent review.
 - [x] Integrate the authenticated deterministic task projection (PR #831). It

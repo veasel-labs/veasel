@@ -1,5 +1,7 @@
 module main
 
+import x.json2
+
 // Fixture frames mirror tests/focus_reference/testing/fake-codex.mjs
 // (copied verbatim in PR #697 from agent-toolkit@ac2cd125).
 
@@ -39,6 +41,104 @@ fn test_parse_codex_turn_lifecycle_and_approvals() {
 	question := parse_codex_cli_line('{"id":"question","method":"item/tool/requestUserInput","params":{"threadId":"parent","turnId":"turn-1","itemId":"q"}}',
 		'parent')
 	assert question.kind == 'user_input_request'
+}
+
+fn test_parse_codex_v2_file_change_patch_updates_as_bounded_review_data() {
+	updated := parse_codex_cli_line('{"method":"item/fileChange/patchUpdated","params":{"threadId":"parent","turnId":"turn-1","itemId":"edit-1","changes":[{"path":"src/main.v","kind":{"type":"update","movePath":null},"diff":"@@ -1 +1 @@\\n-old\\n+new"}]}}',
+		'parent')
+	assert updated.kind == 'patch_updated'
+	assert updated.thread_id == 'parent'
+	assert updated.turn_id == 'turn-1'
+	assert updated.item_id == 'edit-1'
+	assert updated.review_json.contains('"path":"src/main.v"')
+	assert updated.review_json.contains('+new')
+	null_kind := parse_codex_cli_line('{"method":"item/fileChange/patchUpdated","params":{"threadId":"parent","turnId":"turn-1","itemId":"edit-null-kind","changes":[{"path":"src/main.v","kind":null,"diff":"@@ -1 +1 @@"}]}}',
+		'parent')
+	assert null_kind.review_json == ''
+
+	assert codex_patch_change_kind(json2.Any({
+		'type': json2.Any('add')
+	})) != none
+	assert codex_patch_change_kind(json2.Any({
+		'type': json2.Any('delete')
+	})) != none
+	assert codex_patch_change_kind(json2.Any({
+		'type':     json2.Any('update')
+		'movePath': json2.Any('src/old.v')
+	})) != none
+	assert codex_patch_change_kind(json2.Any({
+		'type':     json2.Any('update')
+		'movePath': json2.Any('null')
+	})) != none
+	assert codex_patch_change_kind(json2.Any('update')) == none
+	assert codex_patch_change_kind(json2.Any({
+		'type': json2.Any('unknown')
+	})) == none
+	assert codex_patch_change_kind(json2.Any({
+		'type':     json2.Any('update')
+		'movePath': json2.Any(42)
+	})) == none
+
+	missing_identity := codex_patch_updated_review({
+		'threadId': json2.Any('parent')
+		'turnId':   json2.Any('turn-1')
+		'changes':  json2.Any([]json2.Any{})
+	})
+	assert missing_identity == ''
+	no_changes := codex_patch_updated_review({
+		'threadId': json2.Any('parent')
+		'turnId':   json2.Any('turn-1')
+		'itemId':   json2.Any('edit-1')
+		'changes':  json2.Any([]json2.Any{})
+	})
+	assert no_changes == ''
+	oversized := codex_patch_updated_review({
+		'threadId': json2.Any('parent')
+		'turnId':   json2.Any('turn-1')
+		'itemId':   json2.Any('edit-1')
+		'changes':  json2.Any([json2.Any({
+			'path': json2.Any('src/main.v')
+			'kind': json2.Any('update')
+			'diff': json2.Any('x'.repeat(codex_file_review_max_field_bytes + 1))
+		})])
+	})
+	assert oversized == ''
+	for malformed_kind in [json2.Any('update'), json2.Any({
+		'type': json2.Any('bogus')
+	}), json2.Any({
+		'type':     json2.Any('update')
+		'movePath': json2.Any(42)
+	})] {
+		malformed := codex_patch_updated_review({
+			'threadId': json2.Any('parent')
+			'turnId':   json2.Any('turn-1')
+			'itemId':   json2.Any('edit-1')
+			'changes':  json2.Any([json2.Any({
+				'path': json2.Any('src/main.v')
+				'kind': malformed_kind
+				'diff': json2.Any('@@ -1 +1 @@')
+			})])
+		})
+		assert malformed == ''
+	}
+	wrong_item := codex_file_approval_review({
+		'threadId': json2.Any('parent')
+		'turnId':   json2.Any('turn-1')
+		'itemId':   json2.Any('other-edit')
+	}, updated.review_json)
+	assert wrong_item == ''
+	wrong_turn := codex_file_approval_review({
+		'threadId': json2.Any('parent')
+		'turnId':   json2.Any('stale-turn')
+		'itemId':   json2.Any('edit-1')
+	}, updated.review_json)
+	assert wrong_turn == ''
+	wrong_thread := codex_file_approval_review({
+		'threadId': json2.Any('child')
+		'turnId':   json2.Any('turn-1')
+		'itemId':   json2.Any('edit-1')
+	}, updated.review_json)
+	assert wrong_thread == ''
 }
 
 fn test_parse_codex_native_effect_items_without_retaining_payloads() {

@@ -62,6 +62,23 @@ fn codex_rpc_request(id int, method string, params string) string {
 	return '{"id":${id},"method":"${method}","params":${params}}'
 }
 
+fn codex_file_review_turn_prefix(thread_id string, turn_id string) string {
+	return '${thread_id.len}:${thread_id}${turn_id.len}:${turn_id}'
+}
+
+fn codex_file_review_key(thread_id string, turn_id string, item_id string) string {
+	return '${codex_file_review_turn_prefix(thread_id, turn_id)}${item_id.len}:${item_id}'
+}
+
+fn codex_file_review_clear_turn(mut patch_reviews map[string]string, thread_id string, turn_id string) {
+	prefix := codex_file_review_turn_prefix(thread_id, turn_id)
+	for key in patch_reviews.keys() {
+		if key.starts_with(prefix) {
+			patch_reviews.delete(key)
+		}
+	}
+}
+
 // run_codex_cli_turn runs one user turn to its turn/completed frame.
 // Returns an error only for spawn/timeout/transport failures;
 // provider-reported turn failure is outcome='failed'.
@@ -83,7 +100,8 @@ pub fn run_codex_cli_turn_cancellable(command string, cwd string, permission_mod
 
 // run_codex_cli_turn_cancellable_observed also reduces the effect-bearing
 // Codex app-server item lifecycle into redacted durable turn facts. Raw
-// command arguments, output, and file patch payloads are never retained.
+// command arguments and output never enter those facts or outcome receipts;
+// v2 file patch contents are retained only as bounded approval-review JSON.
 pub fn run_codex_cli_turn_cancellable_observed(command string, cwd string, permission_mode string,
 	model string, resume_thread_id string, user_text string, timeout_ms int,
 	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn, cancel CliCancelFn,
@@ -123,6 +141,7 @@ pub fn run_codex_cli_turn_cancellable_observed(command string, cwd string, permi
 	mut resolved_model := model
 	mut approvals_denied := 0
 	mut approvals_approved := 0
+	mut patch_reviews := map[string]string{}
 	mut phase := 0 // 0=initialize, 1=thread/start, 2=turn/start, 3=streaming
 	mut buffer := ''
 	for {
@@ -203,7 +222,37 @@ pub fn run_codex_cli_turn_cancellable_observed(command string, cwd string, permi
 				in_scope := (frame_thread.len == 0 || frame_thread == thread_id)
 					&& (frame_turn.len == 0 || turn_id.len == 0 || frame_turn == turn_id)
 				event := parse_codex_cli_line(trimmed, thread_id)
-				events << event
+				// Patch updates are represented only by the bounded active snapshot
+				// below; do not grow the returned event list for every update.
+				if event.kind != 'patch_updated' {
+					events << event
+				}
+				if method == 'item/fileChange/patchUpdated' && phase == 3 {
+					if frame_thread == thread_id && frame_thread.len > 0
+						&& frame_turn == turn_id && frame_turn.len > 0 {
+						raw_item_id := codex_cli_string(params, 'itemId')
+						if event.review_json.len > 0 && raw_item_id.len > 0 {
+							key := codex_file_review_key(frame_thread, frame_turn, raw_item_id)
+							if key in patch_reviews || patch_reviews.len < 128 {
+								patch_reviews[key] = event.review_json
+							}
+						} else if raw_item_id.len > 0 {
+							// An invalid or oversized replacement invalidates an earlier
+							// snapshot for the same operation; never review stale content.
+							key := codex_file_review_key(frame_thread, frame_turn, raw_item_id)
+							patch_reviews.delete(key)
+						} else {
+							// Without an item id the malformed update cannot be associated
+							// with one snapshot; invalidate this turn's whole cache.
+							codex_file_review_clear_turn(mut patch_reviews, thread_id, turn_id)
+						}
+					} else if (frame_thread.len == 0 || frame_thread == thread_id)
+						&& (frame_turn.len == 0 || frame_turn == turn_id) {
+						// Missing identity can describe a malformed replacement for any
+						// active item. Do not leave an earlier snapshot approvable.
+						codex_file_review_clear_turn(mut patch_reviews, thread_id, turn_id)
+					}
+				}
 				if in_scope && phase == 3
 					&& (event.turn_id.len == 0 || turn_id.len == 0 || event.turn_id == turn_id) {
 					match event.kind {
@@ -232,12 +281,36 @@ pub fn run_codex_cli_turn_cancellable_observed(command string, cwd string, permi
 					'execCommandApproval', 'applyPatchApproval'] {
 					if in_scope && phase == 3 {
 						request_id := 'codex-${codex_frame_id_json(frame).trim('"')}'
-						tool_name := method.all_after_last('/')
-						input_json := json2.encode(params)
 						approval_category := if method.contains('fileChange') || method == 'applyPatchApproval' {
 							'Edit'
 						} else {
 							'Bash'
+						}
+						tool_name := approval_category
+						is_v2_file_change := method == 'item/fileChange/requestApproval'
+						mut input_json := json2.encode(params)
+						if is_v2_file_change {
+							item_id := codex_cli_string(params, 'itemId')
+							key := codex_file_review_key(frame_thread, frame_turn, item_id)
+							patch_review := patch_reviews[key] or { '' }
+							input_json = if frame_thread == thread_id && frame_thread.len > 0
+								&& frame_turn == turn_id && frame_turn.len > 0 && item_id.len > 0 {
+								codex_file_approval_review(params, patch_review)
+							} else {
+								''
+							}
+							patch_reviews.delete(key)
+							if input_json.len == 0 {
+								// Approval params do not contain the patch itself. Without a
+								// complete, exactly correlated patchUpdated snapshot, refuse.
+								process.stdin_write('{"id":${codex_frame_id_json(frame)},"result":{"decision":"${codex_deny_decision(codex_available_decisions(params))}"}}' +
+									'\n')
+								if observed != unsafe { nil } {
+									observed.note_approval('Edit', 'denied')
+								}
+								approvals_denied++
+								continue
+							}
 						}
 						if decide(request_id, tool_name, input_json) {
 							available := codex_available_decisions(params)

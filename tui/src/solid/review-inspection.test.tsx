@@ -78,7 +78,7 @@ test("installed CLI approval requires inspection and allows only one request per
     session_id: "session",
     request_id: "request-1",
     tool_name: "Edit",
-    input_json: '{"path":"src/a.ts","text":"safe"}',
+    input_json: '{"threadId":"parent","turnId":"turn-1","itemId":"edit-1","changes":[{"path":"src/a.ts","kind":{"type":"update","movePath":null},"diff":"@@ -1 +1 @@\\n-old\\n+new"}]}',
     status: "pending",
     created_at: "",
     updated_at: "",
@@ -116,6 +116,7 @@ test("installed CLI approval requires inspection and allows only one request per
     }
     await until("REVIEW INSTALLED CLI TOOL")
     await until('"path":"src/a.ts"')
+    expect(setup.captureCharFrame()).toContain("+new")
     expect(setup.captureCharFrame()).toContain("Approval allows this exact tool request once.")
 
     setup.mockInput.pressKey("a", { shift: true })

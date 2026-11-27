@@ -164,7 +164,7 @@ fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 					row.val(0),
 					row.val(1),
 				])!
-				_ = db.exec_param_many("UPDATE session_operations SET status = 'uncertain', outcome = 'uncertain', error = 'The server stopped before this task attempt reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status IN ('running', 'cancelling')", [
+				_ = db.exec_param_many("UPDATE session_operations SET status = 'uncertain', outcome = 'uncertain', error = 'The server stopped before this task attempt reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status IN ('queued', 'running', 'cancelling')", [
 					row.val(5),
 					row.val(6),
 				])!
@@ -283,7 +283,7 @@ fn (mut store Store) goal_task_states_for_goal(goal_id string) !map[string]GoalT
 // succeeded and whose goal-wide attempt budget has not been exhausted. It is a
 // state transition only; it never starts a worker or performs task effects.
 fn (mut store Store) claim_goal_task(goal_id string, task_id string) !GoalTaskProjectionState {
-	claim := store.claim_goal_task_internal(goal_id, task_id, '')!
+	claim := store.claim_goal_task_internal(goal_id, task_id, '', false)!
 	return claim.state
 }
 
@@ -295,11 +295,18 @@ fn (mut store Store) claim_goal_task_for_session(goal_id string, task_id string,
 	if session_id.trim_space().len == 0 {
 		return error('session identifier is required for linked goal task claim')
 	}
-	return store.claim_goal_task_internal(goal_id, task_id, session_id)
+	return store.claim_goal_task_internal(goal_id, task_id, session_id, false)
+}
+
+// A dispatcher claim deliberately has no session during the short worktree
+// creation window. It is separate from the linked-session API so existing
+// callers cannot accidentally create an unlinked attempt.
+fn (mut store Store) claim_goal_task_for_dispatch(goal_id string, task_id string) !GoalTaskClaim {
+	return store.claim_goal_task_internal(goal_id, task_id, '', true)
 }
 
 fn (mut store Store) claim_goal_task_internal(goal_id string, task_id string,
-	session_id string) !GoalTaskClaim {
+	session_id string, force_fencing bool) !GoalTaskClaim {
 	store.mu.lock()
 	defer { store.mu.unlock() }
 	goal_rows := store.db.exec_param('SELECT manifest FROM goal_admissions WHERE id = ?', goal_id)!
@@ -363,10 +370,12 @@ fn (mut store Store) claim_goal_task_internal(goal_id string, task_id string,
 	])!
 	attempt := attempt_rows[0].val(0)
 	mut session_operation_id := ''
-	mut fencing_token := ''
+	// Every claim gets a fencing token, including the short unlinked window
+	// used by the local dispatcher while it creates the isolated worktree and
+	// session. This prevents a stale dispatcher from attaching an operation.
+	mut fencing_token := if force_fencing || session_id != '' { uuid.new_v4().str() } else { '' }
 	if session_id != '' {
 		session_operation_id = uuid.new_v4().str()
-		fencing_token = uuid.new_v4().str()
 		_ = store.db.exec_param_many("INSERT INTO session_operations (id, session_id, status, request_json, queue_order) VALUES (?, ?, 'running', '', (SELECT COALESCE(MAX(queue_order), 0) + 1 FROM session_operations WHERE session_id = ?))", [
 			session_operation_id,
 			session_id,
@@ -402,6 +411,80 @@ fn (mut store Store) claim_goal_task_internal(goal_id string, task_id string,
 	}
 }
 
+// attach_goal_task_attempt_session closes the dispatcher handoff after the
+// exact-base worktree exists. The session is created by the caller with its
+// directory already pointing at that worktree; this method only links the
+// durable queued operation under the claim's fencing token.
+fn (mut store Store) attach_goal_task_attempt_session(goal_id string, task_id string,
+	attempt int, fencing_token string, session_id string, request_json string) !string {
+	if fencing_token.len == 0 || session_id.len == 0 || request_json.trim_space().len == 0 {
+		return error('goal task dispatch link requires fencing, session and request')
+	}
+	input := json2.decode[ChatMessageInput](request_json) or {
+		return error('goal task dispatch request is invalid')
+	}
+	validate_messages([ChatMessage{ role: 'user', content: input.content }])!
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	store.db.begin()!
+	defer { store.db.rollback() or {} }
+	rows := store.db.exec_param_many('SELECT status, session_id, session_operation_id, fencing_token FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	if rows.len != 1 || rows[0].val(0) != 'running' || rows[0].val(3) != fencing_token
+		|| rows[0].val(1) != '' || rows[0].val(2) != '' {
+		return error('goal task attempt is stale or already linked')
+	}
+	workspaces := store.db.exec_param_many("SELECT worktree_path FROM goal_task_attempt_workspaces WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'ready'", [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	if workspaces.len != 1 {
+		return error('goal task attempt workspace is not ready')
+	}
+	sessions := store.db.exec_param('SELECT directory FROM sessions WHERE id = ?', session_id)!
+	if sessions.len != 1 {
+		return error('session not found')
+	}
+	if sessions[0].val(0) != workspaces[0].val(0) {
+		return error('goal task session directory does not match its isolated worktree')
+	}
+	operation_id := uuid.new_v4().str()
+	store.db.exec_param_many("INSERT INTO session_operations (id, session_id, status, request_json, queue_order) VALUES (?, ?, 'queued', ?, (SELECT COALESCE(MAX(queue_order), 0) + 1 FROM session_operations WHERE session_id = ?))", [
+		operation_id,
+		session_id,
+		request_json,
+		session_id,
+	])!
+	store.db.exec_param_many("UPDATE goal_task_attempts SET session_id = ?, session_operation_id = ? WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running' AND fencing_token = ?", [
+		session_id,
+		operation_id,
+		goal_id,
+		task_id,
+		attempt.str(),
+		fencing_token,
+	])!
+	if store.db.get_affected_rows_count() != 1 {
+		return error('goal task attempt changed while linking session')
+	}
+	store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'goal.task_attempt_started',
+		session_id,
+		json2.encode[GoalTaskEventData](GoalTaskEventData{
+			goal_id:      goal_id
+			task_id:      task_id
+			attempt:      attempt
+			operation_id: operation_id
+			status:       'queued'
+		}),
+	])!
+	store.db.commit()!
+	return operation_id
+}
+
 // complete_goal_task_attempt records an explicit result. Failed attempts return
 // the task to pending while budget remains; uncertain results are never retried.
 fn (mut store Store) complete_goal_task_attempt(goal_id string, task_id string, attempt int, result GoalTaskResult) ! {
@@ -415,6 +498,22 @@ fn (mut store Store) complete_linked_goal_task_attempt(goal_id string, task_id s
 	}
 	return store.complete_goal_task_attempt_internal(goal_id, task_id, attempt, fencing_token,
 		result)
+}
+
+// reconcile_goal_task_operation closes a dispatched attempt when the canonical
+// session worker records its terminal operation result. Missing links are a
+// no-op so ordinary session turns retain their existing behavior.
+fn (mut store Store) reconcile_goal_task_operation(operation_id string, result GoalTaskResult) ! {
+	store.mu.lock()
+	rows := store.db.exec_param("SELECT goal_id, task_id, attempt, fencing_token FROM goal_task_attempts WHERE session_operation_id = ? AND status = 'running'", operation_id) or {
+		store.mu.unlock()
+		return err
+	}
+	store.mu.unlock()
+	if rows.len == 0 {
+		return
+	}
+	return store.complete_linked_goal_task_attempt(rows[0].val(0), rows[0].val(1), rows[0].val(2).int(), rows[0].val(3), result)
 }
 
 fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id string,
@@ -457,16 +556,27 @@ fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id
 		}
 		sessions := store.db.exec_param_many('SELECT id FROM sessions WHERE id = ?', [linked[0].val(0)])!
 		if sessions.len > 0 {
-			_ = store.db.exec_param_many("UPDATE session_operations SET status = ?, outcome = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'running'", [
-				op_status,
-				op_outcome,
-				if result == .uncertain { 'The task attempt result is uncertain.' } else { '' },
+			operations := store.db.exec_param_many('SELECT status FROM session_operations WHERE session_id = ? AND id = ?', [
 				linked[0].val(0),
 				linked[0].val(1),
 			])!
-			if store.db.get_affected_rows_count() != 1 {
-				return error('linked session operation is not running')
+			if operations.len != 1 {
+				return error('linked goal task session operation not found')
 			}
+			if operations[0].val(0) in ['queued', 'running', 'cancelling'] {
+				_ = store.db.exec_param_many("UPDATE session_operations SET status = ?, outcome = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status IN ('queued', 'running', 'cancelling')", [
+					op_status,
+					op_outcome,
+					if result == .uncertain { 'The task attempt result is uncertain.' } else { '' },
+					linked[0].val(0),
+					linked[0].val(1),
+				])!
+			} else if operations[0].val(0) !in ['completed', 'failed', 'uncertain', 'cancelled'] {
+				return error('linked goal task session operation has an invalid status')
+			}
+			// The canonical session worker may have already recorded the terminal
+			// operation outcome. In that case only the goal attempt transition is
+			// still needed.
 			_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
 				'goal.task_attempt_completed',
 				linked[0].val(0),
@@ -485,8 +595,6 @@ fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id
 				}),
 			])!
 		}
-	} else if fencing_token != '' {
-		return error('linked session operation not found')
 	}
 	goal_rows := store.db.exec_param('SELECT manifest FROM goal_admissions WHERE id = ?', goal_id)!
 	if goal_rows.len == 0 {
@@ -516,6 +624,13 @@ fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id
 	])!
 	if store.db.get_affected_rows_count() != 1 {
 		return error('goal task is not running')
+	}
+	if result == .uncertain {
+		_ = store.db.exec_param_many("UPDATE goal_task_attempt_workspaces SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status IN ('preparing', 'ready')", [
+			goal_id,
+			task_id,
+			attempt.str(),
+		])!
 	}
 	store.db.commit()!
 }

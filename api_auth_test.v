@@ -434,6 +434,7 @@ fn test_every_declared_route_rejects_unauthenticated_requests_and_runs_no_handle
 	assert 'GET /v1/goals/canary/preflight' in routes
 	assert 'GET /v1/goals/canary' in routes
 	assert 'GET /v1/goals/canary/tasks' in routes
+	assert 'POST /v1/goals/canary/tasks/canary/start' in routes
 	admission_rows := store.admitted_goals() or { panic(err) }
 	assert admission_rows.len == 0
 	auth_test_goal_round_trip(port, token)

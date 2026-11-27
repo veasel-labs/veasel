@@ -79,6 +79,26 @@ fn codex_cli_map(values map[string]json2.Any, key string) map[string]json2.Any {
 	return map[string]json2.Any{}
 }
 
+fn codex_item_type_is_non_effect(item_type string) bool {
+	return item_type in ['userMessage', 'agentMessage', 'hookPrompt', 'plan', 'reasoning', 'webSearch',
+		'imageView', 'enteredReviewMode', 'exitedReviewMode', 'contextCompaction']
+}
+
+fn codex_item_is_non_effect(item map[string]json2.Any) bool {
+	item_type := codex_cli_string(item, 'type')
+	if codex_item_type_is_non_effect(item_type) {
+		return true
+	}
+	// Codex's pinned TurnItem contract serializes clock.sleep as an Extension
+	// with kind `clock.sleep`; other extension items remain untracked.
+	return item_type in ['Extension', 'extension'] && codex_cli_string(item, 'kind') == 'clock.sleep'
+}
+
+fn codex_item_type_is_untracked_effect(item_type string) bool {
+	return item_type in ['mcpToolCall', 'dynamicToolCall', 'collabAgentToolCall', 'imageGeneration',
+		'functionCallOutput', 'subAgentActivity']
+}
+
 // parse_codex_cli_line maps one JSON-RPC line for the given parent thread
 // to a canonical event. Frames for other (child/native-agent) threads and
 // malformed lines become kind 'other': child output must never leak into
@@ -127,7 +147,7 @@ pub fn parse_codex_cli_line(line string, parent_thread_id string) CodexCliEvent 
 				'fileChange' { 'Edit' }
 				else { '' }
 			}
-			if item_type in ['mcpToolCall', 'dynamicToolCall', 'collabAgentToolCall', 'imageGeneration'] {
+			if codex_item_type_is_untracked_effect(item_type) {
 				return CodexCliEvent{
 					...event
 					kind:    'untracked_tool'
@@ -135,8 +155,20 @@ pub fn parse_codex_cli_line(line string, parent_thread_id string) CodexCliEvent 
 				}
 			}
 			if tool_name.len == 0 {
+				if codex_item_is_non_effect(item) {
+					return CodexCliEvent{
+						...event
+						kind: 'other'
+					}
+				}
 				return CodexCliEvent{
-					kind: 'other'
+					...event
+					kind:    'untracked_tool'
+					item_id: if codex_cli_string(item, 'id').len > 0 {
+						codex_cli_string(item, 'id')
+					} else {
+						event.item_id
+					}
 				}
 			}
 			started_item_id := codex_cli_string(item, 'id')
@@ -186,7 +218,7 @@ pub fn parse_codex_cli_line(line string, parent_thread_id string) CodexCliEvent 
 					effect_free: effect_free
 				}
 			}
-			if item_type in ['mcpToolCall', 'dynamicToolCall', 'collabAgentToolCall', 'imageGeneration'] {
+			if codex_item_type_is_untracked_effect(item_type) {
 				return CodexCliEvent{
 					...event
 					kind:    'untracked_tool'
@@ -200,8 +232,20 @@ pub fn parse_codex_cli_line(line string, parent_thread_id string) CodexCliEvent 
 					text: codex_cli_string(item, 'text')
 				}
 			}
+			if codex_item_is_non_effect(item) {
+				return CodexCliEvent{
+					...event
+					kind: 'other'
+				}
+			}
 			return CodexCliEvent{
-				kind: 'other'
+				...event
+				kind:    'untracked_tool'
+				item_id: if codex_cli_string(item, 'id').len > 0 {
+					codex_cli_string(item, 'id')
+				} else {
+					event.item_id
+				}
 			}
 		}
 		'item/agentMessage/delta' {

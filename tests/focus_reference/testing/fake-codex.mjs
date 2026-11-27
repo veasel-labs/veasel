@@ -181,6 +181,45 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
       });
       notify('turn/completed', { threadId: 'parent', turn: { id: 'turn-1', status: 'completed' } });
     }
+    if (text === 'effects-unknown') {
+      notify('item/started', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: { id: 'future-1', type: 'futureEffect', payload: 'private-sentinel' },
+      });
+      notify('item/completed', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: { id: 'future-1', type: 'futureEffect', status: 'completed' },
+      });
+      notify('turn/completed', { threadId: 'parent', turn: { id: 'turn-1', status: 'completed' } });
+    }
+    if (text === 'effects-reasoning') {
+      notify('item/started', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: { id: 'reasoning-1', type: 'reasoning', summary: 'private reasoning' },
+      });
+      notify('item/started', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: { id: 'sleep-1', type: 'Extension', kind: 'clock.sleep', durationMs: 1000 },
+      });
+      notify('item/completed', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: { id: 'reasoning-1', type: 'reasoning', summary: 'private reasoning' },
+      });
+      notify('item/completed', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: { id: 'sleep-1', type: 'Extension', kind: 'clock.sleep', durationMs: 1000 },
+      });
+      notify('turn/completed', { threadId: 'parent', turn: { id: 'turn-1', status: 'completed' } });
+    }
+    if (text === 'interrupted') {
+      notify('turn/completed', { threadId: 'parent', turn: { id: 'turn-1', status: 'interrupted' } });
+    }
   }
   if (frame.method === 'turn/interrupt') write({ id: frame.id, error: { code: -1, message: 'interrupt failed' } });
   if (frame.id === 'question' && frame.error)

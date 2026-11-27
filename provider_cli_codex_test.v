@@ -81,12 +81,45 @@ fn test_parse_codex_native_effect_items_without_retaining_payloads() {
 	generated_image := parse_codex_cli_line('{"method":"item/started","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"image-1","type":"imageGeneration"}}}',
 		'parent')
 	assert generated_image.kind == 'untracked_tool'
+	unknown_started := parse_codex_cli_line('{"method":"item/started","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"future-1","type":"futureEffect"}}}',
+		'parent')
+	assert unknown_started.kind == 'untracked_tool'
+	assert unknown_started.item_id == 'future-1'
+	unknown_completed := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"future-1","type":"futureEffect","status":"completed"}}}',
+		'parent')
+	assert unknown_completed.kind == 'untracked_tool'
+	assert unknown_completed.item_id == 'future-1'
+	reasoning_started := parse_codex_cli_line('{"method":"item/started","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"reasoning-1","type":"reasoning","text":"private reasoning"}}}',
+		'parent')
+	assert reasoning_started.kind == 'other'
+	reasoning_completed := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"reasoning-1","type":"reasoning","text":"private reasoning"}}}',
+		'parent')
+	assert reasoning_completed.kind == 'other'
+	web_search := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"search-1","type":"webSearch","query":"private query"}}}',
+		'parent')
+	assert web_search.kind == 'other'
+	sleep_started := parse_codex_cli_line('{"method":"item/started","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"sleep-1","type":"Extension","kind":"clock.sleep","durationMs":1000}}}',
+		'parent')
+	assert sleep_started.kind == 'other'
+	sleep_completed := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"sleep-1","type":"Extension","kind":"clock.sleep","durationMs":1000}}}',
+		'parent')
+	assert sleep_completed.kind == 'other'
+	other_extension := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"extension-1","type":"Extension","kind":"image_gen.generation"}}}',
+		'parent')
+	assert other_extension.kind == 'untracked_tool'
+	function_output := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"function-output-1","type":"functionCallOutput","output":"private output"}}}',
+		'parent')
+	assert function_output.kind == 'untracked_tool'
 	declined := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"cmd-3","type":"commandExecution","status":"declined"}}}',
 		'parent')
 	assert declined.effect_free
 	canceled := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"cmd-4","type":"commandExecution","status":"canceled"}}}',
 		'parent')
 	assert !canceled.effect_free
+	interrupted := parse_codex_cli_line('{"method":"turn/completed","params":{"threadId":"parent","turn":{"id":"turn-1","status":"interrupted"}}}',
+		'parent')
+	assert interrupted.kind == 'turn_completed'
+	assert interrupted.outcome == 'interrupted'
 }
 
 fn test_parse_codex_usage_is_never_published_as_turn_spend() {

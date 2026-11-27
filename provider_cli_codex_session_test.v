@@ -159,6 +159,60 @@ fn test_run_codex_cli_turn_keeps_incomplete_effects_uncertain() {
 	assert !turn_outcome_detail_json(outcome).contains('secret-command-argument')
 }
 
+fn test_run_codex_cli_turn_keeps_unknown_item_types_uncertain() {
+	shim, ok := codex_fixture_shim()
+	if !ok {
+		return
+	}
+	defer { os.rm(shim) or {} }
+	mut facts := new_turn_facts(false)
+	turn := run_codex_cli_turn_cancellable_observed(shim, os.getwd(), 'ask', '', '',
+		'effects-unknown', 30_000, ignore_provider_text_delta, deny_all_cli_approvals,
+		unsafe { nil }, facts) or { panic(err) }
+	snapshot := facts.snapshot()
+	assert turn.outcome == 'completed'
+	assert snapshot.unresolved_effects == 1
+	assert !snapshot.effects_observed
+	outcome := derive_turn_outcome(turn.outcome, snapshot, '')
+	assert outcome.outcome == 'uncertain'
+	assert !turn_outcome_detail_json(outcome).contains('private-sentinel')
+}
+
+fn test_run_codex_cli_turn_ignores_known_reasoning_items_for_effects() {
+	shim, ok := codex_fixture_shim()
+	if !ok {
+		return
+	}
+	defer { os.rm(shim) or {} }
+	mut facts := new_turn_facts(false)
+	turn := run_codex_cli_turn_cancellable_observed(shim, os.getwd(), 'ask', '', '',
+		'effects-reasoning', 30_000, ignore_provider_text_delta, deny_all_cli_approvals,
+		unsafe { nil }, facts) or { panic(err) }
+	snapshot := facts.snapshot()
+	assert turn.outcome == 'completed'
+	assert snapshot.unresolved_effects == 0
+	assert snapshot.effects_observed
+	outcome := derive_turn_outcome(turn.outcome, snapshot, '')
+	assert outcome.outcome == 'completed'
+	assert !turn_outcome_detail_json(outcome).contains('private reasoning')
+}
+
+fn test_interrupted_codex_turn_maps_to_cancelled_session_outcome() {
+	shim, ok := codex_fixture_shim()
+	if !ok {
+		return
+	}
+	defer { os.rm(shim) or {} }
+	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', 'interrupted', 30_000,
+		ignore_provider_text_delta, deny_all_cli_approvals) or { panic(err) }
+	assert turn.outcome == 'interrupted'
+	error_message := codex_cli_turn_error('Codex CLI', turn.outcome)
+	assert error_message == 'cancelled'
+	status, summary := session_turn_failure(error_message)
+	assert status == 'cancelled'
+	assert summary == 'Turn cancelled.'
+}
+
 fn test_run_codex_cli_turn_approval_without_item_start_or_result_is_uncertain() {
 	shim, ok := codex_fixture_shim()
 	if !ok {

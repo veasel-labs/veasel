@@ -209,7 +209,14 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ### Durable goals and worker coordination
 
-- [ ] Admit and project the portable Goal v2 permission contract while preserving v1 behavior. V2 dispatch remains fail-closed before claims, worktrees, or sessions until runtime policy intersection and enforcement are implemented. Compatibility is pinned in [`compatibility/agent-toolkit-goals-v2.md`](compatibility/agent-toolkit-goals-v2.md).
+- [x] Admit and project the portable Goal v2 permission contract while
+  preserving v1 behavior. Veasel validates each task's requested effects are
+  within the Goal ceiling and persists/projects the declarations; source
+  compatibility is recorded in
+  [`compatibility/agent-toolkit-goals-v2.md`](compatibility/agent-toolkit-goals-v2.md).
+- [ ] Intersect Goal v2 declarations with runtime policy and enforce the
+  resulting effects during execution. V2 dispatch remains fail-closed before
+  claims, worktrees, or sessions until this enforcement exists.
 - [x] Add Veasel-specific, authenticated admission, listing and manifest replay for portable goals.
   Admission records preserve the declared scope and survive restart.
 - [x] Implement authenticated read-only repository identity preflight for
@@ -1180,15 +1187,18 @@ mode selection.
 - [x] Publish a versioned Toolkit Goal v1/task/evidence contract with an offline
   validator and planner for authorized repositories, acceptance criteria,
   deadline, budget, delivery mode, DAG, base SHA, paths, runner, verifier, and
-  evidence. The `ulises-jeremias/agent-toolkit` main branch provides the Goal
-  v1 schema, offline validation/planning, five recipes, and evidence schema;
-  Veasel's compatibility check landed in #846 (`d817f06e`). The checked-in
-  fixture is synthetic contract data, not execution evidence. This contract
-  does not dispatch work. Preserve existing Swarm commands and states.
-- [ ] Add explicit permission declarations and policy-ceiling fields to the
-  portable Goal contract; current Goal v1 does not encode permissions. Define
-  the portable permission vocabulary and compatibility behavior before
-  requiring it in Veasel admission or dispatch.
+  evidence. Toolkit main inspected at `f0290c17090ec4ee474bd9871aa4a2350c321ae1`
+  provides Goal v1, Goal v2 permission ceilings and task permissions, offline
+  validation/planning, five recipes, and the evidence schema. Veasel's
+  compatibility check landed in #846 (`d817f06e`) and continues to admit Goal
+  v1; Goal v2 runtime permission enforcement remains a separate open item above.
+  The checked-in fixture is synthetic contract data, not execution evidence.
+  This contract does not dispatch work. Preserve existing Swarm commands and
+  states.
+- [x] Add explicit permission declarations and policy-ceiling fields to the
+  portable Goal contract. Toolkit main defines Goal v2's permission vocabulary,
+  required task permissions, and policy ceiling while retaining Goal v1.
+  Veasel admission and runtime intersection for v2 remain tracked separately.
 - [ ] Add an optional pstack-inspired pack with provenance and compatibility
   metadata; do not copy external playbook sources into the marketplace.
 - [ ] Keep the official `veasel-labs/agent-toolkit` marketplace reference-based:

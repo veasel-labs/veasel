@@ -21,6 +21,146 @@ pub:
 	tool_name   string // redacted internal effect category: Bash or Edit
 	succeeded   bool   // tool result reported by the Codex app-server
 	effect_free bool   // provider explicitly reports that the gated action was declined
+	review_json string // bounded, explicit file-change review snapshot for patchUpdated
+}
+
+const codex_file_review_max_bytes = 12_000
+const codex_file_review_max_changes = 128
+const codex_file_review_max_field_bytes = 8_000
+
+// Keep the tagged enum shape from the pinned Codex app-server contract. In
+// particular, never persist arbitrary JSON supplied in a malformed `kind`.
+fn codex_patch_change_kind(value json2.Any) ?json2.Any {
+	if value !is map[string]json2.Any {
+		return none
+	}
+	fields := value as map[string]json2.Any
+	tag := codex_cli_string(fields, 'type')
+	for key in fields.keys() {
+		if key !in ['type', 'movePath'] {
+			return none
+		}
+	}
+	mut normalized := map[string]json2.Any{
+		'type': json2.Any(tag)
+	}
+	match tag {
+		'add', 'delete' {
+			if fields.len != 1 {
+				return none
+			}
+		}
+		'update' {
+			if fields.len > 2 {
+				return none
+			}
+			if move_path := fields['movePath'] {
+				if move_path is string {
+					if move_path.len > codex_file_review_max_field_bytes {
+						return none
+					}
+					normalized['movePath'] = move_path
+				} else if json2.encode(move_path) != 'null' {
+					return none
+				} else {
+					normalized['movePath'] = move_path
+				}
+			}
+		}
+		else {
+			return none
+		}
+	}
+	return json2.Any(normalized)
+}
+
+// Codex v2 sends a FileChangePatchUpdatedNotification separately from its
+// approval request. Accept only complete, bounded snapshots with every field
+// required by FileUpdateChange; callers correlate them by all three IDs.
+fn codex_patch_updated_review(params map[string]json2.Any) string {
+	thread_id := codex_cli_string(params, 'threadId')
+	turn_id := codex_cli_string(params, 'turnId')
+	item_id := codex_cli_string(params, 'itemId')
+	if thread_id.len == 0 || turn_id.len == 0 || item_id.len == 0
+		|| thread_id.len > 256 || turn_id.len > 256 || item_id.len > 256 {
+		return ''
+	}
+	changes_any := params['changes'] or { return '' }
+	if changes_any !is []json2.Any {
+		return ''
+	}
+	changes := changes_any as []json2.Any
+	if changes.len == 0 || changes.len > codex_file_review_max_changes {
+		return ''
+	}
+	mut total_bytes := 0
+	mut normalized_changes := []json2.Any{}
+	for change in changes {
+		if change !is map[string]json2.Any {
+			return ''
+		}
+		fields := change as map[string]json2.Any
+		if fields.len != 3 {
+			return ''
+		}
+		path := codex_cli_string(fields, 'path')
+		diff := codex_cli_string(fields, 'diff')
+		if path.len == 0 || path.len > codex_file_review_max_field_bytes
+			|| diff.len == 0 || diff.len > codex_file_review_max_field_bytes {
+			return ''
+		}
+		kind := fields['kind'] or { return '' }
+		normalized_kind := codex_patch_change_kind(kind) or { return '' }
+		normalized_change := {
+			'path': json2.Any(path)
+			'kind': normalized_kind
+			'diff': json2.Any(diff)
+		}
+		change_bytes := json2.encode(normalized_change).len
+		if change_bytes > codex_file_review_max_field_bytes {
+			return ''
+		}
+		total_bytes += change_bytes
+		if total_bytes > codex_file_review_max_bytes {
+			return ''
+		}
+		normalized_changes << json2.Any(normalized_change)
+	}
+	review := json2.encode({
+		'threadId': json2.Any(thread_id)
+		'turnId':   json2.Any(turn_id)
+		'itemId':   json2.Any(item_id)
+		'changes':  json2.Any(normalized_changes)
+	})
+	if review.len > codex_file_review_max_bytes {
+		return ''
+	}
+	return review
+}
+
+// The durable review row contains only the identity and bounded file changes
+// shown to the user, plus the approval's explanatory fields. Never fall back
+// to request params alone: they do not carry the patch being approved.
+fn codex_file_approval_review(params map[string]json2.Any, patch_review string) string {
+	if patch_review.len == 0 || patch_review.len > codex_file_review_max_bytes {
+		return ''
+	}
+	mut review := json2.decode[map[string]json2.Any](patch_review) or { return '' }
+	if codex_cli_string(review, 'threadId') != codex_cli_string(params, 'threadId')
+		|| codex_cli_string(review, 'turnId') != codex_cli_string(params, 'turnId')
+		|| codex_cli_string(review, 'itemId') != codex_cli_string(params, 'itemId') {
+		return ''
+	}
+	for key in ['reason', 'grantRoot'] {
+		if value := params[key] {
+			review[key] = value
+		}
+	}
+	encoded := json2.encode(review)
+	if encoded.len > codex_file_review_max_bytes {
+		return ''
+	}
+	return encoded
 }
 
 pub struct CodexPolicy {
@@ -139,6 +279,13 @@ pub fn parse_codex_cli_line(line string, parent_thread_id string) CodexCliEvent 
 		request_id: codex_cli_string(frame, 'id')
 	}
 	match method {
+		'item/fileChange/patchUpdated' {
+			return CodexCliEvent{
+				...event
+				kind:        'patch_updated'
+				review_json: codex_patch_updated_review(params)
+			}
+		}
 		'item/started' {
 			item := codex_cli_map(params, 'item')
 			item_type := codex_cli_string(item, 'type')

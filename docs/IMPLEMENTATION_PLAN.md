@@ -1025,11 +1025,11 @@ task. Recovery, live queued cancellation/rejection, and concurrent attempt
 paths are covered fail-closed.
 
 These slices do not yet provide the operational Veasel goal CLI commands
-listed below, automatic retries, a scheduler-wide task lease with production
-heartbeat/expiry wiring, GitHub publication, or fleet concurrency. PR #858
-remains open with deadline-bound task-lease persistence groundwork; it does not
-wire worker heartbeats. Existing attempt fencing is not equivalent to an
-expiring task lease. Keep the corresponding items below open until the missing
+listed below, automatic retries, an objective scheduler, GitHub publication,
+or fleet concurrency. PR #858 merged deadline-bound lease persistence and
+generation fencing; this change adds heartbeat and expiry handling for the
+on-host durable session worker. Scheduler-wide path coordination and remote
+worker leases remain open. Keep those items below open until the missing
 mechanisms and end-to-end acceptance exist.
 
 The candidate-observation slice adds a pure, non-accepting check for a ready
@@ -1043,6 +1043,15 @@ caller must hold a fenced task/worker lease, confirm that no live operation can
 still mutate the worktree, re-observe immediately before persistence, and
 persist/promote only in one fenced transaction. The observer itself provides no
 cross-process lock against a later Git mutation.
+
+The worker-side lease slice renews only an attempt linked to a canonical
+durable session operation. It validates the exact fencing token and generation
+before provider work, renews the lease every 20 seconds with a 90-second
+duration, and stops and joins the heartbeat when the worker exits. Renewal or
+expiry failures cancel the operation; expired work becomes `uncertain` and is
+not replayed. Ordinary session operations do not start heartbeats. This does
+not add an objective scheduler, a multi-worker fleet, remote runner
+authentication, or independent verification receipts.
 
 - [x] Publish a versioned Toolkit Goal v1/task/evidence contract with an offline
   validator and planner for authorized repositories, acceptance criteria,
@@ -1079,9 +1088,14 @@ cross-process lock against a later Git mutation.
   atomically, use stable automation branch identities, record cancellation
   before confirming process termination, and pause by stopping new assignments
   while preserving visible in-flight work.
-  PR #858 currently proposes deadline-bound lease persistence, but remains
-  open; production heartbeat/expiry reconciliation and scheduler-wide
-  coordination remain outstanding.
+  PR #858 merged deadline-bound persistence and generation fencing. The
+  on-host worker heartbeat is now implemented; scheduler-wide coordination,
+  remote leases, and fleet concurrency remain outstanding.
+- [x] Renew on-host goal-task leases for attempts linked to the canonical
+  durable session worker. Validate the exact token and generation before
+  provider work, renew every 20 seconds with a 90-second lease, and fail closed
+  on expiry without replaying ambiguous work. Ordinary session operations do
+  not start heartbeats.
 - [ ] Define goal states separately from session operation states, including
   `queued`, `leased`, `building`, `verifying`, `draft_ready`, `accepted`,
   `blocked`, `uncertain`, `failed`, and `cancelled`. Remote leases heartbeat at

@@ -128,13 +128,14 @@ fn test_goal_task_state_is_seeded_idempotently_and_recovery_never_replays_runnin
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 37') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 38') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 39') or { panic(err) }
+	store.db.exec('DELETE FROM schema_migrations WHERE version = 40') or { panic(err) }
 	store.close() or { panic(err) }
 
 	store = open_store(path) or { panic(err) }
 	seeded := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
 	assert seeded.status == 'pending'
 	assert seeded.attempt_count == 0
-	for version in [36, 37, 38, 39] {
+	for version in [36, 37, 38, 39, 40] {
 		store.db.exec_param_many('DELETE FROM schema_migrations WHERE version = ?', [version.str()]) or {
 			panic(err)
 		}
@@ -378,6 +379,127 @@ fn test_linked_goal_task_attempt_uses_fencing_and_durable_session_operation() {
 		session.id,
 	]) or { panic(err) }
 	assert session_turn_events[0].val(0).int() == 0
+}
+
+fn test_successful_linked_operation_enters_verifying_until_independent_receipt() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-verifying-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'veasel.sqlite3')
+	goal := goal_task_test_admission()
+	mut store := open_store(path) or { panic(err) }
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{ title: 'verifying task', directory: root }) or {
+		panic(err)
+	}
+	claim := store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or { panic(err) }
+	store.reconcile_goal_task_operation(claim.session_operation_id, .succeeded) or { panic(err) }
+	state := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'verifying'
+	assert state.attempts[0].status == 'verifying'
+	operation := store.get_session_operation(session.id, claim.session_operation_id) or {
+		panic(err)
+	}
+	assert operation.status == 'completed'
+	assert operation.outcome == 'completed'
+	// Verification is not a dependency completion and the reconciliation is
+	// once-only; neither path may silently promote the task to succeeded.
+	mut dependency_blocked := false
+	store.claim_goal_task(goal.id, 'prepare') or {
+		dependency_blocked = true
+		assert err.msg().contains('dependencies') || err.msg().contains('claimable')
+		GoalTaskProjectionState{}
+	}
+	assert dependency_blocked
+	store.reconcile_goal_task_operation(claim.session_operation_id, .succeeded) or {
+		panic(err)
+	}
+	assert (store.goal_task_state(goal.id, 'prepare') or { panic(err) }).status == 'verifying'
+	store.close() or { panic(err) }
+	mut recovered := open_store(path) or { panic(err) }
+	defer { recovered.close() or {} }
+	recovered_state := recovered.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert recovered_state.status == 'verifying'
+	assert recovered_state.attempts[0].status == 'verifying'
+}
+
+fn test_recovery_promotes_completed_session_operation_only_to_verifying() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-verifying-recovery-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'veasel.sqlite3')
+	goal := goal_task_test_admission()
+	mut store := open_store(path) or { panic(err) }
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{ title: 'verifying recovery', directory: root }) or {
+		panic(err)
+	}
+	claim := store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or { panic(err) }
+	_ = store.db.exec_param_many("UPDATE session_operations SET status = 'completed', outcome = 'completed' WHERE session_id = ? AND id = ?", [
+		session.id,
+		claim.session_operation_id,
+	]) or { panic(err) }
+	_ = store.db.exec_param_many("UPDATE goal_task_states SET owner_start_id = '' WHERE goal_id = ? AND task_id = ?", [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	_ = store.db.exec_param_many("UPDATE goal_task_attempts SET owner_start_id = '' WHERE goal_id = ? AND task_id = ? AND attempt = ?", [
+		goal.id,
+		'prepare',
+		'1',
+	]) or { panic(err) }
+	store.close() or { panic(err) }
+	mut recovered := open_store(path) or { panic(err) }
+	defer { recovered.close() or {} }
+	state := recovered.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'verifying'
+	assert state.attempts[0].status == 'verifying'
+	operation := recovered.get_session_operation(session.id, claim.session_operation_id) or {
+		panic(err)
+	}
+	assert operation.status == 'completed'
+	events := recovered.db.exec_param_many("SELECT COUNT(*) FROM events WHERE session_id = ? AND type = 'goal.task_attempt_verifying'", [
+		session.id,
+	]) or { panic(err) }
+	assert events[0].val(0).int() == 1
+}
+
+fn test_recovery_promotes_completed_with_denials_operation_to_verifying() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-denials-recovery-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'veasel.sqlite3')
+	goal := goal_task_test_admission()
+	mut store := open_store(path) or { panic(err) }
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{ title: 'denied effects recovery', directory: root }) or {
+		panic(err)
+	}
+	claim := store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or { panic(err) }
+	_ = store.db.exec_param_many("UPDATE session_operations SET status = 'completed', outcome = 'completed_with_denials' WHERE session_id = ? AND id = ?", [
+		session.id,
+		claim.session_operation_id,
+	]) or { panic(err) }
+	_ = store.db.exec_param_many("UPDATE goal_task_states SET owner_start_id = '' WHERE goal_id = ? AND task_id = ?", [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	_ = store.db.exec_param_many("UPDATE goal_task_attempts SET owner_start_id = '' WHERE goal_id = ? AND task_id = ? AND attempt = ?", [
+		goal.id,
+		'prepare',
+		'1',
+	]) or { panic(err) }
+	store.close() or { panic(err) }
+	mut recovered := open_store(path) or { panic(err) }
+	defer { recovered.close() or {} }
+	state := recovered.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'verifying'
+	assert state.attempts[0].status == 'verifying'
+	operation := recovered.get_session_operation(session.id, claim.session_operation_id) or {
+		panic(err)
+	}
+	assert operation.status == 'completed'
+	assert operation.outcome == 'completed_with_denials'
 }
 
 fn test_linked_goal_task_claim_recovery_marks_operation_uncertain_without_replay() {

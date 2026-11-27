@@ -10,6 +10,7 @@ import uuid
 enum GoalTaskStatus {
 	pending
 	running
+	verifying
 	succeeded
 	failed
 	uncertain
@@ -17,12 +18,14 @@ enum GoalTaskStatus {
 
 enum GoalTaskAttemptStatus {
 	running
+	verifying
 	succeeded
 	failed
 	uncertain
 }
 
 enum GoalTaskResult {
+	verifying
 	succeeded
 	failed
 	uncertain
@@ -31,6 +34,7 @@ enum GoalTaskResult {
 fn goal_task_attempt_status_from_db(value string) !GoalTaskAttemptStatus {
 	return match value {
 		'running' { .running }
+		'verifying' { .verifying }
 		'succeeded' { .succeeded }
 		'failed' { .failed }
 		'uncertain' { .uncertain }
@@ -42,6 +46,7 @@ fn goal_task_status_from_db(value string) !GoalTaskStatus {
 	return match value {
 		'pending' { .pending }
 		'running' { .running }
+		'verifying' { .verifying }
 		'succeeded' { .succeeded }
 		'failed' { .failed }
 		'uncertain' { .uncertain }
@@ -132,6 +137,69 @@ fn migrate_goal_task_session_operation_index(mut db sqlite.DB) ! {
 	db.commit()!
 }
 
+// SQLite does not allow a CHECK constraint to be widened in place. Rebuild the
+// goal task tables while preserving every attempt/worktree row so an upgrade
+// can represent the post-worker, pre-receipt verifying state durably.
+fn migrate_goal_task_verifying_state(mut db sqlite.DB) ! {
+	db.begin()!
+	defer { db.rollback() or {} }
+	db.exec('DROP INDEX IF EXISTS idx_goal_task_attempts_status')!
+	db.exec('DROP INDEX IF EXISTS idx_goal_task_attempts_session_operation')!
+	db.exec('ALTER TABLE goal_task_attempt_workspaces RENAME TO goal_task_attempt_workspaces_v40')!
+	db.exec('ALTER TABLE goal_task_attempts RENAME TO goal_task_attempts_v40')!
+	db.exec('ALTER TABLE goal_task_states RENAME TO goal_task_states_v40')!
+	db.exec("CREATE TABLE goal_task_states (
+		goal_id TEXT NOT NULL,
+		task_id TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'verifying', 'succeeded', 'failed', 'uncertain')),
+		attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+		owner_pid INTEGER NOT NULL DEFAULT 0,
+		owner_start_id TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (goal_id, task_id),
+		FOREIGN KEY (goal_id) REFERENCES goal_admissions(id) ON DELETE CASCADE
+	)")!
+	db.exec('INSERT INTO goal_task_states (goal_id, task_id, status, attempt_count, owner_pid, owner_start_id, updated_at) SELECT goal_id, task_id, status, attempt_count, owner_pid, owner_start_id, updated_at FROM goal_task_states_v40')!
+	db.exec("CREATE TABLE goal_task_attempts (
+		goal_id TEXT NOT NULL,
+		task_id TEXT NOT NULL,
+		attempt INTEGER NOT NULL CHECK (attempt > 0),
+		status TEXT NOT NULL CHECK (status IN ('running', 'verifying', 'succeeded', 'failed', 'uncertain')),
+		owner_pid INTEGER NOT NULL DEFAULT 0,
+		owner_start_id TEXT NOT NULL DEFAULT '',
+		started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		ended_at TEXT NOT NULL DEFAULT '',
+		session_id TEXT NOT NULL DEFAULT '',
+		session_operation_id TEXT NOT NULL DEFAULT '',
+		fencing_token TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (goal_id, task_id, attempt),
+		FOREIGN KEY (goal_id, task_id) REFERENCES goal_task_states(goal_id, task_id) ON DELETE CASCADE
+	)")!
+	db.exec('INSERT INTO goal_task_attempts (goal_id, task_id, attempt, status, owner_pid, owner_start_id, started_at, ended_at, session_id, session_operation_id, fencing_token) SELECT goal_id, task_id, attempt, status, owner_pid, owner_start_id, started_at, ended_at, session_id, session_operation_id, fencing_token FROM goal_task_attempts_v40')!
+	db.exec("CREATE TABLE goal_task_attempt_workspaces (
+		goal_id TEXT NOT NULL,
+		task_id TEXT NOT NULL,
+		attempt INTEGER NOT NULL CHECK (attempt > 0),
+		repository_root TEXT NOT NULL,
+		worktree_path TEXT NOT NULL,
+		base_sha TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('preparing', 'ready', 'uncertain')),
+		created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (goal_id, task_id, attempt),
+		UNIQUE (worktree_path),
+		FOREIGN KEY (goal_id, task_id, attempt) REFERENCES goal_task_attempts(goal_id, task_id, attempt) ON DELETE CASCADE
+	)")!
+	db.exec('INSERT INTO goal_task_attempt_workspaces (goal_id, task_id, attempt, repository_root, worktree_path, base_sha, status, created_at, updated_at) SELECT goal_id, task_id, attempt, repository_root, worktree_path, base_sha, status, created_at, updated_at FROM goal_task_attempt_workspaces_v40')!
+	db.exec('CREATE INDEX idx_goal_task_attempts_status ON goal_task_attempts(status)')!
+	db.exec("CREATE UNIQUE INDEX idx_goal_task_attempts_session_operation ON goal_task_attempts(session_operation_id) WHERE session_operation_id != ''")!
+	db.exec('DROP TABLE goal_task_attempt_workspaces_v40')!
+	db.exec('DROP TABLE goal_task_attempts_v40')!
+	db.exec('DROP TABLE goal_task_states_v40')!
+	db.exec('INSERT INTO schema_migrations (version) VALUES (40)')!
+	db.commit()!
+}
+
 // State is seeded for old admissions on open and for each new admission. A
 // claim remains running only when its owner is verifiably alive with the same
 // process-start identity. Dead, reused, legacy, or unverifiable ownership is
@@ -145,10 +213,43 @@ fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 		goal := json2.decode[GoalAdmission](row.val(0))!
 		seed_goal_task_state(mut db, goal)!
 	}
-	interrupted_attempts := db.exec("SELECT goal_id, task_id, attempt, owner_pid, owner_start_id, session_id, session_operation_id FROM goal_task_attempts WHERE status = 'running'")!
+	interrupted_attempts := db.exec("SELECT a.goal_id, a.task_id, a.attempt, a.owner_pid, a.owner_start_id, a.session_id, a.session_operation_id, COALESCE(o.status, ''), COALESCE(o.outcome, '') FROM goal_task_attempts AS a LEFT JOIN session_operations AS o ON o.session_id = a.session_id AND o.id = a.session_operation_id WHERE a.status = 'running'")!
 	for row in interrupted_attempts {
 		owner := goal_task_owner_status(row.val(3).int())
 		if row.val(4) == '' || !owner.alive || owner.identity == '' || owner.identity != row.val(4) {
+			// The session result and Goal transition are separate durable writes.
+			// If shutdown lands between them, the completed canonical operation
+			// proves the worker finished; recover only to verifying, never accepted.
+			if row.val(5) != '' && row.val(6) != '' && row.val(7) == 'completed'
+				&& row.val(8) in ['completed', 'completed_with_denials'] {
+				_ = db.exec_param_many("UPDATE goal_task_attempts SET status = 'verifying', ended_at = CURRENT_TIMESTAMP, owner_pid = 0, owner_start_id = '' WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running'", [
+					row.val(0),
+					row.val(1),
+					row.val(2),
+				])!
+				if db.get_affected_rows_count() == 1 {
+					_ = db.exec_param_many("UPDATE goal_task_states SET status = 'verifying', updated_at = CURRENT_TIMESTAMP, owner_pid = 0, owner_start_id = '' WHERE goal_id = ? AND task_id = ? AND status = 'running'", [
+						row.val(0),
+						row.val(1),
+					])!
+					if db.get_affected_rows_count() != 1 {
+						return error('unable to recover completed goal task state to verifying')
+					}
+					_ = db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+						'goal.task_attempt_verifying',
+						row.val(5),
+						json2.encode[GoalTaskEventData](GoalTaskEventData{
+							goal_id:      row.val(0)
+							task_id:      row.val(1)
+							attempt:      row.val(2).int()
+							operation_id: row.val(6)
+							status:       'verifying'
+							outcome:      'completed'
+						}),
+					])!
+				}
+				continue
+			}
 			_ = db.exec_param_many("UPDATE goal_task_attempts SET status = 'uncertain', ended_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running'", [
 				row.val(0),
 				row.val(1),
@@ -501,9 +602,16 @@ fn (mut store Store) complete_linked_goal_task_attempt(goal_id string, task_id s
 }
 
 // reconcile_goal_task_operation closes a dispatched attempt when the canonical
-// session worker records its terminal operation result. Missing links are a
-// no-op so ordinary session turns retain their existing behavior.
+// session worker records its terminal operation result. A successful worker
+// result is deliberately only a verifying transition: an independent receipt
+// bound to the candidate SHA is still required before succeeded. Missing links
+// are a no-op so ordinary session turns retain their existing behavior.
 fn (mut store Store) reconcile_goal_task_operation(operation_id string, result GoalTaskResult) ! {
+	goal_result := if result == .succeeded {
+		GoalTaskResult.verifying
+	} else {
+		result
+	}
 	store.mu.lock()
 	rows := store.db.exec_param("SELECT goal_id, task_id, attempt, fencing_token FROM goal_task_attempts WHERE session_operation_id = ? AND status = 'running'", operation_id) or {
 		store.mu.unlock()
@@ -513,7 +621,7 @@ fn (mut store Store) reconcile_goal_task_operation(operation_id string, result G
 	if rows.len == 0 {
 		return
 	}
-	return store.complete_linked_goal_task_attempt(rows[0].val(0), rows[0].val(1), rows[0].val(2).int(), rows[0].val(3), result)
+	return store.complete_linked_goal_task_attempt(rows[0].val(0), rows[0].val(1), rows[0].val(2).int(), rows[0].val(3), goal_result)
 }
 
 fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id string,
@@ -542,11 +650,13 @@ fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id
 	}
 	if linked[0].val(1) != '' {
 		op_status := match result {
+			.verifying { 'completed' }
 			.succeeded { 'completed' }
 			.failed { 'failed' }
 			.uncertain { 'uncertain' }
 		}
 		op_outcome := match result {
+			.verifying { 'completed' }
 			.succeeded { 'completed' }
 			.failed { 'failed' }
 			.uncertain { 'uncertain' }
@@ -585,7 +695,7 @@ fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id
 					task_id:      task_id
 					attempt:      attempt
 					operation_id: linked[0].val(1)
-					status:       op_status
+					status:       result.str()
 					outcome:      op_outcome
 					error:        if result == .uncertain {
 						'The task attempt result is uncertain.'
@@ -606,6 +716,7 @@ fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id
 		return error('unable to read goal attempt budget')
 	}
 	status := match result {
+		.verifying { GoalTaskStatus.verifying }
 		.succeeded { GoalTaskStatus.succeeded }
 		.uncertain { GoalTaskStatus.uncertain }
 		.failed {

@@ -32,9 +32,61 @@ fn test_parse_codex_turn_lifecycle_and_approvals() {
 		'parent')
 	assert approval.kind == 'approval_request'
 	assert approval.request_id == 'a1'
+	legacy_approval := parse_codex_cli_line('{"id":"a2","method":"execCommandApproval","params":{"threadId":"parent","turnId":"turn-1","callId":"legacy-cmd","command":"python3"}}',
+		'parent')
+	assert legacy_approval.kind == 'approval_request'
+	assert legacy_approval.item_id == 'legacy-cmd'
 	question := parse_codex_cli_line('{"id":"question","method":"item/tool/requestUserInput","params":{"threadId":"parent","turnId":"turn-1","itemId":"q"}}',
 		'parent')
 	assert question.kind == 'user_input_request'
+}
+
+fn test_parse_codex_native_effect_items_without_retaining_payloads() {
+	started := parse_codex_cli_line('{"method":"item/started","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"cmd-1","type":"commandExecution","command":"python3 secret-argument"}}}',
+		'parent')
+	assert started.kind == 'tool_started'
+	assert started.item_id == 'cmd-1'
+	assert started.tool_name == 'Bash'
+	assert !started.text.contains('secret-argument')
+	command := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"cmd-1","type":"commandExecution","status":"completed","exitCode":0,"aggregatedOutput":"secret-output"}}}',
+		'parent')
+	assert command.kind == 'tool_completed'
+	assert command.tool_name == 'Bash'
+	assert command.succeeded
+	assert !command.text.contains('secret-output')
+	failed_command := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"cmd-2","type":"commandExecution","status":"completed","exitCode":2}}}',
+		'parent')
+	assert !failed_command.succeeded
+	null_exit_code := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"cmd-null-exit","type":"commandExecution","status":"completed","exitCode":null}}}',
+		'parent')
+	assert null_exit_code.succeeded
+	edit := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"edit-1","type":"fileChange","status":"completed","changes":[{"path":"private-sentinel.md"}]}}}',
+		'parent')
+	assert edit.kind == 'tool_completed'
+	assert edit.tool_name == 'Edit'
+	assert edit.succeeded
+	assert !edit.text.contains('private-sentinel.md')
+	missing_edit_status := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"edit-missing-status","type":"fileChange","changes":[]}}}',
+		'parent')
+	assert !missing_edit_status.succeeded
+	untracked := parse_codex_cli_line('{"method":"item/started","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"mcp-1","type":"mcpToolCall","server":"private-server","tool":"write","arguments":{"token":"secret"}}}}',
+		'parent')
+	assert untracked.kind == 'untracked_tool'
+	assert untracked.item_id == 'mcp-1'
+	assert !untracked.text.contains('private-server')
+	untracked_completed := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"dynamic-1","type":"dynamicToolCall","tool":"private-tool"}}}',
+		'parent')
+	assert untracked_completed.kind == 'untracked_tool'
+	assert untracked_completed.item_id == 'dynamic-1'
+	generated_image := parse_codex_cli_line('{"method":"item/started","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"image-1","type":"imageGeneration"}}}',
+		'parent')
+	assert generated_image.kind == 'untracked_tool'
+	declined := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"cmd-3","type":"commandExecution","status":"declined"}}}',
+		'parent')
+	assert declined.effect_free
+	canceled := parse_codex_cli_line('{"method":"item/completed","params":{"threadId":"parent","turnId":"turn-1","item":{"id":"cmd-4","type":"commandExecution","status":"canceled"}}}',
+		'parent')
+	assert !canceled.effect_free
 }
 
 fn test_parse_codex_usage_is_never_published_as_turn_spend() {

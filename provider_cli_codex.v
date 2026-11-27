@@ -11,13 +11,16 @@ import x.json2
 
 pub struct CodexCliEvent {
 pub:
-	kind       string // text_delta|reasoning_delta|assistant_text|turn_started|turn_completed|approval_request|user_input_request|usage_not_published|other
-	thread_id  string
-	turn_id    string
-	item_id    string
-	text       string
-	request_id string
-	outcome    string // completed|failed|interrupted (turn_completed only)
+	kind        string // text_delta|reasoning_delta|assistant_text|turn_started|turn_completed|approval_request|user_input_request|usage_not_published|tool_started|tool_completed|untracked_tool|other
+	thread_id   string
+	turn_id     string
+	item_id     string
+	text        string
+	request_id  string
+	outcome     string // completed|failed|interrupted (turn_completed only)
+	tool_name   string // redacted internal effect category: Bash or Edit
+	succeeded   bool   // tool result reported by the Codex app-server
+	effect_free bool   // provider explicitly reports that the gated action was declined
 }
 
 pub struct CodexPolicy {
@@ -104,13 +107,103 @@ pub fn parse_codex_cli_line(line string, parent_thread_id string) CodexCliEvent 
 	}
 	method := codex_cli_string(frame, 'method')
 	turn := codex_cli_map(params, 'turn')
+	item_id := if codex_cli_string(params, 'itemId').len > 0 {
+		codex_cli_string(params, 'itemId')
+	} else {
+		codex_cli_string(params, 'callId')
+	}
 	event := CodexCliEvent{
 		thread_id:  thread_id
 		turn_id:    codex_cli_string(params, 'turnId')
-		item_id:    codex_cli_string(params, 'itemId')
+		item_id:    item_id
 		request_id: codex_cli_string(frame, 'id')
 	}
 	match method {
+		'item/started' {
+			item := codex_cli_map(params, 'item')
+			item_type := codex_cli_string(item, 'type')
+			tool_name := match item_type {
+				'commandExecution' { 'Bash' }
+				'fileChange' { 'Edit' }
+				else { '' }
+			}
+			if item_type in ['mcpToolCall', 'dynamicToolCall', 'collabAgentToolCall', 'imageGeneration'] {
+				return CodexCliEvent{
+					...event
+					kind:    'untracked_tool'
+					item_id: codex_cli_string(item, 'id')
+				}
+			}
+			if tool_name.len == 0 {
+				return CodexCliEvent{
+					kind: 'other'
+				}
+			}
+			started_item_id := codex_cli_string(item, 'id')
+			if started_item_id.len == 0 {
+				return CodexCliEvent{
+					...event
+					kind: 'untracked_tool'
+				}
+			}
+			return CodexCliEvent{
+				...event
+				kind:      'tool_started'
+				item_id:   started_item_id
+				tool_name: tool_name
+			}
+		}
+		'item/completed' {
+			item := codex_cli_map(params, 'item')
+			item_type := codex_cli_string(item, 'type')
+			tool_name := match item_type {
+				'commandExecution' { 'Bash' }
+				'fileChange' { 'Edit' }
+				else { '' }
+			}
+			if tool_name.len > 0 {
+				completed_item_id := codex_cli_string(item, 'id')
+				if completed_item_id.len == 0 {
+					return CodexCliEvent{
+						...event
+						kind: 'untracked_tool'
+					}
+				}
+				status := codex_cli_string(item, 'status')
+				effect_free := status in ['declined', 'rejected']
+				succeeded := if item_type == 'commandExecution' {
+					exit_code := if raw := item['exitCode'] { json2.encode(raw) } else { 'null' }
+					status == 'completed' && exit_code in ['null', '0']
+				} else {
+					status == 'completed'
+				}
+				return CodexCliEvent{
+					...event
+					kind:        'tool_completed'
+					item_id:     completed_item_id
+					tool_name:   tool_name
+					succeeded:   succeeded
+					effect_free: effect_free
+				}
+			}
+			if item_type in ['mcpToolCall', 'dynamicToolCall', 'collabAgentToolCall', 'imageGeneration'] {
+				return CodexCliEvent{
+					...event
+					kind:    'untracked_tool'
+					item_id: codex_cli_string(item, 'id')
+				}
+			}
+			if item_type == 'agentMessage' {
+				return CodexCliEvent{
+					...event
+					kind: 'assistant_text'
+					text: codex_cli_string(item, 'text')
+				}
+			}
+			return CodexCliEvent{
+				kind: 'other'
+			}
+		}
 		'item/agentMessage/delta' {
 			return CodexCliEvent{
 				...event
@@ -150,20 +243,6 @@ pub fn parse_codex_cli_line(line string, parent_thread_id string) CodexCliEvent 
 			return CodexCliEvent{
 				...event
 				kind: 'approval_request'
-			}
-		}
-		'item/completed' {
-			// Final agent text fallback for turns that emit no deltas.
-			item := codex_cli_map(params, 'item')
-			if codex_cli_string(item, 'type') == 'agentMessage' {
-				return CodexCliEvent{
-					...event
-					kind: 'assistant_text'
-					text: codex_cli_string(item, 'text')
-				}
-			}
-			return CodexCliEvent{
-				kind: 'other'
 			}
 		}
 		'item/tool/requestUserInput' {

@@ -400,8 +400,9 @@ fn complete_cli_provider_turn_resumable(messages []ChatMessage,
 		}
 	}
 	if spec.protocol == 'app-server' {
-		codex_turn := run_codex_cli_turn_cancellable(spec.exec, cwd, permission_mode,
-			cli_model, safe_resume_id, prompt, timeout_ms, on_text_delta, decide, config.cli_cancel)!
+		codex_turn := run_codex_cli_turn_cancellable_observed(spec.exec, cwd, permission_mode,
+			cli_model, safe_resume_id, prompt, timeout_ms, on_text_delta, decide, config.cli_cancel,
+			config.turn_facts)!
 		if codex_turn.outcome != 'completed' {
 			return error('installed CLI ${spec.name} turn ${codex_turn.outcome}')
 		}

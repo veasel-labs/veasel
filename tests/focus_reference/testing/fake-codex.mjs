@@ -4,6 +4,7 @@ const write = (frame) => process.stdout.write(`${JSON.stringify(frame)}\n`);
 const notify = (method, params) => write({ method, params });
 process.on('SIGTERM', () => {});
 let experimentalApi = false;
+let effectMode = '';
 const grandchildFlagIndex = process.argv.indexOf('--spawn-grandchild');
 if (grandchildFlagIndex >= 0) {
   const pidFile = process.argv[grandchildFlagIndex + 1];
@@ -114,7 +115,11 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
       text === 'approval' ||
       text === 'approval-limited' ||
       text === 'approval-cancel-deny' ||
-      text === 'approval-unsupported'
+      text === 'approval-unsupported' ||
+      text === 'effects' ||
+      text === 'effects-denied' ||
+      text === 'effects-incomplete' ||
+      text === 'effects-approval-incomplete'
     )
       write({
         id: 'approval',
@@ -124,7 +129,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
           turnId: 'turn-1',
           itemId: 'cmd',
           kind: 'writeStdin',
-          command: 'yes',
+          command: text.startsWith('effects') ? 'python3 secret-command-argument' : 'yes',
           networkApprovalContext: { host: 'example.test' },
           additionalPermissions: { network: { enabled: true } },
           availableDecisions:
@@ -142,11 +147,78 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
                   ],
         },
       });
+    if (text === 'effects' || text === 'effects-denied' || text === 'effects-incomplete' || text === 'effects-approval-incomplete') {
+      effectMode = text;
+      if (text !== 'effects-approval-incomplete') notify('item/started', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: { id: 'cmd', type: 'commandExecution', command: 'python3 secret-command-argument' },
+      });
+      if (text !== 'effects-incomplete' && text !== 'effects-approval-incomplete') {
+        notify('item/started', {
+          threadId: 'parent',
+          turnId: 'turn-1',
+          item: { id: 'edit', type: 'fileChange', changes: [{ path: 'private-sentinel.md' }] },
+        });
+      }
+    }
+    if (text === 'effects-bypass') {
+      notify('item/started', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: { id: 'cmd', type: 'commandExecution', command: 'python3 secret-command-argument' },
+      });
+      notify('item/completed', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: {
+          id: 'cmd',
+          type: 'commandExecution',
+          status: 'completed',
+          exitCode: 0,
+          aggregatedOutput: 'secret-command-output',
+        },
+      });
+      notify('turn/completed', { threadId: 'parent', turn: { id: 'turn-1', status: 'completed' } });
+    }
   }
   if (frame.method === 'turn/interrupt') write({ id: frame.id, error: { code: -1, message: 'interrupt failed' } });
   if (frame.id === 'question' && frame.error)
     notify('turn/completed', { threadId: 'parent', turn: { id: 'turn-1', status: 'completed' } });
   if (frame.id === 'approval' && frame.result) {
+    if (effectMode) {
+      if (effectMode !== 'effects-incomplete' && effectMode !== 'effects-approval-incomplete') {
+      notify('item/completed', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: {
+          id: 'cmd',
+          type: 'commandExecution',
+          status: frame.result.decision === 'accept' ? 'completed' : 'declined',
+          exitCode: frame.result.decision === 'accept' ? 0 : null,
+          aggregatedOutput: 'secret-command-output',
+        },
+      });
+      notify('item/completed', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: {
+          id: 'edit',
+          type: 'fileChange',
+          status: frame.result.decision === 'accept' ? 'completed' : 'declined',
+          changes: [{ path: 'private-sentinel.md' }],
+        },
+      });
+      }
+      notify('item/completed', {
+        threadId: 'parent',
+        turnId: 'turn-1',
+        item: { type: 'agentMessage', id: 'answer', text: frame.result.decision },
+      });
+      notify('turn/completed', { threadId: 'parent', turn: { id: 'turn-1', status: 'completed' } });
+      effectMode = '';
+      return;
+    }
     notify('item/completed', {
       threadId: 'parent',
       turnId: 'turn-1',

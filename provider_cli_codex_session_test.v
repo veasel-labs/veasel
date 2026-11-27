@@ -85,6 +85,125 @@ fn test_run_codex_cli_turn_allows_only_explicit_approval() {
 	assert turn.text == 'accept'
 }
 
+fn test_run_codex_cli_turn_records_redacted_effect_receipts() {
+	shim, ok := codex_fixture_shim()
+	if !ok {
+		return
+	}
+	defer { os.rm(shim) or {} }
+	mut facts := new_turn_facts(false)
+	approve := fn [mut facts] (request_id string, tool_name string, _ string) bool {
+		facts.note_approval(tool_name, 'approved')
+		return request_id.starts_with('codex-')
+	}
+	_ := run_codex_cli_turn_cancellable_observed(shim, os.getwd(), 'ask', '', '', 'effects',
+		30_000, ignore_provider_text_delta, approve, unsafe { nil }, facts) or { panic(err) }
+	snapshot := facts.snapshot()
+	assert snapshot.approvals_approved == 1
+	assert snapshot.commands_ran == ['Bash']
+	assert snapshot.edits_applied == ['Edit']
+	assert snapshot.effects_observed
+	outcome := derive_turn_outcome('completed', snapshot, '')
+	serialized := turn_outcome_detail_json(outcome)
+	assert outcome.summary.contains('Bash')
+	assert outcome.summary.contains('Edit')
+	assert !serialized.contains('secret-command-argument')
+	assert !serialized.contains('secret-command-output')
+	assert !serialized.contains('private-sentinel.md')
+}
+
+fn test_run_codex_cli_turn_denial_does_not_record_unrun_command() {
+	shim, ok := codex_fixture_shim()
+	if !ok {
+		return
+	}
+	defer { os.rm(shim) or {} }
+	mut facts := new_turn_facts(false)
+	deny := fn [mut facts] (_ string, tool_name string, _ string) bool {
+		facts.note_approval(tool_name, 'denied')
+		return false
+	}
+	_ := run_codex_cli_turn_cancellable_observed(shim, os.getwd(), 'ask', '', '', 'effects-denied',
+		30_000, ignore_provider_text_delta, deny, unsafe { nil }, facts) or { panic(err) }
+	snapshot := facts.snapshot()
+	assert snapshot.approvals_denied == 1
+	assert snapshot.commands_ran.len == 0
+	assert snapshot.edits_applied.len == 0
+	assert snapshot.effects_observed
+	outcome := derive_turn_outcome('completed', snapshot, '')
+	assert outcome.outcome == 'completed_with_denials'
+	assert outcome.summary.contains('No changes were applied.')
+}
+
+fn test_run_codex_cli_turn_keeps_incomplete_effects_uncertain() {
+	shim, ok := codex_fixture_shim()
+	if !ok {
+		return
+	}
+	defer { os.rm(shim) or {} }
+	mut facts := new_turn_facts(false)
+	approve := fn [mut facts] (_ string, tool_name string, _ string) bool {
+		facts.note_approval(tool_name, 'approved')
+		return true
+	}
+	_ := run_codex_cli_turn_cancellable_observed(shim, os.getwd(), 'ask', '', '', 'effects-incomplete',
+		30_000, ignore_provider_text_delta, approve, unsafe { nil }, facts) or { panic(err) }
+	snapshot := facts.snapshot()
+	assert snapshot.approvals_approved == 1
+	assert snapshot.unresolved_effects == 1
+	assert snapshot.commands_ran.len == 0
+	assert !snapshot.effects_observed
+	outcome := derive_turn_outcome('completed', snapshot, '')
+	assert outcome.outcome == 'uncertain'
+	assert outcome.summary.contains('could not confirm the outcome')
+	assert !turn_outcome_detail_json(outcome).contains('secret-command-argument')
+}
+
+fn test_run_codex_cli_turn_approval_without_item_start_or_result_is_uncertain() {
+	shim, ok := codex_fixture_shim()
+	if !ok {
+		return
+	}
+	defer { os.rm(shim) or {} }
+	mut facts := new_turn_facts(false)
+	approve := fn [mut facts] (_ string, tool_name string, _ string) bool {
+		facts.note_approval(tool_name, 'approved')
+		return true
+	}
+	_ := run_codex_cli_turn_cancellable_observed(shim, os.getwd(), 'ask', '', '',
+		'effects-approval-incomplete', 30_000, ignore_provider_text_delta, approve, unsafe { nil },
+		facts) or { panic(err) }
+	snapshot := facts.snapshot()
+	assert snapshot.approvals_approved == 1
+	assert snapshot.unresolved_effects == 1
+	outcome := derive_turn_outcome('completed', snapshot, '')
+	assert outcome.outcome == 'uncertain'
+	assert outcome.summary.contains('could not confirm the outcome')
+}
+
+fn test_run_codex_cli_turn_records_successful_bypass_command_receipt() {
+	shim, ok := codex_fixture_shim()
+	if !ok {
+		return
+	}
+	defer { os.rm(shim) or {} }
+	mut facts := new_turn_facts(false)
+	_ := run_codex_cli_turn_cancellable_observed(shim, os.getwd(), 'bypass', '', '', 'effects-bypass',
+		30_000, ignore_provider_text_delta, deny_all_cli_approvals, unsafe { nil }, facts) or {
+		panic(err)
+	}
+	snapshot := facts.snapshot()
+	assert snapshot.commands_ran == ['Bash']
+	assert snapshot.unresolved_effects == 0
+	assert snapshot.effects_observed
+	outcome := derive_turn_outcome('completed', snapshot, '')
+	assert outcome.outcome == 'completed'
+	assert outcome.summary.contains('Applied: Bash')
+	serialized := turn_outcome_detail_json(outcome)
+	assert !serialized.contains('secret-command-argument')
+	assert !serialized.contains('secret-command-output')
+}
+
 fn test_run_codex_cli_turn_usage_is_never_published() {
 	shim, ok := codex_fixture_shim()
 	if !ok {

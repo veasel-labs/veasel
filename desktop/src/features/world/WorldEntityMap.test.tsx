@@ -166,6 +166,17 @@ describe('WorldEntityMap activation', () => {
     const avatar = screen.getByRole('img', { name: 'You, exploring the workspace' });
     const select = screen.getByRole('combobox', { name: 'Your appearance' });
     expect(avatar).toHaveStyle({ '--frames': '4' });
+    expect(select).toHaveValue('river');
+    expect(Array.from(select.querySelectorAll('option')).map((option) => option.value)).toEqual([
+      'river',
+      'grove',
+      'ember',
+      'neon',
+    ]);
+
+    await user.selectOptions(select, 'neon');
+    expect(avatar).toHaveStyle({ backgroundImage: "url('/world/char-player-neon-south.png')" });
+    expect(window.localStorage.getItem('agent-toolkit:world-player-appearance:/ws')).toBe('neon');
 
     await user.selectOptions(select, 'grove');
     expect(avatar).toHaveStyle({ backgroundImage: "url('/world/char-player-grove-south.png')" });

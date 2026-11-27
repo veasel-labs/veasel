@@ -1073,6 +1073,17 @@ first verifier claim. This is lease and recovery infrastructure only: it does
 not execute a reviewer, persist a task-verification receipt, or promote a task
 to `succeeded`.
 
+Schema 43 adds durable verifier-run bindings and immutable, candidate-bound
+review receipts. The server binds the built-in read-only reviewer run to the
+Goal attempt, verification fence, parent session/operation, admitted repository,
+base SHA, candidate SHA, declared paths, and acceptance criteria; receipt
+recording rechecks the active lease and candidate and parses a bounded strict
+result envelope. The receipt is review evidence only: this slice does not
+launch the reviewer, configure an independent provider/model route, run
+executable acceptance checks, or promote `verifying` to `succeeded`. Keep Goal
+dispatch integration and atomic acceptance as open work until an end-to-end
+reviewer run and those checks are implemented and tested.
+
 - [x] Publish a versioned Toolkit Goal v1/task/evidence contract with an offline
   validator and planner for authorized repositories, acceptance criteria,
   deadline, budget, delivery mode, DAG, base SHA, paths, runner, verifier, and

@@ -135,6 +135,7 @@ fn test_goal_task_state_is_seeded_idempotently_and_recovery_never_replays_runnin
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 40') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 41') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 42') or { panic(err) }
+	store.db.exec('DELETE FROM schema_migrations WHERE version = 43') or { panic(err) }
 	store.close() or { panic(err) }
 
 	store = open_store(path) or { panic(err) }

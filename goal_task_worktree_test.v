@@ -257,6 +257,126 @@ fn test_goal_task_candidate_observer_rejects_scoped_symlink_and_malformed_root()
 	}
 }
 
+fn test_goal_task_candidate_observer_rejects_scoped_ancestor_symlink() {
+	fixture := new_goal_task_worktree_fixture('https://github.com/owner/repo.git') or {
+		panic(err)
+	}
+	defer { os.rmdir_all(os.dir(fixture.root)) or {} }
+	outside_docs := os.join_path(os.dir(fixture.root), 'outside-docs')
+	os.mkdir(outside_docs) or { panic(err) }
+	os.write_file(os.join_path(outside_docs, 'README.md'), 'outside') or { panic(err) }
+	worktree_path := os.join_path(os.dir(fixture.root), 'candidate-observer-ancestor-link')
+	worktree := create_goal_task_worktree(fixture.root, GoalTaskWorktree{
+		goal_id:         'candidate-goal'
+		task_id:         'prepare'
+		attempt:         1
+		repository_root: fixture.root
+		path:            worktree_path
+		base_sha:        fixture.commit
+		status:          'preparing'
+	}) or { panic(err) }
+	os.rm(os.join_path(worktree.path, 'docs/README.md')) or { panic(err) }
+	os.rmdir(os.join_path(worktree.path, 'docs')) or { panic(err) }
+	os.symlink(outside_docs, os.join_path(worktree.path, 'docs')) or { panic(err) }
+	_ = run_workspace_git_command_output(worktree.path, ['add', '--all', '--', 'docs'], 1024) or {
+		panic(err)
+	}
+	_ = run_workspace_git_command_output(worktree.path,
+		['-c', 'commit.gpgsign=false', 'commit', '--no-gpg-sign', '-m', 'ancestor symlink'], 1024) or {
+		panic(err)
+	}
+	candidate := run_workspace_git_command_output(worktree.path, ['rev-parse', '--verify', 'HEAD'],
+		1024) or { panic(err) }
+	task := GoalTask{
+		base_sha:   fixture.commit
+		paths:      ['docs/README.md']
+		repository: 'owner/repo'
+	}
+	if _ := observe_goal_task_candidate(GoalTaskWorktree{ ...worktree, status: 'ready' }, task,
+		candidate.trim_space(), time.now().add(max_goal_preflight_elapsed)) {
+		assert false, 'accepted a scoped ancestor symlink candidate'
+	}
+}
+
+fn test_goal_task_candidate_observer_rejects_symlinked_repository_root() {
+	fixture := new_goal_task_worktree_fixture('https://github.com/owner/repo.git') or {
+		panic(err)
+	}
+	defer { os.rmdir_all(os.dir(fixture.root)) or {} }
+	worktree_path := os.join_path(os.dir(fixture.root), 'candidate-observer-root-link')
+	worktree := create_goal_task_worktree(fixture.root, GoalTaskWorktree{
+		goal_id:         'candidate-goal'
+		task_id:         'prepare'
+		attempt:         1
+		repository_root: fixture.root
+		path:            worktree_path
+		base_sha:        fixture.commit
+		status:          'preparing'
+	}) or { panic(err) }
+	root_link := os.join_path(os.dir(fixture.root), 'repository-root-link')
+	os.symlink(fixture.root, root_link) or { panic(err) }
+	task := GoalTask{
+		base_sha:   fixture.commit
+		paths:      ['docs/README.md']
+		repository: 'owner/repo'
+	}
+	if _ := observe_goal_task_candidate(GoalTaskWorktree{
+		...worktree
+		repository_root: root_link
+		status:          'ready'
+	}, task, fixture.commit[..fixture.commit.len - 1] + 'f',
+		time.now().add(max_goal_preflight_elapsed)) {
+		assert false, 'accepted a symlinked persisted repository root'
+	}
+}
+
+fn test_goal_task_candidate_observer_rejects_gitlink_scope_entry() {
+	fixture := new_goal_task_worktree_fixture('https://github.com/owner/repo.git') or {
+		panic(err)
+	}
+	defer { os.rmdir_all(os.dir(fixture.root)) or {} }
+	worktree_path := os.join_path(os.dir(fixture.root), 'candidate-observer-gitlink')
+	worktree := create_goal_task_worktree(fixture.root, GoalTaskWorktree{
+		goal_id:         'candidate-goal'
+		task_id:         'prepare'
+		attempt:         1
+		repository_root: fixture.root
+		path:            worktree_path
+		base_sha:        fixture.commit
+		status:          'preparing'
+	}) or { panic(err) }
+	_ = run_workspace_git_command_output(worktree.path, [
+		'update-index',
+		'--add',
+		'--cacheinfo',
+		'160000,${fixture.commit},docs/README.md',
+	], 1024) or { panic(err) }
+	tree := run_workspace_git_command_output(worktree.path, ['write-tree'], 1024) or { panic(err) }
+	candidate := run_workspace_git_command_output(worktree.path, [
+		'-c',
+		'user.name=Veasel Fixture',
+		'-c',
+		'user.email=fixture@example.invalid',
+		'commit-tree',
+		tree.trim_space(),
+		'-p',
+		fixture.commit,
+		'-m',
+		'gitlink candidate',
+	], 1024) or { panic(err) }
+	_ = run_workspace_git_command_output(worktree.path, ['reset', '--hard', candidate.trim_space()],
+		1024) or { panic(err) }
+	task := GoalTask{
+		base_sha:   fixture.commit
+		paths:      ['docs/README.md']
+		repository: 'owner/repo'
+	}
+	if _ := observe_goal_task_candidate(GoalTaskWorktree{ ...worktree, status: 'ready' }, task,
+		candidate.trim_space(), time.now().add(max_goal_preflight_elapsed)) {
+		assert false, 'accepted a scoped gitlink candidate'
+	}
+}
+
 fn test_goal_task_candidate_observer_rejects_base_and_nonexistent_candidate() {
 	fixture := new_goal_task_worktree_fixture('https://github.com/owner/repo.git') or {
 		panic(err)

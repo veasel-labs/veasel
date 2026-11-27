@@ -64,6 +64,9 @@ pub fn (app &App) start_goal_task(mut ctx Context, id string, task_id string) ve
 		ctx.res.set_status(.not_found)
 		return ctx.json(APIError{ error: 'Goal task not found' })
 	}
+	capabilities := resolve_goal_task_dispatch_capabilities(task, request.permission_mode) or {
+		return json_conflict_error(mut ctx, 'Goal task capability preflight failed: ${err.msg()}')
+	}
 	checkouts := verify_goal_checkouts(goal) or {
 		return json_conflict_error(mut ctx, 'Goal checkout preflight failed: ${err.msg()}')
 	}
@@ -79,7 +82,9 @@ pub fn (app &App) start_goal_task(mut ctx Context, id string, task_id string) ve
 	if !valid_session_title(title) {
 		return json_request_error(mut ctx, 'Task session title is invalid')
 	}
-	provider := task.runner.trim_space()
+	// local-v is the canonical Veasel worker and uses the configured/default
+	// provider. Installed CLI runners retain their explicit provider identity.
+	provider := capabilities.runner.provider_id
 	validated_prefs := app.validate_session_create_preferences(SessionInput{
 		title:              title
 		directory:          checkout.path

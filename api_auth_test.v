@@ -811,6 +811,35 @@ fn auth_test_goal_round_trip(port int, token string) {
 		['status', '--porcelain=v1', '-z', '--untracked-files=all'], 1024) or { panic(err) }) == status_before
 	assert (run_workspace_git_command_output(fixture.root, ['worktree', 'list', '--porcelain'],
 		4096) or { panic(err) }) == worktrees_before
+
+	// Capability rejection happens before the claim/worktree boundary. An
+	// unknown runner must not consume an attempt or create a disposable
+	// worktree, even when the repository checkout itself is valid.
+	unknown_goal := GoalAdmission{
+		...goal
+		id:    'http-unknown-runner'
+		title: 'HTTP unknown runner'
+		tasks: goal.tasks.map(GoalTask{ ...it, runner: 'mystery-runner' })
+	}
+	unknown_body := json2.encode(unknown_goal, escape_unicode: true, time_as_unix: true)
+	unknown_post := auth_test_request('POST', '/v1/goals', [...headers,
+		'Content-Length: ${unknown_body.len}'])
+	assert auth_test_status(auth_test_raw(port, unknown_post + unknown_body)).contains(' 201 ')
+	unknown_before := run_workspace_git_command_output(fixture.root, ['worktree', 'list', '--porcelain'], 4096) or { panic(err) }
+	start_body := '{"title":"Unknown runner attempt","prompt":"No provider call"}'
+	start_response := auth_test_raw(port, auth_test_request('POST',
+		'/v1/goals/http-unknown-runner/tasks/a-start/start', [...headers,
+			'Content-Length: ${start_body.len}']) + start_body)
+	assert auth_test_status(start_response).contains(' 409 '), auth_test_status(start_response)
+	unknown_tasks_response := auth_test_raw(port,
+		auth_test_request('GET', '/v1/goals/http-unknown-runner/tasks', headers))
+	assert auth_test_status(unknown_tasks_response).contains(' 200 ')
+	unknown_projection := json2.decode[GoalTasksProjection](unknown_tasks_response.all_after('\r\n\r\n')) or {
+		panic(err)
+	}
+	assert unknown_projection.tasks.all(it.status == 'pending')
+	assert unknown_projection.tasks.all(it.attempt_count == 0)
+	assert (run_workspace_git_command_output(fixture.root, ['worktree', 'list', '--porcelain'], 4096) or { panic(err) }) == unknown_before
 }
 
 struct AuthGoalRepositoryFixture {

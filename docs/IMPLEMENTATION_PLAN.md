@@ -135,6 +135,13 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `/home/ulisesjcf/.cache/veasel-validation/v0.106.3-next.0/packaged-world-fullscreen.png`.
   This is visual and provider-response evidence, not clean live-session
   acceptance or a publishable unqualified Desktop screenshot.
+- The immutable packaged release `v0.107.1-next.0` is installed side-by-side
+  on HorneroOS. Its AppImage-first and standalone-TUI-first shared-listener
+  smoke journeys both passed with isolated data, visible Focus/TUI clients, and
+  one backend process per journey. Website, Homebrew, and AUR consumers now
+  reference the same release and their package/deployment checks passed. The
+  manual runner-selection attempt did not reach a provider turn, so this
+  release evidence still does not establish the edit/review/approval journey.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under
@@ -994,22 +1001,28 @@ until a per-loop handoff is reviewed and accepted. HorneroOS and
 `agentic-workstation` retain privileged desktop and OS actions; Veasel must not
 duplicate those capabilities.
 
-The current `codex/local-goal-task-dispatch` branch adds the first local
-dispatch slice: an authenticated task start creates a fenced attempt, an
-exact-base isolated worktree, and a durable session operation using the
-canonical session worker. Recovery, live queued cancellation/rejection, and
-concurrent attempt paths are covered fail-closed. This is not yet a verified
-draft: successful turns remain in progress until independent candidate-SHA
-verification is implemented. It does not provide goal CLI commands, autonomous
-retry/recovery, leases, GitHub publication, or fleet concurrency. Keep those
-items below open until receipts and end-to-end acceptance exist.
+The merged PR #845 adds the first local dispatch slice: an authenticated task
+start creates a fenced attempt, an exact-base isolated worktree, and a durable
+session operation using the canonical session worker. Recovery, live queued
+cancellation/rejection, and concurrent attempt paths are covered fail-closed.
+This is not yet a verified draft: successful turns remain in progress until an
+independent candidate-SHA receipt exists. It does not provide goal CLI commands,
+autonomous retry/recovery, task leases, GitHub publication, or fleet
+concurrency. Keep those items below open until receipts and end-to-end
+acceptance exist.
 
-- [ ] Publish a versioned Toolkit goal/task/evidence contract with an offline
-  validator and planner; require authorized repositories, observable finish
-  conditions, playbook, deadline, budget, permissions, delivery mode, DAG,
-  base SHA, paths, runner, verifier, and evidence. Start with research, bug,
+- [x] Publish a versioned Toolkit goal/task/evidence contract with an offline
+  validator and planner. Agent Toolkit `v1.51.1` (release commit
+  `907fe81e08bd86d396c7410597ebf41939836d40`) ships Goal v1 plus offline
+  `goal validate`, `goal export`, and `goal plan`; it validates/plans portable
+  manifests but does not execute goals or dispatch workers. Require authorized
+  repositories, observable finish conditions, playbook, deadline, budget,
+  permissions, delivery mode, DAG, base SHA, paths, runner, verifier, and
+  evidence. Start with research, bug,
   feature, migration, and release playbooks, reusing loop validators and
-  handoff formats where they match. Preserve current Swarm commands and states.
+  handoff formats where they match. Agent Toolkit `v1.51.1` retires new Swarm
+  v1 starts/inits; preserve read-only compatibility inspection for existing
+  records during migration rather than promising new Swarm execution.
   Add an optional pstack-inspired pack with provenance and compatibility
   metadata; do not copy external playbook sources into the marketplace.
 - [ ] Keep the official `veasel-labs/agent-toolkit` marketplace reference-based:
@@ -1092,7 +1105,10 @@ items below open until receipts and end-to-end acceptance exist.
   pending decisions, PRs, known remaining provider budget (preserving unknown
   as unknown), and evidence links. Include the summary timestamp; when Veasel
   is unavailable, the briefing continues with the last known summary and its
-  age. Keep `oss-triage` at its current OSS L2 scope and require human review
+  age. The personal `~/.ai-workspace/loops/oss-triage/loop.yaml` remains L2
+  (comment/label/assign allowed, merge/close/push/commit denied), independent of
+  the Toolkit catalog template that currently defines its starter as L1; do not
+  silently rewrite the user's installed loop. Require human review
   before any external comment or assignment; Veasel Labs intake remains a
   draft. Keep `oss-pr-monitor` at its existing OSS L3 behavior, but exclude
   Veasel-owned repository/effect pairs from its automated mutations using both

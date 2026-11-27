@@ -1022,18 +1022,19 @@ attempt to explicit `verifying`; it never implies `succeeded` or `draft_ready`.
 PR #856 (`87103cf7`) adds fail-closed runner/verifier identifier preflight
 through the local registry before claiming work or creating a worktree/session;
 runner readiness/authentication and verifier execution remain open.
-The independent receipt lifecycle is integrated in #850 (`be8313b2`), and
-redacted Codex app-server effect receipts are integrated in #851
-(`8a7900c7`). These Codex receipts document tool effects; they are not
-independent task-verification receipts. Recovery never replays `verifying`,
-and verification does not satisfy dependencies. An independent receipt bound
-to the exact repository, base, and candidate SHAs remains required before
-promotion to `succeeded` or `draft_ready`; client-provided receipt promotion
-remains deferred until verifier trust and candidate observation are enforced
-at the persistence boundary. The #849 candidate observer is a read-only,
-non-accepting diagnostic and does not run tests, persist evidence, or promote a
-task. Recovery, live queued cancellation/rejection, and concurrent attempt
-paths are covered fail-closed.
+#850 (`be8313b2`) adds the durable `verifying` state and rejects generic
+success transitions without an independent receipt. It does not yet persist a
+task-verification receipt, execute a verifier, or promote a task from
+`verifying`. Redacted Codex app-server effect receipts are integrated in #851
+(`8a7900c7`); those receipts document tool effects and do not prove task
+correctness. Recovery never replays `verifying`, and verification does not
+satisfy dependencies. An independent receipt bound to the exact repository,
+base, and candidate SHAs remains required before promotion to `succeeded` or
+`draft_ready`; any promotion path must enforce verifier trust and candidate
+observation at the persistence boundary. The #849 candidate observer is a
+read-only, non-accepting diagnostic and does not run tests, persist evidence,
+or promote a task. Recovery, live queued cancellation/rejection, and concurrent
+attempt paths are covered fail-closed.
 
 These slices do not yet provide the operational Veasel goal CLI commands
 listed below, automatic retries, an objective scheduler, GitHub publication,

@@ -782,6 +782,7 @@ export function WorldEntityMap({
             <option value="river">River</option>
             <option value="grove">Grove</option>
             <option value="ember">Ember</option>
+            <option value="neon">Neon</option>
           </select>
         </label>
         <button type="button" className={styles.hudButton} onClick={zoomOut} aria-label="Zoom out">

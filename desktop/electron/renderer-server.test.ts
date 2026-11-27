@@ -33,12 +33,15 @@ function request(
 ): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
+    const requestTarget = url.startsWith(target.origin)
+      ? url.slice(target.origin.length) || '/'
+      : `${target.pathname}${target.search}`;
     const req = http.request(
       {
         protocol: target.protocol,
         hostname: target.hostname,
         port: target.port,
-        path: `${target.pathname}${target.search}`,
+        path: requestTarget,
         method,
         headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), ...headers },
       },
@@ -123,14 +126,42 @@ describe('startRendererServer', () => {
       server.setBackendTarget(`http://127.0.0.1:${backendPort}`);
       const warm = await request(`${server.url}/api/v1/project/list`, 'POST', '{}', { 'x-veasel-proxy': TOKEN });
       expect(warm.status).toBe(200);
-      expect(JSON.parse(warm.body)).toMatchObject({ ok: true, path: '/api/v1/project/list', desktop: '1' });
+      expect(JSON.parse(warm.body)).toMatchObject({ ok: true, path: '/v1/project/list', desktop: '1' });
+      const health = await request(`${server.url}/api/v1/health?source=desktop`, 'GET', '', {
+        'x-veasel-proxy': TOKEN,
+      });
+      expect(health.status).toBe(200);
+      expect(JSON.parse(health.body)).toMatchObject({ ok: true, path: '/v1/health?source=desktop', desktop: '1' });
+      const apiRoot = await request(`${server.url}/api/v1?source=desktop`, 'GET', '', {
+        'x-veasel-proxy': TOKEN,
+      });
+      expect(apiRoot.status).toBe(200);
+      expect(JSON.parse(apiRoot.body)).toMatchObject({ ok: true, path: '/v1?source=desktop', desktop: '1' });
+      const escapedApiPath = await request(`${server.url}/api/v1/%2e%2e/health`, 'GET', '', {
+        'x-veasel-proxy': TOKEN,
+      });
+      expect(escapedApiPath.status).toBe(400);
+      const canonical = await request(`${server.url}/v1/goals?workspace=%2Ftmp%2Fdemo`, 'GET', '', {
+        'x-veasel-proxy': TOKEN,
+      });
+      expect(canonical.status).toBe(200);
+      expect(JSON.parse(canonical.body)).toMatchObject({
+        ok: true,
+        path: '/v1/goals?workspace=%2Ftmp%2Fdemo',
+        desktop: '1',
+      });
     } finally {
       await server.close();
     }
   });
 
   it('fails closed for untrusted proxy callers and never contacts the backend', async () => {
-    const hits: Array<{ url?: string; desktop?: string | string[]; proxy?: string | string[]; fetchSite?: string | string[] }> = [];
+    const hits: Array<{
+      url?: string;
+      desktop?: string | string[];
+      proxy?: string | string[];
+      fetchSite?: string | string[];
+    }> = [];
     const backend = http.createServer((req, res) => {
       hits.push({
         url: req.url,
@@ -157,31 +188,43 @@ describe('startRendererServer', () => {
       expect((await post(`${server.url}/api/v1/jobs`, '{}')).status).toBe(403);
       expect((await get(`${server.url}/v1/sessions`)).status).toBe(403);
       // Wrong capability.
-      expect(
-        (await request(`${server.url}/v1/sessions`, 'POST', '{}', { 'x-veasel-proxy': 'wrong' })).status,
-      ).toBe(403);
+      expect((await request(`${server.url}/v1/sessions`, 'POST', '{}', { 'x-veasel-proxy': 'wrong' })).status).toBe(
+        403,
+      );
       // DNS rebinding: foreign Host even with the capability.
       expect(
-        (await request(`${server.url}/v1/sessions`, 'POST', '{}', { 'x-veasel-proxy': TOKEN, host: 'attacker.example' }))
-          .status,
+        (
+          await request(`${server.url}/v1/sessions`, 'POST', '{}', {
+            'x-veasel-proxy': TOKEN,
+            host: 'attacker.example',
+          })
+        ).status,
       ).toBe(403);
       // Foreign and cross-port Origins.
       expect(
-        (await request(`${server.url}/v1/sessions`, 'POST', '{}', { 'x-veasel-proxy': TOKEN, origin: 'https://evil.example' }))
-          .status,
+        (
+          await request(`${server.url}/v1/sessions`, 'POST', '{}', {
+            'x-veasel-proxy': TOKEN,
+            origin: 'https://evil.example',
+          })
+        ).status,
       ).toBe(403);
       expect(
-        (await request(`${server.url}/v1/sessions`, 'POST', '{}', {
-          'x-veasel-proxy': TOKEN,
-          origin: 'http://127.0.0.1:1',
-        })).status,
+        (
+          await request(`${server.url}/v1/sessions`, 'POST', '{}', {
+            'x-veasel-proxy': TOKEN,
+            origin: 'http://127.0.0.1:1',
+          })
+        ).status,
       ).toBe(403);
       // Cross-site simple request (no preflight) must not be laundered.
       expect(
-        (await request(`${server.url}/v1/sessions`, 'POST', '{}', {
-          'x-veasel-proxy': TOKEN,
-          'sec-fetch-site': 'cross-site',
-        })).status,
+        (
+          await request(`${server.url}/v1/sessions`, 'POST', '{}', {
+            'x-veasel-proxy': TOKEN,
+            'sec-fetch-site': 'cross-site',
+          })
+        ).status,
       ).toBe(403);
       expect(hits).toEqual([]);
 
@@ -305,7 +348,12 @@ describe('startRendererServer', () => {
         'x-veasel-proxy': TOKEN,
         authorization: 'Bearer renderer-forged',
       });
-      expect(seen).toEqual(['Bearer backend-secret-1', 'Bearer backend-secret-1', 'Bearer backend-secret-2', undefined]);
+      expect(seen).toEqual([
+        'Bearer backend-secret-1',
+        'Bearer backend-secret-1',
+        'Bearer backend-secret-2',
+        undefined,
+      ]);
       // The proxy token gate still fails closed before the backend is contacted.
       const before = seen.length;
       expect((await get(`${server.url}/v1/sessions`)).status).toBe(403);
@@ -314,5 +362,4 @@ describe('startRendererServer', () => {
       await server.close();
     }
   });
-
 });

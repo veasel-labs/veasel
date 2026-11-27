@@ -111,7 +111,25 @@ function proxyApi(
   backendBase: string,
   backendAuthorization: string | undefined,
 ): void {
-  const target = new URL(req.url ?? '/', backendBase);
+  const requestTarget = req.url ?? '/';
+  const requestPath = requestTarget.split('?')[0] ?? '/';
+  // The renderer's generated API client retains the public `/api/v1` prefix,
+  // while the canonical V server exposes the versioned API directly at
+  // `/v1`. Translate only that compatibility prefix at this boundary;
+  // already-canonical `/v1` requests pass through unchanged.
+  const rewritesApiVersion = requestPath === '/api/v1' || requestPath.startsWith('/api/v1/');
+  const backendPath = rewritesApiVersion
+    ? `${requestPath.slice('/api'.length)}${requestTarget.slice(requestPath.length)}`
+    : requestTarget;
+  const target = new URL(backendPath, backendBase);
+  // URL canonicalization resolves dot segments. Do not let a request under
+  // the compatibility prefix escape the versioned backend API after that
+  // normalization (including encoded dot segments).
+  if (rewritesApiVersion && target.pathname !== '/v1' && !target.pathname.startsWith('/v1/')) {
+    res.writeHead(400, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'invalid API path' }));
+    return;
+  }
   const headers: http.OutgoingHttpHeaders = { ...req.headers, host: target.host };
   // The capability and any caller-supplied trust stamp never cross the proxy:
   // the gate has already authenticated this request, and the backend must see

@@ -1023,37 +1023,39 @@ PR #856 (`87103cf7`) adds fail-closed runner/verifier identifier preflight
 through the local registry before claiming work or creating a worktree/session;
 runner readiness/authentication and verifier execution remain open.
 #850 (`be8313b2`) adds the durable `verifying` state and rejects generic
-success transitions without an independent receipt. It does not yet persist a
-task-verification receipt, execute a verifier, or promote a task from
-`verifying`. Redacted Codex app-server effect receipts are integrated in #851
+success transitions without an independent receipt. The open draft PR #861
+contains durable candidate-bound reviewer receipts and the `verified` state,
+pending merge and CI; it still does not dispatch reviewers automatically, run
+executable acceptance checks, or promote `verified` to `succeeded`. Redacted
+Codex app-server effect receipts are integrated in #851
 (`8a7900c7`); those receipts document tool effects and do not prove task
-correctness. Recovery never replays `verifying`, and verification does not
-satisfy dependencies. An independent receipt bound to the exact repository,
-base, and candidate SHAs remains required before promotion to `succeeded` or
-`draft_ready`; any promotion path must enforce verifier trust and candidate
-observation at the persistence boundary. The #849 candidate observer is a
-read-only, non-accepting diagnostic and does not run tests, persist evidence,
-or promote a task. Recovery, live queued cancellation/rejection, and concurrent
-attempt paths are covered fail-closed.
+correctness. Recovery never replays `verifying`; `verified` remains distinct
+from success and does not satisfy dependencies. Promotion to `succeeded` or
+`draft_ready` still requires an independent receipt bound to the exact
+repository, base, and candidate SHAs, executable acceptance policy, and an
+atomic persistence-boundary transition. The #849 candidate observer is a
+read-only check and does not run tests or promote a task. Recovery, live queued
+cancellation/rejection, and concurrent attempt paths are covered fail-closed.
 
 These slices do not yet provide the operational Veasel goal CLI commands
 listed below, automatic retries, an objective scheduler, GitHub publication,
-or fleet concurrency. PR #858 merged deadline-bound lease persistence and
-generation fencing; this change adds heartbeat and expiry handling for the
-on-host durable session worker. Scheduler-wide path coordination and remote
-worker leases remain open. Keep those items below open until the missing
+or fleet concurrency. PR #858 merged deadline-bound task lease persistence
+and generation fencing; PR #859 merged lease heartbeat and expiry handling
+for the on-host durable session worker. Scheduler-wide path coordination and
+remote worker leases remain open. Keep those items below open until the missing
 mechanisms and end-to-end acceptance exist.
 
 The candidate-observation slice adds a pure, non-accepting check for a ready
 attempt worktree: the requested full candidate SHA must resolve exactly, match
 `HEAD`, descend from the admitted base, leave the worktree clean, and change
-only the task's declared paths. It never runs tests, persists evidence, or
-promotes a task. A later receipt slice still needs trusted verifier identities,
-idempotent evidence storage, and an atomic `verifying` to `succeeded`
-transition. The observation is a diagnostic snapshot, not a receipt: its
-caller must hold a fenced task/worker lease, confirm that no live operation can
-still mutate the worktree, re-observe immediately before persistence, and
-persist/promote only in one fenced transaction. The observer itself provides no
+only the task's declared paths. The open draft PR #861 adds trusted built-in
+reviewer bindings, immutable candidate-bound receipts, strict result parsing, and
+durable pass/fail/uncertain settlement. It still does not execute the reviewer
+automatically, run executable acceptance checks, or perform an atomic
+`verified` to `succeeded` transition. Candidate observation is not itself a
+receipt: dispatch must hold the verification fence, confirm no live operation
+can mutate the worktree, re-observe immediately before persistence, and bind
+acceptance to the exact candidate SHA. The observer itself provides no
 cross-process lock against a later Git mutation.
 
 The worker-side lease slice renews only an attempt linked to a canonical
@@ -1069,9 +1071,11 @@ Schema 42 adds a separate deadline-bound verification lease for attempts in
 `verifying`, with its own fencing token and generation. Its fixed hard deadline
 is capped by the attempt deadline; expired, malformed, or missing verifier
 leases fail closed to `uncertain` on recovery, including a crash before the
-first verifier claim. This is lease and recovery infrastructure only: it does
-not execute a reviewer, persist a task-verification receipt, or promote a task
-to `succeeded`.
+first verifier claim. The open draft PR #861 builds on this infrastructure
+with durable reviewer bindings, receipt persistence, schema 44's `verified` task state, and
+transactional settlement for all receipt verdicts. Automatic reviewer
+dispatch, executable acceptance checks, and promotion to `succeeded` remain
+open.
 
 Schema 43 adds durable verifier-run bindings and immutable, candidate-bound
 review receipts. The server binds the built-in read-only reviewer run to the

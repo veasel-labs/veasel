@@ -51,7 +51,7 @@ fn test_goal_task_verified_state_migration_preserves_rows_and_projection() {
 	assert state.status == 'verified'
 	assert state.attempt_count == 1
 	assert state.attempts[0].status == 'verifying'
-	assert store.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) } == 44
+	assert store.db.q_int('SELECT COUNT(*) FROM schema_migrations WHERE version = 44') or { panic(err) } == 1
 	assert store.db.q_int('SELECT COUNT(DISTINCT id) FROM pragma_foreign_key_list(\'goal_task_attempts\') WHERE "table" = \'goal_task_states\'') or {
 		panic(err)
 	} == 1
@@ -221,6 +221,7 @@ fn test_goal_task_state_is_seeded_idempotently_and_recovery_never_replays_runnin
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 42') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 43') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 44') or { panic(err) }
+	store.db.exec('DELETE FROM schema_migrations WHERE version = 45') or { panic(err) }
 	store.close() or { panic(err) }
 
 	store = open_store(path) or { panic(err) }

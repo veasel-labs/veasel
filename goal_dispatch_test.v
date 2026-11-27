@@ -1,13 +1,7 @@
 module main
 
 fn test_goal_v2_dispatch_fails_closed_before_worker_side_effects() {
-	base := example_goal_admission()
-	goal := GoalAdmission{
-		...base
-		schema_version: 2
-		policy_ceiling: ['repository.read']
-		tasks:          base.tasks.map(GoalTask{ ...it, permissions: ['repository.read'] })
-	}
+	goal := GoalAdmission{ schema_version: 2 }
 	goal_task_dispatch_policy_supported(goal) or {
 		assert err.msg().contains('disabled until task permissions are enforced')
 		return
@@ -16,5 +10,5 @@ fn test_goal_v2_dispatch_fails_closed_before_worker_side_effects() {
 }
 
 fn test_goal_v1_dispatch_policy_remains_supported() {
-	goal_task_dispatch_policy_supported(example_goal_admission()) or { panic(err) }
+	goal_task_dispatch_policy_supported(GoalAdmission{ schema_version: 1 }) or { panic(err) }
 }

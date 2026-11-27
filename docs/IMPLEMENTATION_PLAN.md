@@ -98,6 +98,22 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   remembered by the isolated profile so the native folder picker was not
   exercised, the installed build is still a prerelease, and the host's other
   native provider checks remain partly unknown.
+- On 2026-11-27, the official `v0.114.0-next.0` AppImage hash matched its
+  published release manifest and launched against a fresh isolated profile.
+  Focus discovered the installed authenticated Codex CLI, presented a real
+  Bash write for approval in `ask` mode, and completed the approved one-line
+  README edit in a disposable Git repository. The packaged TUI then resumed
+  that same Desktop-created session and completed a follow-up turn in it.
+  The sanitized receipt is in
+  [`desktop/evidence/hornero-packaged-desktop-tui-acceptance-2026-11-27.json`](desktop/evidence/hornero-packaged-desktop-tui-acceptance-2026-11-27.json);
+  detailed local evidence and screenshots remain under
+  `/home/ulisesjcf/.cache/veasel-validation/desktop-v0.114.0-next.0-2026-11-27/`.
+  Temporary copied authentication and test processes were removed, and the
+  existing user Desktop profile was untouched. This verifies real packaged
+  Desktop-to-TUI session continuity and one approved fixture edit. It does not
+  verify native folder selection, application-code tasks/tests, restart
+  recovery, installer lifecycle, cross-platform acceptance, or complete the
+  daily-driver goal.
 
 ### Optional cozy World (#693)
 

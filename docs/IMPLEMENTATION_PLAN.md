@@ -1078,14 +1078,25 @@ review receipts. The server binds the built-in read-only reviewer run to the
 Goal attempt, verification fence, parent session/operation, admitted repository,
 base SHA, candidate SHA, declared paths, and acceptance criteria; receipt
 recording rechecks the active lease and candidate and parses a bounded strict
-result envelope. The receipt is review evidence only: this slice does not
-launch the reviewer or resolve provider/model availability; it only records
-the requested route and checks the durable run is independent when a task uses
-`independent-review`. That check establishes distinct configured provider or
-model strings, not distinct underlying model lineage. It does not run
-executable acceptance checks or promote `verifying` to `succeeded`. Keep Goal
-dispatch integration and atomic acceptance as open work until an end-to-end
-reviewer run and those checks are implemented and tested.
+result envelope. A valid `pass` receipt moves the task atomically from
+`verifying` to durable `verified`; the worker attempt remains `verifying` until
+the later Goal acceptance transition. Schema 44 adds that task state and keeps
+it through restart even after the verifier lease expires. This does not launch
+the reviewer, resolve provider/model availability, or run executable
+acceptance checks. The route binding checks that `independent-review` uses a
+distinct configured provider or model string, not distinct underlying model
+lineage. Fail receipts now fail the attempt and return the task to pending only
+when Goal-wide attempt budget remains; otherwise they fail the task. Uncertain
+receipts settle the attempt, task, and workspace as uncertain. Every terminal
+receipt consumes its binding and removes its lease atomically, and replay reads
+the immutable receipt without requiring that lease. Lease renewal advances the
+binding fence with the lease; an expired bound reviewer run fails closed and
+cannot be reclaimed under a new fence. Binding a run also requires the exact
+fence captured by its dispatching worker, so a delayed worker cannot rebind
+after a reserved binding was reclaimed. Verified task state and consumed
+bindings both block lease reacquisition. Keep Goal dispatch integration,
+executable checks, and atomic `verified` to `succeeded` acceptance open until
+those paths are implemented and tested.
 
 - [x] Publish a versioned Toolkit Goal v1/task/evidence contract with an offline
   validator and planner for authorized repositories, acceptance criteria,

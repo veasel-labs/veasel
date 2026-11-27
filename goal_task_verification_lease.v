@@ -46,13 +46,24 @@ fn (mut store Store) claim_goal_task_verification_lease(goal_id string, task_id 
 	defer { store.mu.unlock() }
 	store.db.exec('BEGIN IMMEDIATE')!
 	defer { store.db.rollback() or {} }
-	rows := store.db.exec_param_many('SELECT a.status, a.effective_deadline, v.fencing_token, v.generation, v.verification_deadline, v.lease_expires_at FROM goal_task_attempts a LEFT JOIN goal_task_verification_leases v ON v.goal_id = a.goal_id AND v.task_id = a.task_id AND v.attempt = a.attempt WHERE a.goal_id = ? AND a.task_id = ? AND a.attempt = ?', [
+	rows := store.db.exec_param_many('SELECT a.status, a.effective_deadline, v.fencing_token, v.generation, v.verification_deadline, v.lease_expires_at, s.status FROM goal_task_attempts a JOIN goal_task_states s ON s.goal_id = a.goal_id AND s.task_id = a.task_id LEFT JOIN goal_task_verification_leases v ON v.goal_id = a.goal_id AND v.task_id = a.task_id AND v.attempt = a.attempt WHERE a.goal_id = ? AND a.task_id = ? AND a.attempt = ?', [
 		goal_id,
 		task_id,
 		attempt.str(),
 	])!
 	if rows.len != 1 || rows[0].val(0) != 'verifying' {
 		return error('goal task attempt is not verifying')
+	}
+	if rows[0].val(6) != 'verifying' {
+		return error('goal task is no longer awaiting verification')
+	}
+	bindings := store.db.exec_param_many("SELECT status FROM goal_task_verifier_bindings WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'consumed'", [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	if bindings.len > 0 {
+		return error('goal task verification already has a consumed reviewer binding')
 	}
 	effective := time.parse_rfc3339(rows[0].val(1)) or { return error('goal task effective deadline is invalid') }
 	now := time.now()
@@ -63,6 +74,15 @@ fn (mut store Store) claim_goal_task_verification_lease(goal_id string, task_id 
 		lease_expiry := time.parse_rfc3339(rows[0].val(5)) or { return error('goal task verification lease expiry is invalid') }
 		if now < lease_expiry {
 			return error('goal task verification lease is already held')
+		}
+		binding_rows := store.db.exec_param_many("SELECT status, COALESCE(reviewer_run_id, '') FROM goal_task_verifier_bindings WHERE goal_id = ? AND task_id = ? AND attempt = ?", [
+			goal_id,
+			task_id,
+			attempt.str(),
+		])!
+		if binding_rows.len == 1
+			&& (binding_rows[0].val(0) == 'bound' || binding_rows[0].val(1).len > 0) {
+			return error('expired bound reviewer run cannot be reclaimed safely; expire the task as uncertain')
 		}
 		existing_hard := time.parse_rfc3339(rows[0].val(4)) or { return error('goal task verification deadline is invalid') }
 		if now >= existing_hard {
@@ -91,6 +111,15 @@ fn (mut store Store) claim_goal_task_verification_lease(goal_id string, task_id 
 		hard_deadline.format_rfc3339(),
 		expires.format_rfc3339(),
 	])!
+	if rows[0].val(2) != '' {
+		store.db.exec_param_many("UPDATE goal_task_verifier_bindings SET fencing_token = ?, lease_generation = ?, updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status IN ('reserved', 'bound')", [
+			token,
+			generation.str(),
+			goal_id,
+			task_id,
+			attempt.str(),
+		])!
+	}
 	store.db.commit()!
 	return GoalTaskVerificationLease{ verification_deadline: hard_deadline.format_rfc3339(), lease_expires_at: expires.format_rfc3339(), generation: generation, fencing_token: token }
 }
@@ -134,6 +163,33 @@ fn (mut store Store) renew_goal_task_verification_lease(goal_id string, task_id 
 	])!
 	if store.db.get_affected_rows_count() != 1 {
 		return error('goal task verification lease changed while renewing')
+	}
+	binding_rows := store.db.exec_param_many('SELECT status, fencing_token, lease_generation FROM goal_task_verifier_bindings WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	if binding_rows.len == 1 {
+		if binding_rows[0].val(0) == 'consumed' {
+			return error('goal task verification already has a consumed reviewer binding')
+		}
+		if binding_rows[0].val(0) !in ['reserved', 'bound']
+			|| binding_rows[0].val(1) != fencing_token
+			|| binding_rows[0].val(2).int() != generation {
+			return error('goal task verifier binding fence is stale')
+		}
+		store.db.exec_param_many("UPDATE goal_task_verifier_bindings SET fencing_token = ?, lease_generation = ?, updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status IN ('reserved', 'bound') AND fencing_token = ? AND lease_generation = ?", [
+			new_token,
+			new_generation.str(),
+			goal_id,
+			task_id,
+			attempt.str(),
+			fencing_token,
+			generation.str(),
+		])!
+		if store.db.get_affected_rows_count() != 1 {
+			return error('goal task verifier binding changed while renewing')
+		}
 	}
 	store.db.commit()!
 	return GoalTaskVerificationLease{ verification_deadline: hard.format_rfc3339(), lease_expires_at: expires.format_rfc3339(), generation: new_generation, fencing_token: new_token }
@@ -186,6 +242,25 @@ fn (mut store Store) expire_goal_task_verification_lease(goal_id string, task_id
 	hard := time.parse_rfc3339(rows[0].val(2)) or { return error('goal task verification deadline is invalid') }
 	if now < lease_expiry && now < hard {
 		return error('goal task verification lease has not expired')
+	}
+	receipts := store.db.exec_param_many("SELECT r.verdict FROM goal_task_verification_receipts r JOIN goal_task_verifier_bindings b ON b.id = r.binding_id WHERE r.goal_id = ? AND r.task_id = ? AND r.attempt = ? AND b.status = 'consumed'", [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	if receipts.len == 1 && receipts[0].val(0) == 'pass' {
+		store.db.exec_param_many('DELETE FROM goal_task_verification_leases WHERE goal_id = ? AND task_id = ? AND attempt = ? AND fencing_token = ? AND generation = ?', [
+			goal_id,
+			task_id,
+			attempt.str(),
+			fencing_token,
+			generation.str(),
+		])!
+		if store.db.get_affected_rows_count() != 1 {
+			return error('goal task verification lease changed while preserving its pass receipt')
+		}
+		store.db.commit()!
+		return true
 	}
 	store.db.exec_param_many('DELETE FROM goal_task_verification_leases WHERE goal_id = ? AND task_id = ? AND attempt = ? AND fencing_token = ? AND generation = ?', [
 		goal_id,

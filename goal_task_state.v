@@ -12,6 +12,7 @@ enum GoalTaskStatus {
 	pending
 	running
 	verifying
+	verified
 	succeeded
 	failed
 	uncertain
@@ -43,11 +44,43 @@ fn goal_task_attempt_status_from_db(value string) !GoalTaskAttemptStatus {
 	}
 }
 
+// SQLite cannot widen a CHECK constraint in place. Rebuild only the task state
+// table with foreign-key enforcement suspended; child rows remain untouched.
+fn migrate_goal_task_verified_state(mut db sqlite.DB) ! {
+	db.exec('PRAGMA foreign_keys = OFF')!
+	db.exec('PRAGMA legacy_alter_table = ON')!
+	db.begin()!
+	defer {
+		db.rollback() or {}
+		db.exec('PRAGMA legacy_alter_table = OFF') or {}
+		db.exec('PRAGMA foreign_keys = ON') or {}
+	}
+	db.exec('ALTER TABLE goal_task_states RENAME TO goal_task_states_v43')!
+	db.exec("CREATE TABLE goal_task_states (
+		goal_id TEXT NOT NULL,
+		task_id TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'verifying', 'verified', 'succeeded', 'failed', 'uncertain')),
+		attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+		owner_pid INTEGER NOT NULL DEFAULT 0,
+		owner_start_id TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (goal_id, task_id),
+		FOREIGN KEY (goal_id) REFERENCES goal_admissions(id) ON DELETE CASCADE
+	)")!
+	db.exec('INSERT INTO goal_task_states SELECT * FROM goal_task_states_v43')!
+	db.exec('DROP TABLE goal_task_states_v43')!
+	db.exec('INSERT INTO schema_migrations (version) VALUES (44)')!
+	db.commit()!
+	db.exec('PRAGMA legacy_alter_table = OFF')!
+	db.exec('PRAGMA foreign_keys = ON')!
+}
+
 fn goal_task_status_from_db(value string) !GoalTaskStatus {
 	return match value {
 		'pending' { .pending }
 		'running' { .running }
 		'verifying' { .verifying }
+		'verified' { .verified }
 		'succeeded' { .succeeded }
 		'failed' { .failed }
 		'uncertain' { .uncertain }
@@ -286,7 +319,10 @@ fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 			])!
 		}
 	}
-	verification_expired := db.exec("SELECT a.goal_id, a.task_id, a.attempt, a.session_id, a.session_operation_id, COALESCE(v.fencing_token, ''), COALESCE(v.generation, 0) FROM goal_task_attempts a LEFT JOIN goal_task_verification_leases v ON v.goal_id = a.goal_id AND v.task_id = a.task_id AND v.attempt = a.attempt WHERE a.status = 'verifying' AND (v.generation IS NULL OR julianday(v.verification_deadline) IS NULL OR julianday(v.lease_expires_at) IS NULL OR julianday(v.verification_deadline) <= julianday('now') OR julianday(v.lease_expires_at) <= julianday('now'))")!
+	// A verified task state is the durable result of receipt validation. Its
+	// worker attempt intentionally remains `verifying` until Goal acceptance;
+	// missing or expired verifier leases must not undo that result on restart.
+	verification_expired := db.exec("SELECT a.goal_id, a.task_id, a.attempt, a.session_id, a.session_operation_id, COALESCE(v.fencing_token, ''), COALESCE(v.generation, 0) FROM goal_task_attempts a JOIN goal_task_states s ON s.goal_id = a.goal_id AND s.task_id = a.task_id LEFT JOIN goal_task_verification_leases v ON v.goal_id = a.goal_id AND v.task_id = a.task_id AND v.attempt = a.attempt WHERE a.status = 'verifying' AND s.status != 'verified' AND (v.generation IS NULL OR julianday(v.verification_deadline) IS NULL OR julianday(v.lease_expires_at) IS NULL OR julianday(v.verification_deadline) <= julianday('now') OR julianday(v.lease_expires_at) <= julianday('now'))")!
 	for row in verification_expired {
 		if row.val(5) != '' && row.val(6).int() > 0 {
 			db.exec_param_many('DELETE FROM goal_task_verification_leases WHERE goal_id = ? AND task_id = ? AND attempt = ? AND fencing_token = ? AND generation = ?', [

@@ -288,9 +288,11 @@ fn goal_task_verifier_review_prompt(binding GoalTaskVerifierBinding, goal GoalAd
 // bind_goal_task_verifier_run can only be called by the server-owned dispatch
 // path. It verifies the durable run's parent operation, built-in role, and
 // exact prompt before storing the run ID. There is intentionally no HTTP route.
-fn (mut store Store) bind_goal_task_verifier_run(binding_id string, reviewer_run_id string) !GoalTaskVerifierBinding {
+fn (mut store Store) bind_goal_task_verifier_run(binding_id string, reviewer_run_id string,
+	expected_fencing_token string, expected_generation int) !GoalTaskVerifierBinding {
 	if binding_id.trim_space().len == 0 || reviewer_run_id.trim_space().len == 0
-		|| reviewer_run_id.len > 128 {
+		|| reviewer_run_id.len > 128 || expected_fencing_token.trim_space().len == 0
+		|| expected_generation <= 0 {
 		return error('goal task verifier run binding identity is invalid')
 	}
 	store.mu.lock()
@@ -299,6 +301,7 @@ fn (mut store Store) bind_goal_task_verifier_run(binding_id string, reviewer_run
 	defer { store.db.rollback() or {} }
 	rows := store.db.exec_param_many('SELECT b.goal_id, b.task_id, b.attempt, b.fencing_token, b.lease_generation, b.repository, b.repository_root, b.worktree_path, b.base_sha, b.candidate_sha, b.verifier_id, b.verifier_version, b.status, a.status, a.session_id, a.session_operation_id, v.fencing_token, v.generation, v.verification_deadline, v.lease_expires_at, b.reviewer_provider, b.reviewer_model FROM goal_task_verifier_bindings b JOIN goal_task_attempts a ON a.goal_id = b.goal_id AND a.task_id = b.task_id AND a.attempt = b.attempt JOIN goal_task_verification_leases v ON v.goal_id = b.goal_id AND v.task_id = b.task_id AND v.attempt = b.attempt WHERE b.id = ?', [binding_id])!
 	if rows.len != 1 || rows[0].val(12) != 'reserved' || rows[0].val(13) != 'verifying'
+		|| rows[0].val(3) != expected_fencing_token || rows[0].val(4).int() != expected_generation
 		|| rows[0].val(3) != rows[0].val(16) || rows[0].val(4) != rows[0].val(17) {
 		return error('goal task verifier binding is stale or already consumed')
 	}
@@ -374,26 +377,39 @@ fn (mut store Store) bind_goal_task_verifier_run(binding_id string, reviewer_run
 
 // record_goal_task_verification_receipt stores a terminal review result only
 // when the persisted run and current worktree still match a reserved server
-// binding and active verification fence. It never promotes Goal state.
+// binding and active verification fence. Pass, fail, and uncertain receipts
+// settle the verification state atomically; pass never means succeeded.
 fn (mut store Store) record_goal_task_verification_receipt(binding_id string) !GoalTaskVerificationReceipt {
 	store.mu.lock()
 	defer { store.mu.unlock() }
 	store.db.exec('BEGIN IMMEDIATE')!
 	defer { store.db.rollback() or {} }
-	rows := store.db.exec_param_many('SELECT b.goal_id, b.task_id, b.attempt, b.fencing_token, b.lease_generation, b.repository, b.repository_root, b.worktree_path, b.base_sha, b.candidate_sha, b.verifier_id, b.verifier_version, b.reviewer_run_id, b.status, a.status, a.session_id, a.session_operation_id, a.effective_deadline, v.fencing_token, v.generation, v.verification_deadline, v.lease_expires_at, w.repository_root, w.worktree_path, w.base_sha, w.status, s.directory, b.reviewer_provider, b.reviewer_model FROM goal_task_verifier_bindings b JOIN goal_task_attempts a ON a.goal_id = b.goal_id AND a.task_id = b.task_id AND a.attempt = b.attempt JOIN goal_task_verification_leases v ON v.goal_id = b.goal_id AND v.task_id = b.task_id AND v.attempt = b.attempt JOIN goal_task_attempt_workspaces w ON w.goal_id = b.goal_id AND w.task_id = b.task_id AND w.attempt = b.attempt JOIN sessions s ON s.id = a.session_id WHERE b.id = ?', [binding_id])!
-	if rows.len != 1 || rows[0].val(13) !in ['bound', 'consumed'] || rows[0].val(14) != 'verifying'
-		|| rows[0].val(3) != rows[0].val(18) || rows[0].val(4) != rows[0].val(19)
-		|| rows[0].val(6) != rows[0].val(22)
-		|| rows[0].val(7) != rows[0].val(23) || rows[0].val(8) != rows[0].val(24)
-		|| rows[0].val(25) != 'ready' || rows[0].val(26) != rows[0].val(7) {
+	rows := store.db.exec_param_many("SELECT b.goal_id, b.task_id, b.attempt, b.fencing_token, b.lease_generation, b.repository, b.repository_root, b.worktree_path, b.base_sha, b.candidate_sha, b.verifier_id, b.verifier_version, b.reviewer_run_id, b.status, a.status, a.session_id, a.session_operation_id, a.effective_deadline, COALESCE(v.fencing_token, ''), COALESCE(v.generation, 0), COALESCE(v.verification_deadline, ''), COALESCE(v.lease_expires_at, ''), w.repository_root, w.worktree_path, w.base_sha, w.status, s.directory, b.reviewer_provider, b.reviewer_model FROM goal_task_verifier_bindings b JOIN goal_task_attempts a ON a.goal_id = b.goal_id AND a.task_id = b.task_id AND a.attempt = b.attempt LEFT JOIN goal_task_verification_leases v ON v.goal_id = b.goal_id AND v.task_id = b.task_id AND v.attempt = b.attempt JOIN goal_task_attempt_workspaces w ON w.goal_id = b.goal_id AND w.task_id = b.task_id AND w.attempt = b.attempt JOIN sessions s ON s.id = a.session_id WHERE b.id = ?", [binding_id])!
+	if rows.len != 1 || rows[0].val(13) !in ['bound', 'consumed'] {
+		return error('goal task verifier binding no longer matches its attempt or worktree')
+	}
+	is_replay := rows[0].val(13) == 'consumed'
+	if !is_replay && (rows[0].val(14) != 'verifying' || rows[0].val(18) != rows[0].val(3)
+		|| rows[0].val(19).int() != rows[0].val(4).int()) {
+		return error('goal task verifier binding no longer owns the verification fence')
+	}
+	if is_replay && rows[0].val(14) !in ['verifying', 'failed', 'uncertain', 'succeeded'] {
+		return error('consumed goal task verifier binding has no replayable attempt')
+	}
+	if rows[0].val(6) != rows[0].val(22) || rows[0].val(7) != rows[0].val(23)
+		|| rows[0].val(8) != rows[0].val(24) || rows[0].val(26) != rows[0].val(7)
+		|| !is_replay && rows[0].val(25) != 'ready'
+		|| is_replay && rows[0].val(25) !in ['ready', 'uncertain'] {
 		return error('goal task verifier binding no longer matches its attempt or worktree')
 	}
 	now := time.now()
-	effective := time.parse_rfc3339(rows[0].val(17)) or { return error('goal task effective deadline is invalid') }
-	hard := time.parse_rfc3339(rows[0].val(20)) or { return error('goal task verification deadline is invalid') }
-	expires := time.parse_rfc3339(rows[0].val(21)) or { return error('goal task verification lease expiry is invalid') }
-	if now >= effective || now >= hard || now >= expires {
-		return error('goal task verification receipt lease has expired')
+	if !is_replay {
+		effective := time.parse_rfc3339(rows[0].val(17)) or { return error('goal task effective deadline is invalid') }
+		hard := time.parse_rfc3339(rows[0].val(20)) or { return error('goal task verification deadline is invalid') }
+		expires := time.parse_rfc3339(rows[0].val(21)) or { return error('goal task verification lease expiry is invalid') }
+		if now >= effective || now >= hard || now >= expires {
+			return error('goal task verification receipt lease has expired')
+		}
 	}
 	manifest_rows := store.db.exec_param('SELECT manifest FROM goal_admissions WHERE id = ?', rows[0].val(0))!
 	if manifest_rows.len != 1 { return error('goal admission not found') }
@@ -415,11 +431,17 @@ fn (mut store Store) record_goal_task_verification_receipt(binding_id string) !G
 		base_sha:        rows[0].val(24)
 		status:          'ready'
 	}
-	deadline := min_time(effective, min_time(hard, expires))
-	current_candidate := goal_candidate_head(worktree.path, deadline)!
-	observation := observe_goal_task_candidate(worktree, task, current_candidate, deadline)!
-	if observation.base_sha != rows[0].val(8) || observation.candidate_sha != rows[0].val(9) {
-		return error('goal task candidate changed since verifier dispatch')
+	mut observation := GoalTaskCandidateObservation{}
+	if !is_replay {
+		effective := time.parse_rfc3339(rows[0].val(17)) or { return error('goal task effective deadline is invalid') }
+		hard := time.parse_rfc3339(rows[0].val(20)) or { return error('goal task verification deadline is invalid') }
+		expires := time.parse_rfc3339(rows[0].val(21)) or { return error('goal task verification lease expiry is invalid') }
+		deadline := min_time(effective, min_time(hard, expires))
+		current_candidate := goal_candidate_head(worktree.path, deadline)!
+		observation = observe_goal_task_candidate(worktree, task, current_candidate, deadline)!
+		if observation.base_sha != rows[0].val(8) || observation.candidate_sha != rows[0].val(9) {
+			return error('goal task candidate changed since verifier dispatch')
+		}
 	}
 	runs := store.db.exec_param_many('SELECT r.agent_id, r.status, r.outcome_claimed, r.parent_session_id, r.parent_operation_id, r.workspace_ready, r.workspace_base_commit, r.result, r.error, r.child_session_id, r.child_operation_id, o.status, r.task, r.provider, r.model FROM subagent_runs r LEFT JOIN session_operations o ON o.id = r.child_operation_id AND o.session_id = r.child_session_id WHERE r.id = ?', [
 		rows[0].val(12),
@@ -466,6 +488,9 @@ fn (mut store Store) record_goal_task_verification_receipt(binding_id string) !G
 		return store.get_goal_task_verification_receipt_unlocked(binding.goal_id, binding.task_id,
 			binding.attempt)
 	}
+	if is_replay {
+		return error('consumed goal task verifier binding has no immutable receipt')
+	}
 	paths_json := json2.encode[[]string](observation.changed_paths)
 	store.db.exec_param_many('INSERT INTO goal_task_verification_receipts (goal_id, task_id, attempt, binding_id, repository, repository_root, worktree_path, base_sha, candidate_sha, verifier_id, verifier_version, reviewer_provider, reviewer_model, reviewer_run_id, lease_generation, verdict, evidence, changed_paths_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
 		binding.goal_id,
@@ -497,6 +522,75 @@ fn (mut store Store) record_goal_task_verification_receipt(binding_id string) !G
 	])!
 	if store.db.get_affected_rows_count() != 1 {
 		return error('goal task verifier binding changed while storing its receipt')
+	}
+	match envelope.verdict {
+		'pass' {
+			store.db.exec_param_many("UPDATE goal_task_states SET status = 'verified', updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND status = 'verifying'", [
+				binding.goal_id,
+				binding.task_id,
+			])!
+			if store.db.get_affected_rows_count() != 1 {
+				return error('goal task is not verifying for receipt-backed state transition')
+			}
+		}
+		'fail' {
+			attempt_count_rows := store.db.exec_param('SELECT COUNT(*) FROM goal_task_attempts WHERE goal_id = ?', binding.goal_id)!
+			if attempt_count_rows.len != 1 { return error('unable to read Goal attempt budget') }
+			attempt_count := attempt_count_rows[0].val(0).int()
+			next_state := if attempt_count < goal.budget.max_attempts {
+				'pending'
+			} else {
+				'failed'
+			}
+			store.db.exec_param_many("UPDATE goal_task_attempts SET status = 'failed', ended_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'verifying'", [
+				binding.goal_id,
+				binding.task_id,
+				binding.attempt.str(),
+			])!
+			if store.db.get_affected_rows_count() != 1 {
+				return error('goal task attempt is not verifying for failed receipt transition')
+			}
+			store.db.exec_param_many("UPDATE goal_task_states SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND status = 'verifying'", [
+				next_state,
+				binding.goal_id,
+				binding.task_id,
+			])!
+			if store.db.get_affected_rows_count() != 1 {
+				return error('goal task is not verifying for failed receipt transition')
+			}
+		}
+		'uncertain' {
+			store.db.exec_param_many("UPDATE goal_task_attempts SET status = 'uncertain', ended_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'verifying'", [
+				binding.goal_id,
+				binding.task_id,
+				binding.attempt.str(),
+			])!
+			if store.db.get_affected_rows_count() != 1 {
+				return error('goal task attempt is not verifying for uncertain receipt transition')
+			}
+			store.db.exec_param_many("UPDATE goal_task_states SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND status = 'verifying'", [
+				binding.goal_id,
+				binding.task_id,
+			])!
+			if store.db.get_affected_rows_count() != 1 {
+				return error('goal task is not verifying for uncertain receipt transition')
+			}
+			store.db.exec_param_many("UPDATE goal_task_attempt_workspaces SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status IN ('preparing', 'ready')", [
+				binding.goal_id,
+				binding.task_id,
+				binding.attempt.str(),
+			])!
+		}
+	}
+	store.db.exec_param_many('DELETE FROM goal_task_verification_leases WHERE goal_id = ? AND task_id = ? AND attempt = ? AND fencing_token = ? AND generation = ?', [
+		binding.goal_id,
+		binding.task_id,
+		binding.attempt.str(),
+		rows[0].val(3),
+		rows[0].val(4),
+	])!
+	if store.db.get_affected_rows_count() != 1 {
+		return error('goal task verification lease changed while recording its receipt')
 	}
 	store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
 		'goal.task_verification_receipt_recorded',

@@ -126,136 +126,161 @@ fn test_goal_task_verifier_binding_rejects_stale_fence_before_git_observation() 
 	assert bindings[0].val(0).int() == 0
 }
 
-fn test_goal_task_verification_receipt_binds_real_candidate_and_never_promotes() {
-	fixture := new_goal_verification_receipt_repo_fixture() or { panic(err) }
-	defer { os.rmdir_all(os.dir(fixture.root)) or {} }
-	parent := os.dir(fixture.root)
-	worktree_path := fixture.worktree
-	candidate_sha := fixture.candidate_sha
-	goal := GoalAdmission{
-		schema_version:          1
-		id:                      'goal-verification-receipt-success'
-		title:                   'Review a scoped candidate'
-		authorized_repositories: [GoalRepository{
-			owner: 'owner'
-			name:  'repo'
-			path:  fixture.root
-		}]
-		acceptance_criteria:     [GoalCriterion{
-			id:           'candidate-scoped'
-			description:  'The committed change stays within docs.'
-			verification: 'Read-only reviewer checks the exact commit.'
-		}]
-		deadline:                '2999-01-01T00:00:00Z'
-		budget:                  GoalBudget{ max_attempts: 2, wall_seconds: 120, provider_turns: 4 }
-		delivery_mode:           'draft'
-		tasks:                   [GoalTask{
-			id:                'review-docs'
-			title:             'Review documentation change'
-			repository:        'owner/repo'
-			base_sha:          fixture.base_sha
-			paths:             ['docs']
-			recipe:            'feature'
-			runner:            'local-v'
-			verifier:          'review'
-			verifier_provider: 'openai'
-			verifier_model:    'review-model'
-		}]
+fn test_goal_task_verification_receipt_settles_all_outcomes_without_acceptance() {
+	for verdict in ['pass', 'fail', 'uncertain'] {
+		fixture := new_goal_verification_receipt_repo_fixture() or { panic(err) }
+		defer { os.rmdir_all(os.dir(fixture.root)) or {} }
+		parent := os.dir(fixture.root)
+		worktree_path := fixture.worktree
+		candidate_sha := fixture.candidate_sha
+		goal := GoalAdmission{
+			schema_version:          1
+			id:                      'goal-verification-receipt-success'
+			title:                   'Review a scoped candidate'
+			authorized_repositories: [GoalRepository{
+				owner: 'owner'
+				name:  'repo'
+				path:  fixture.root
+			}]
+			acceptance_criteria:     [GoalCriterion{
+				id:           'candidate-scoped'
+				description:  'The committed change stays within docs.'
+				verification: 'Read-only reviewer checks the exact commit.'
+			}]
+			deadline:                '2999-01-01T00:00:00Z'
+			budget:                  GoalBudget{ max_attempts: 2, wall_seconds: 120, provider_turns: 4 }
+			delivery_mode:           'draft'
+			tasks:                   [GoalTask{
+				id:                'review-docs'
+				title:             'Review documentation change'
+				repository:        'owner/repo'
+				base_sha:          fixture.base_sha
+				paths:             ['docs']
+				recipe:            'feature'
+				runner:            'local-v'
+				verifier:          'review'
+				verifier_provider: 'openai'
+				verifier_model:    'review-model'
+			}]
+		}
+		data_dir := os.join_path(parent, 'veasel-data')
+		os.mkdir_all(data_dir) or { panic(err) }
+		mut store := open_store(os.join_path(data_dir, 'store.sqlite3')) or { panic(err) }
+		defer { store.close() or {} }
+		_ = store.admit_goal(goal) or { panic(err) }
+		session := store.create_session(SessionInput{ title: 'Candidate review', directory: worktree_path }) or {
+			panic(err)
+		}
+		claim := store.claim_goal_task_for_session(goal.id, 'review-docs', session.id) or { panic(err) }
+		store.db.exec_param_many("INSERT INTO goal_task_attempt_workspaces (goal_id, task_id, attempt, repository_root, worktree_path, base_sha, status) VALUES (?, ?, 1, ?, ?, ?, 'ready')", [
+			goal.id,
+			'review-docs',
+			fixture.root,
+			worktree_path,
+			fixture.base_sha,
+		]) or { panic(err) }
+		store.reconcile_goal_task_operation(claim.session_operation_id, .succeeded) or { panic(err) }
+		lease := store.claim_goal_task_verification_lease(goal.id, 'review-docs', 1, 60) or { panic(err) }
+		binding := store.reserve_goal_task_verifier_binding(goal.id, 'review-docs', 1,
+			lease.fencing_token, lease.generation) or { panic(err) }
+		assert binding.candidate_sha == candidate_sha
+		assert binding.status == 'reserved'
+		prompt := goal_task_verifier_review_prompt(binding, goal, goal.tasks[0])
+		run := store.create_subagent_run_with_cancel_reason(session.id, claim.session_operation_id,
+			'verifier-request-1', 'reviewer', 1, 'Goal candidate review', worktree_path, '', 'openai',
+			'review-model', 'openai', 'review-model', prompt) or {
+			panic(err)
+		}
+		assert run.workspace_ready
+		assert run.workspace_base_commit == candidate_sha
+		started := store.begin_subagent_run(run.id) or { panic(err) }
+		assert started.status == 'running'
+		store.create_session_operation(run.child_session_id, run.child_operation_id) or { panic(err) }
+		result := '{"goal_id":"${goal.id}","task_id":"review-docs","attempt":"1","repository":"owner/repo","base_sha":"${fixture.base_sha}","candidate_sha":"${candidate_sha}","verifier_id":"review","verifier_version":"builtin-review-v1","verdict":"${verdict}","evidence":"The committed README change is under docs and matches the stated criterion."}'
+		finished := store.finish_subagent_run(run.id, 'completed', result, '') or { panic(err) }
+		assert finished.status == 'completed'
+		store.db.exec_param_many("UPDATE session_operations SET status = 'completed', outcome = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'running'", [
+			run.child_operation_id,
+			run.child_session_id,
+		]) or { panic(err) }
+		claimed := store.claim_subagent_outcome(finished.id) or { panic(err) }
+		assert claimed.outcome_claimed
+		bound := store.bind_goal_task_verifier_run(binding.id, claimed.id, lease.fencing_token,
+			lease.generation) or { panic(err) }
+		assert bound.status == 'bound'
+		assert bound.reviewer_run_id == claimed.id
+		receipt := store.record_goal_task_verification_receipt(binding.id) or { panic(err) }
+		assert receipt.goal_id == goal.id
+		assert receipt.task_id == 'review-docs'
+		assert receipt.attempt == 1
+		assert receipt.repository == 'owner/repo'
+		assert receipt.base_sha == fixture.base_sha
+		assert receipt.candidate_sha == candidate_sha
+		assert receipt.verifier_id == 'review'
+		assert receipt.verifier_version == 'builtin-review-v1'
+		assert receipt.reviewer_provider == 'openai'
+		assert receipt.reviewer_model == 'review-model'
+		assert receipt.reviewer_run_id == claimed.id
+		assert receipt.lease_generation == lease.generation
+		assert receipt.verdict == verdict
+		assert receipt.changed_paths == ['docs/README.md']
+		assert receipt.evidence.contains('matches the stated criterion')
+		state := store.goal_task_state(goal.id, 'review-docs') or { panic(err) }
+		expected_state := match verdict {
+			'pass' { 'verified' }
+			'fail' { 'pending' }
+			else { 'uncertain' }
+		}
+		expected_attempt := match verdict {
+			'pass' { 'verifying' }
+			'fail' { 'failed' }
+			else { 'uncertain' }
+		}
+		assert state.status == expected_state
+		assert state.attempts[0].status == expected_attempt
+		if verdict == 'pass' {
+			if _ := store.claim_goal_task_verification_lease(goal.id, 'review-docs', 1, 60) {
+				assert false, 'a verified task must not reacquire a verifier lease'
+			}
+		}
+		receipt_count := store.db.exec_param_many('SELECT COUNT(*) FROM goal_task_verification_receipts WHERE goal_id = ? AND task_id = ? AND attempt = 1', [
+			goal.id,
+			'review-docs',
+		]) or { panic(err) }
+		assert receipt_count[0].val(0).int() == 1
+		event_count := store.db.exec_param_many("SELECT COUNT(*) FROM events WHERE session_id = ? AND type = 'goal.task_verification_receipt_recorded'", [session.id]) or {
+			panic(err)
+		}
+		assert event_count[0].val(0).int() == 1
+		// Exact replay is idempotent. A conflicting replay cannot mutate the stored
+		// evidence or emit another event.
+		remaining_lease := store.db.exec_param_many('SELECT COUNT(*) FROM goal_task_verification_leases WHERE goal_id = ? AND task_id = ? AND attempt = 1', [
+			goal.id,
+			'review-docs',
+		]) or { panic(err) }
+		assert remaining_lease[0].val(0).int() == 0
+		replayed := store.record_goal_task_verification_receipt(binding.id) or { panic(err) }
+		assert replayed.evidence == receipt.evidence
+		conflicting_verdict := if verdict == 'fail' { 'pass' } else { 'fail' }
+		store.db.exec_param_many('UPDATE subagent_runs SET result = ? WHERE id = ?', [
+			result.replace('"verdict":"${verdict}"', '"verdict":"${conflicting_verdict}"'),
+			claimed.id,
+		]) or { panic(err) }
+		if _ := store.record_goal_task_verification_receipt(binding.id) {
+			assert false, 'conflicting reviewer replay must not replace an immutable receipt'
+		}
+		stored := store.get_goal_task_verification_receipt_unlocked(goal.id, 'review-docs', 1) or {
+			panic(err)
+		}
+		assert stored.verdict == verdict
+		assert stored.evidence == receipt.evidence
+		assert store.goal_task_state(goal.id, 'review-docs') or { panic(err) }.status == expected_state
+		assert store.goal_task_state(goal.id, 'review-docs') or { panic(err) }.attempts[0].status == expected_attempt
+		final_event_count := store.db.exec_param_many("SELECT COUNT(*) FROM events WHERE session_id = ? AND type = 'goal.task_verification_receipt_recorded'", [session.id]) or {
+			panic(err)
+		}
+		assert final_event_count[0].val(0).int() == 1
 	}
-	data_dir := os.join_path(parent, 'veasel-data')
-	os.mkdir_all(data_dir) or { panic(err) }
-	mut store := open_store(os.join_path(data_dir, 'store.sqlite3')) or { panic(err) }
-	defer { store.close() or {} }
-	_ = store.admit_goal(goal) or { panic(err) }
-	session := store.create_session(SessionInput{ title: 'Candidate review', directory: worktree_path }) or {
-		panic(err)
-	}
-	claim := store.claim_goal_task_for_session(goal.id, 'review-docs', session.id) or { panic(err) }
-	store.db.exec_param_many("INSERT INTO goal_task_attempt_workspaces (goal_id, task_id, attempt, repository_root, worktree_path, base_sha, status) VALUES (?, ?, 1, ?, ?, ?, 'ready')", [
-		goal.id,
-		'review-docs',
-		fixture.root,
-		worktree_path,
-		fixture.base_sha,
-	]) or { panic(err) }
-	store.reconcile_goal_task_operation(claim.session_operation_id, .succeeded) or { panic(err) }
-	lease := store.claim_goal_task_verification_lease(goal.id, 'review-docs', 1, 60) or { panic(err) }
-	binding := store.reserve_goal_task_verifier_binding(goal.id, 'review-docs', 1,
-		lease.fencing_token, lease.generation) or { panic(err) }
-	assert binding.candidate_sha == candidate_sha
-	assert binding.status == 'reserved'
-	prompt := goal_task_verifier_review_prompt(binding, goal, goal.tasks[0])
-	run := store.create_subagent_run_with_cancel_reason(session.id, claim.session_operation_id,
-		'verifier-request-1', 'reviewer', 1, 'Goal candidate review', worktree_path, '', 'openai',
-		'review-model', 'openai', 'review-model', prompt) or {
-		panic(err)
-	}
-	assert run.workspace_ready
-	assert run.workspace_base_commit == candidate_sha
-	started := store.begin_subagent_run(run.id) or { panic(err) }
-	assert started.status == 'running'
-	store.create_session_operation(run.child_session_id, run.child_operation_id) or { panic(err) }
-	result := '{"goal_id":"${goal.id}","task_id":"review-docs","attempt":"1","repository":"owner/repo","base_sha":"${fixture.base_sha}","candidate_sha":"${candidate_sha}","verifier_id":"review","verifier_version":"builtin-review-v1","verdict":"pass","evidence":"The committed README change is under docs and matches the stated criterion."}'
-	finished := store.finish_subagent_run(run.id, 'completed', result, '') or { panic(err) }
-	assert finished.status == 'completed'
-	store.db.exec_param_many("UPDATE session_operations SET status = 'completed', outcome = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'running'", [
-		run.child_operation_id,
-		run.child_session_id,
-	]) or { panic(err) }
-	claimed := store.claim_subagent_outcome(finished.id) or { panic(err) }
-	assert claimed.outcome_claimed
-	bound := store.bind_goal_task_verifier_run(binding.id, claimed.id) or { panic(err) }
-	assert bound.status == 'bound'
-	assert bound.reviewer_run_id == claimed.id
-	receipt := store.record_goal_task_verification_receipt(binding.id) or { panic(err) }
-	assert receipt.goal_id == goal.id
-	assert receipt.task_id == 'review-docs'
-	assert receipt.attempt == 1
-	assert receipt.repository == 'owner/repo'
-	assert receipt.base_sha == fixture.base_sha
-	assert receipt.candidate_sha == candidate_sha
-	assert receipt.verifier_id == 'review'
-	assert receipt.verifier_version == 'builtin-review-v1'
-	assert receipt.reviewer_provider == 'openai'
-	assert receipt.reviewer_model == 'review-model'
-	assert receipt.reviewer_run_id == claimed.id
-	assert receipt.lease_generation == lease.generation
-	assert receipt.verdict == 'pass'
-	assert receipt.changed_paths == ['docs/README.md']
-	assert receipt.evidence.contains('matches the stated criterion')
-	state := store.goal_task_state(goal.id, 'review-docs') or { panic(err) }
-	assert state.status == 'verifying'
-	assert state.attempts[0].status == 'verifying'
-	receipt_count := store.db.exec_param_many('SELECT COUNT(*) FROM goal_task_verification_receipts WHERE goal_id = ? AND task_id = ? AND attempt = 1', [
-		goal.id,
-		'review-docs',
-	]) or { panic(err) }
-	assert receipt_count[0].val(0).int() == 1
-	event_count := store.db.exec_param_many("SELECT COUNT(*) FROM events WHERE session_id = ? AND type = 'goal.task_verification_receipt_recorded'", [session.id]) or {
-		panic(err)
-	}
-	assert event_count[0].val(0).int() == 1
-	// Exact replay is idempotent. A conflicting replay cannot mutate the stored
-	// evidence or emit another event.
-	replayed := store.record_goal_task_verification_receipt(binding.id) or { panic(err) }
-	assert replayed.evidence == receipt.evidence
-	store.db.exec_param_many('UPDATE subagent_runs SET result = ? WHERE id = ?', [
-		result.replace('"verdict":"pass"', '"verdict":"fail"'),
-		claimed.id,
-	]) or { panic(err) }
-	if _ := store.record_goal_task_verification_receipt(binding.id) {
-		assert false, 'conflicting reviewer replay must not replace an immutable receipt'
-	}
-	stored := store.get_goal_task_verification_receipt_unlocked(goal.id, 'review-docs', 1) or {
-		panic(err)
-	}
-	assert stored.verdict == 'pass'
-	assert stored.evidence == receipt.evidence
-	assert store.goal_task_state(goal.id, 'review-docs') or { panic(err) }.status == 'verifying'
-	final_event_count := store.db.exec_param_many("SELECT COUNT(*) FROM events WHERE session_id = ? AND type = 'goal.task_verification_receipt_recorded'", [session.id]) or {
-		panic(err)
-	}
-	assert final_event_count[0].val(0).int() == 1
 }
 
 fn new_goal_verification_receipt_repo_fixture() !GoalVerificationReceiptRepoFixture {

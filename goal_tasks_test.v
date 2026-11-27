@@ -5,6 +5,86 @@ import json2
 import rand
 import time
 
+fn test_goal_task_verified_state_migration_preserves_rows_and_projection() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-verified-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	goal := goal_task_test_admission()
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{ title: 'verified migration', directory: root }) or { panic(err) }
+	claim := store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or { panic(err) }
+	store.db.exec_param_many("INSERT INTO goal_task_attempt_workspaces (goal_id, task_id, attempt, repository_root, worktree_path, base_sha, status) VALUES (?, 'prepare', 1, ?, ?, ?, 'ready')", [
+		goal.id,
+		root,
+		root,
+		goal.tasks[0].base_sha,
+	]) or { panic(err) }
+	store.reconcile_goal_task_operation(claim.session_operation_id, .succeeded) or { panic(err) }
+	lease := store.claim_goal_task_verification_lease(goal.id, 'prepare', 1, 60) or { panic(err) }
+	store.db.exec_param_many("INSERT INTO goal_task_verifier_bindings (id, goal_id, task_id, attempt, fencing_token, lease_generation, repository, repository_root, worktree_path, base_sha, candidate_sha, verifier_id, verifier_version, reviewer_provider, reviewer_model, reviewer_run_id, status) VALUES ('migration-binding', ?, 'prepare', 1, ?, ?, 'owner/repo', ?, ?, ?, ?, 'review', 'builtin-review-v1', 'openai', 'review-model', 'migration-review-run', 'consumed')", [
+		goal.id,
+		lease.fencing_token,
+		lease.generation.str(),
+		root,
+		root,
+		goal.tasks[0].base_sha,
+		'b'.repeat(40),
+	]) or { panic(err) }
+	store.db.exec_param_many("INSERT INTO goal_task_verification_receipts (goal_id, task_id, attempt, binding_id, repository, repository_root, worktree_path, base_sha, candidate_sha, verifier_id, verifier_version, reviewer_provider, reviewer_model, reviewer_run_id, lease_generation, verdict, evidence, changed_paths_json) VALUES (?, 'prepare', 1, 'migration-binding', 'owner/repo', ?, ?, ?, ?, 'review', 'builtin-review-v1', 'openai', 'review-model', 'migration-review-run', ?, 'pass', 'migration receipt', '[]')", [
+		goal.id,
+		root,
+		root,
+		goal.tasks[0].base_sha,
+		'b'.repeat(40),
+		lease.generation.str(),
+	]) or { panic(err) }
+	store.db.exec('DELETE FROM schema_migrations WHERE version = 44') or { panic(err) }
+	migrate_goal_task_verified_state(mut store.db) or { panic(err) }
+	store.db.exec_param_many('UPDATE goal_task_states SET status = ? WHERE goal_id = ? AND task_id = ?', [
+		'verified',
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	state := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'verified'
+	assert state.attempt_count == 1
+	assert state.attempts[0].status == 'verifying'
+	assert store.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) } == 44
+	assert store.db.q_int('SELECT COUNT(DISTINCT id) FROM pragma_foreign_key_list(\'goal_task_attempts\') WHERE "table" = \'goal_task_states\'') or {
+		panic(err)
+	} == 1
+	assert store.db.q_int('SELECT COUNT(*) FROM pragma_foreign_key_check') or { panic(err) } == 0
+}
+
+fn test_goal_task_verified_state_survives_restart_with_missing_verification_lease() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-verified-recovery-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'veasel.sqlite3')
+	goal := goal_task_test_admission()
+	mut store := open_store(path) or { panic(err) }
+	_ = store.admit_goal(goal) or { panic(err) }
+	store.db.exec_param_many('UPDATE goal_task_states SET status = ? WHERE goal_id = ? AND task_id = ?', [
+		'verified',
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	store.db.exec_param_many("INSERT INTO goal_task_attempts (goal_id, task_id, attempt, status, effective_deadline, lease_expires_at, lease_generation) VALUES (?, ?, 1, 'verifying', '', '', 1)", [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	store.close() or { panic(err) }
+
+	store = open_store(path) or { panic(err) }
+	defer { store.close() or {} }
+	state := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'verified'
+	assert state.attempts.len == 1
+	assert state.attempts[0].status == 'verifying'
+}
+
 fn test_goal_task_projection_is_stable_topological_order() {
 	goal := GoalAdmission{
 		id:    'graph'
@@ -140,6 +220,7 @@ fn test_goal_task_state_is_seeded_idempotently_and_recovery_never_replays_runnin
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 41') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 42') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 43') or { panic(err) }
+	store.db.exec('DELETE FROM schema_migrations WHERE version = 44') or { panic(err) }
 	store.close() or { panic(err) }
 
 	store = open_store(path) or { panic(err) }

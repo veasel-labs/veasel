@@ -77,6 +77,18 @@ pub fn run_codex_cli_turn(command string, cwd string, permission_mode string,
 pub fn run_codex_cli_turn_cancellable(command string, cwd string, permission_mode string,
 	model string, resume_thread_id string, user_text string, timeout_ms int,
 	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn, cancel CliCancelFn) !CodexCliTurnResult {
+	return run_codex_cli_turn_cancellable_observed(command, cwd, permission_mode, model,
+		resume_thread_id, user_text, timeout_ms, on_text_delta, decide, cancel, unsafe { nil })
+}
+
+// run_codex_cli_turn_cancellable_observed also reduces the effect-bearing
+// Codex app-server item lifecycle into redacted durable turn facts. Raw
+// command arguments, output, and file patch payloads are never retained.
+pub fn run_codex_cli_turn_cancellable_observed(command string, cwd string, permission_mode string,
+	model string, resume_thread_id string, user_text string, timeout_ms int,
+	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn, cancel CliCancelFn,
+	facts &TurnFacts) !CodexCliTurnResult {
+	mut observed := unsafe { facts }
 	mut process := os.new_process(command)
 	process.set_args(['app-server'])
 	if cwd.len > 0 {
@@ -192,17 +204,51 @@ pub fn run_codex_cli_turn_cancellable(command string, cwd string, permission_mod
 					&& (frame_turn.len == 0 || turn_id.len == 0 || frame_turn == turn_id)
 				event := parse_codex_cli_line(trimmed, thread_id)
 				events << event
+				if in_scope && phase == 3
+					&& (event.turn_id.len == 0 || turn_id.len == 0 || event.turn_id == turn_id) {
+					match event.kind {
+						'tool_started' {
+							if observed != unsafe { nil } {
+								// Deliberately omit raw provider fields. The durable
+								// summary contains only the effect category.
+								observed.note_tool_use(event.item_id, event.tool_name, '{}')
+							}
+						}
+						'tool_completed' {
+							if observed != unsafe { nil } {
+								observed.note_cli_tool_result(event.item_id, event.tool_name,
+									!event.succeeded, event.effect_free)
+							}
+						}
+						'untracked_tool' {
+							if observed != unsafe { nil } {
+								observed.note_untracked_effect(event.item_id)
+							}
+						}
+						else {}
+					}
+				}
 				if method in ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval',
 					'execCommandApproval', 'applyPatchApproval'] {
 					if in_scope && phase == 3 {
 						request_id := 'codex-${codex_frame_id_json(frame).trim('"')}'
 						tool_name := method.all_after_last('/')
 						input_json := json2.encode(params)
+						approval_category := if method.contains('fileChange') || method == 'applyPatchApproval' {
+							'Edit'
+						} else {
+							'Bash'
+						}
 						if decide(request_id, tool_name, input_json) {
 							available := codex_available_decisions(params)
 							if available.len == 0 || 'accept' in available {
 								process.stdin_write('{"id":${codex_frame_id_json(frame)},"result":{"decision":"accept"}}' +
 									'\n')
+								if observed != unsafe { nil } {
+									// Approval can race or replace item/started. Preserve a
+									// redacted pending item when no start was received.
+									observed.note_cli_approval(event.item_id, approval_category)
+								}
 								approvals_approved += 1
 							} else {
 								process.stdin_write('{"id":${codex_frame_id_json(frame)},"result":{"decision":"${codex_deny_decision(available)}"}}' +
@@ -237,6 +283,10 @@ pub fn run_codex_cli_turn_cancellable(command string, cwd string, permission_mod
 					'turn_completed' {
 						if frame_thread == thread_id && (turn_id.len == 0
 							|| event.turn_id.len == 0 || event.turn_id == turn_id) {
+							if observed != unsafe { nil } {
+								facts_snapshot := observed.snapshot()
+								observed.set_effects_observed(facts_snapshot.unresolved_effects == 0)
+							}
 							return CodexCliTurnResult{
 								events:             events
 								text:               if text.len > 0 {

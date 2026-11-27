@@ -24,11 +24,14 @@ pub mut:
 	approvals_expired  int
 	// Edit-type tool calls the CLI reported as applied, e.g. "Edit math.js".
 	edits_applied []string
-	// Approval-gated commands the CLI reported as run, by executable only
-	// (arguments can carry secrets), e.g. "Bash (git)".
+	// Commands the CLI reported as run, by executable only (arguments can carry
+	// secrets), e.g. "Bash (git)".
 	commands_ran  []string
 	expired_tools []string
 	denied_tools  []string
+	// Potentially effectful CLI items whose result is missing or ambiguous, plus
+	// provider tools outside Veasel's observed effect contract.
+	unresolved_effects int
 	// True when the provider protocol lets Veasel see tool results (Claude
 	// stream-json). When false, applied changes are unknown, not zero.
 	effects_observed bool
@@ -85,8 +88,35 @@ const unverified_notice = 'These changes are not verified by Veasel; review the 
 fn derive_turn_outcome(lifecycle string, facts TurnOutcomeFacts, public_error string) TurnOutcome {
 	denied := facts.approvals_denied + facts.approvals_expired
 	approvals := facts.approvals_clause()
+	if facts.unresolved_effects > 0 && lifecycle != 'completed' {
+		prefix := if public_error.len > 0 { '${public_error} ' } else { '' }
+		return TurnOutcome{
+			outcome: 'uncertain'
+			summary: '${prefix}Veasel could not confirm the outcome of ${facts.unresolved_effects} potentially effectful item(s). Review the workspace before accepting the result.'
+			facts:   facts
+		}
+	}
 	match lifecycle {
 		'completed' {
+			if facts.unresolved_effects > 0 {
+				summary := if facts.has_effects() {
+					'${approvals} The turn completed with recorded actions (${facts.applied_list()}), but Veasel could not confirm the outcome of ${facts.unresolved_effects} potentially effectful item(s). Review the workspace before accepting the result.'
+				} else {
+					'${approvals} The turn completed, but Veasel could not confirm the outcome of ${facts.unresolved_effects} potentially effectful item(s). Review the workspace before accepting the result.'
+				}
+				return TurnOutcome{
+					outcome: 'uncertain'
+					summary: summary
+					facts:   facts
+				}
+			}
+			if facts.approvals_approved > 0 && !facts.effects_observed {
+				return TurnOutcome{
+					outcome: 'uncertain'
+					summary: 'The turn completed after ${facts.approvals_approved} approved action(s), but Veasel could not observe whether they took effect for this provider.'
+					facts:   facts
+				}
+			}
 			if denied > 0 {
 				summary := if facts.has_effects() {
 					'${approvals} Applied: ${facts.applied_list()}. ${unverified_notice}'
@@ -191,10 +221,11 @@ fn turn_outcome_detail_from_json(raw string) TurnOutcomeDetail {
 @[heap]
 pub struct TurnFacts {
 mut:
-	mu         &sync.Mutex = sync.new_mutex()
-	facts      TurnOutcomeFacts
-	tools      map[string]PendingToolCall
-	gated_tool map[string]bool
+	mu                &sync.Mutex = sync.new_mutex()
+	facts             TurnOutcomeFacts
+	tools             map[string]PendingToolCall
+	gated_tool        map[string]bool
+	untracked_effects map[string]bool
 }
 
 struct PendingToolCall {
@@ -215,12 +246,19 @@ fn (mut facts TurnFacts) snapshot() TurnOutcomeFacts {
 	defer {
 		facts.mu.unlock()
 	}
+	mut unresolved_effects := facts.untracked_effects.len
+	for _, call in facts.tools {
+		if call.name in ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash'] {
+			unresolved_effects++
+		}
+	}
 	return TurnOutcomeFacts{
 		...facts.facts
-		edits_applied: facts.facts.edits_applied.clone()
-		commands_ran:  facts.facts.commands_ran.clone()
-		expired_tools: facts.facts.expired_tools.clone()
-		denied_tools:  facts.facts.denied_tools.clone()
+		edits_applied:      facts.facts.edits_applied.clone()
+		commands_ran:       facts.facts.commands_ran.clone()
+		expired_tools:      facts.facts.expired_tools.clone()
+		denied_tools:       facts.facts.denied_tools.clone()
+		unresolved_effects: unresolved_effects
 	}
 }
 
@@ -272,23 +310,90 @@ fn (mut facts TurnFacts) note_gated(tool_id string) {
 	facts.mu.unlock()
 }
 
+// note_cli_approval records a redacted placeholder when approval arrives
+// before item/started, so missing lifecycle events remain uncertain.
+fn (mut facts TurnFacts) note_cli_approval(tool_id string, tool_name string) {
+	if tool_id.len == 0 {
+		facts.note_untracked_effect('')
+		return
+	}
+	facts.mu.lock()
+	if _ := facts.tools[tool_id] {
+	} else {
+		facts.tools[tool_id] = PendingToolCall{
+			name:    tool_name
+			summary: tool_name
+		}
+	}
+	facts.gated_tool[tool_id] = true
+	facts.mu.unlock()
+}
+
+// note_untracked_effect marks a provider tool whose external effects Veasel
+// cannot independently reduce. Keep its identifier out of public receipts.
+fn (mut facts TurnFacts) note_untracked_effect(tool_id string) {
+	facts.mu.lock()
+	key := if tool_id.len > 0 { tool_id } else { '__unknown_effect__' }
+	facts.untracked_effects[key] = true
+	facts.mu.unlock()
+}
+
 // note_tool_result records what the CLI reported for a tool call. Only a
 // successful edit, or a successful approval-gated command, counts as an
 // applied side effect; read-only tool calls never do.
 fn (mut facts TurnFacts) note_tool_result(tool_id string, is_error bool) {
+	facts.note_tool_result_with_ungated_command(tool_id, is_error, false, false, false)
+}
+
+fn (mut facts TurnFacts) note_cli_tool_result(tool_id string, tool_name string, is_error bool,
+	effect_free bool) {
+	if tool_id.len == 0 {
+		if !effect_free {
+			facts.note_untracked_effect('')
+		}
+		return
+	}
+	facts.mu.lock()
+	if _ := facts.tools[tool_id] {
+	} else if !effect_free {
+		facts.tools[tool_id] = PendingToolCall{
+			name:    tool_name
+			summary: tool_name
+		}
+	}
+	facts.mu.unlock()
+	facts.note_tool_result_with_ungated_command(tool_id, is_error, true, true, effect_free)
+}
+
+fn (mut facts TurnFacts) note_tool_result_with_ungated_command(tool_id string, is_error bool,
+	include_ungated_command bool, preserve_failed_effect bool, effect_free bool) {
 	facts.mu.lock()
 	defer {
 		facts.mu.unlock()
 	}
 	call := facts.tools[tool_id] or { return }
 	if is_error {
+		if effect_free {
+			facts.tools.delete(tool_id)
+			facts.gated_tool.delete(tool_id)
+			return
+		}
+		if preserve_failed_effect {
+			// Failed native commands can still have partial effects. Keep them
+			// unresolved so the caller cannot report a clean completed turn.
+			return
+		}
+		facts.tools.delete(tool_id)
+		facts.gated_tool.delete(tool_id)
 		return
 	}
 	if call.name in ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] {
 		facts.facts.edits_applied << call.summary
-	} else if call.name == 'Bash' && facts.gated_tool[tool_id] {
+	} else if call.name == 'Bash' && (facts.gated_tool[tool_id] || include_ungated_command) {
 		facts.facts.commands_ran << call.summary
 	}
+	facts.tools.delete(tool_id)
+	facts.gated_tool.delete(tool_id)
 }
 
 // tool_call_summary names the tool and its target without arguments that

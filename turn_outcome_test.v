@@ -48,6 +48,25 @@ fn test_denials_on_a_provider_without_observation_do_not_claim_no_changes() {
 	assert outcome.summary.contains('could not observe')
 }
 
+fn test_completed_approved_action_without_effect_receipt_is_uncertain() {
+	outcome := derive_turn_outcome('completed', TurnOutcomeFacts{
+		approvals_approved: 1
+		effects_observed:   false
+	}, '')
+	assert outcome.outcome == 'uncertain'
+	assert outcome.summary.contains('approved action')
+	assert outcome.summary.contains('could not observe')
+}
+
+fn test_completed_turn_with_unresolved_native_effect_is_uncertain() {
+	outcome := derive_turn_outcome('completed', TurnOutcomeFacts{
+		unresolved_effects: 1
+		effects_observed:   false
+	}, '')
+	assert outcome.outcome == 'uncertain'
+	assert outcome.summary.contains('could not confirm the outcome')
+}
+
 fn test_applied_edit_with_expired_approval_lists_both() {
 	outcome := derive_turn_outcome('completed', TurnOutcomeFacts{
 		...edit_facts()
@@ -126,6 +145,32 @@ fn test_facts_count_only_successful_edits_and_gated_commands() {
 	// Arguments (which may carry secrets) never reach the summary.
 	assert !snapshot.commands_ran.join(' ').contains('secret')
 	assert snapshot.effects_observed
+}
+
+fn test_codex_approval_without_item_id_is_unresolved() {
+	mut facts := new_turn_facts(false)
+	facts.note_cli_approval('', 'Bash')
+	snapshot := facts.snapshot()
+	assert snapshot.unresolved_effects == 1
+	outcome := derive_turn_outcome('completed', snapshot, '')
+	assert outcome.outcome == 'uncertain'
+	assert outcome.summary.contains('could not confirm the outcome')
+}
+
+fn test_codex_completed_item_without_start_still_records_effect() {
+	mut facts := new_turn_facts(false)
+	facts.note_cli_tool_result('cmd-without-start', 'Bash', false, false)
+	snapshot := facts.snapshot()
+	assert snapshot.commands_ran == ['Bash']
+	assert snapshot.unresolved_effects == 0
+}
+
+fn test_unresolved_effect_overrides_failed_lifecycle_to_uncertain() {
+	outcome := derive_turn_outcome('failed', TurnOutcomeFacts{
+		unresolved_effects: 1
+	}, 'Codex command was canceled.')
+	assert outcome.outcome == 'uncertain'
+	assert outcome.summary.contains('could not confirm the outcome')
 }
 
 fn test_facts_record_each_decision_kind() {

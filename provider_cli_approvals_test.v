@@ -34,14 +34,18 @@ fn test_cli_tool_approval_lifecycle() {
 		directory: root
 	}) or { panic(err) }
 
-	approval := store.create_cli_tool_approval(session.id, 'req-1', 'Bash',
-		'{"command":"ls"}') or { panic(err) }
+	review_json := '{"threadId":"parent","turnId":"turn-1","itemId":"edit-1","changes":[{"path":"src/main.v","kind":"update","diff":"@@ -1 +1 @@\\n-old\\n+new"}]}'
+	approval := store.create_cli_tool_approval(session.id, 'req-1', 'Edit',
+		review_json) or { panic(err) }
 	assert approval.status == 'pending'
-	assert approval.tool_name == 'Bash'
+	assert approval.tool_name == 'Edit'
 
 	pending := store.list_pending_cli_tool_approvals(session.id) or { panic(err) }
 	assert pending.len == 1
 	assert pending[0].id == approval.id
+	assert pending[0].input_json == review_json
+	assert pending[0].input_json.contains('src/main.v')
+	assert pending[0].input_json.contains('+new')
 
 	decided := store.decide_cli_tool_approval(session.id, approval.id, true) or {
 		panic(err)

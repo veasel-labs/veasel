@@ -135,6 +135,16 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `/home/ulisesjcf/.cache/veasel-validation/v0.106.3-next.0/packaged-world-fullscreen.png`.
   This is visual and provider-response evidence, not clean live-session
   acceptance or a publishable unqualified Desktop screenshot.
+- On 2026-11-27, packaged TUI `v0.111.0-next.0` reached a real Codex file-edit
+  approval in `ask` mode, but the approval payload contained no patch. The
+  request was explicitly denied; the fixture workspace remained unchanged.
+  The sanitized receipt is retained outside the repository at
+  `/home/ulisesjcf/.cache/veasel-validation/acceptance-v0.111.0-next.0/tui-approval-denial.json`.
+  The current worktree adds bounded correlation of Codex v2
+  `item/fileChange/patchUpdated` snapshots to approval by exact thread, turn,
+  and item IDs, and denies malformed, stale, missing, or oversized snapshots.
+  This local change is not yet merged, packaged, or verified by the pinned V
+  compiler; CI and a repeat packaged approval review remain required.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under

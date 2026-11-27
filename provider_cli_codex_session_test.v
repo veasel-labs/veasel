@@ -35,6 +35,24 @@ fn codex_fixture_shim() (string, bool) {
 	return shim, true
 }
 
+fn codex_file_approval_fixture_shim() (string, bool) {
+	if !codex_node_available() {
+		eprintln('skip: node unavailable for fake Codex file-approval fixture')
+		return '', false
+	}
+	fixture := os.join_path('tests', 'fixtures', 'fake-codex-file-approval.mjs')
+	if !os.exists(fixture) {
+		eprintln('skip: fake Codex file-approval fixture not present')
+		return '', false
+	}
+	shim := os.join_path(os.temp_dir(), 'veasel-fake-codex-file-approval-test.sh')
+	os.write_file(shim, '#!/bin/sh\nexec node "${os.abs_path(fixture)}" "$@"\n') or {
+		panic(err)
+	}
+	os.chmod(shim, 0o755) or { panic(err) }
+	return shim, true
+}
+
 fn test_run_codex_cli_turn_against_fake_fixture() {
 	shim, ok := codex_fixture_shim()
 	if !ok {
@@ -83,6 +101,113 @@ fn test_run_codex_cli_turn_allows_only_explicit_approval() {
 	assert turn.outcome == 'completed'
 	assert turn.approvals_approved == 1
 	assert turn.text == 'accept'
+}
+
+fn test_codex_file_change_approval_uses_exact_correlated_patch_snapshot() {
+	shim, ok := codex_file_approval_fixture_shim()
+	if !ok {
+		return
+	}
+	defer { os.rm(shim) or {} }
+	mut review := &CodexStreamedSink{}
+	allow := fn [mut review] (_ string, tool_name string, input_json string) bool {
+		if tool_name == 'Edit' {
+			review.text = input_json
+		}
+		return input_json.contains('src/main.v')
+	}
+	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', 'file-approval', 30_000,
+		ignore_provider_text_delta, allow) or { panic(err) }
+	assert turn.outcome == 'completed'
+	assert turn.approvals_approved == 1
+	assert review.text.contains('"threadId":"parent"')
+	assert review.text.contains('"turnId":"turn-1"')
+	assert review.text.contains('"itemId":"edit-file"')
+	assert review.text.contains('"path":"src/main.v"')
+	assert review.text.contains('+new')
+	assert review.text.contains('Apply the reviewed file change')
+}
+
+fn test_codex_file_change_approval_without_patch_snapshot_is_denied_before_review() {
+	shim, ok := codex_file_approval_fixture_shim()
+	if !ok {
+		return
+	}
+	defer { os.rm(shim) or {} }
+	mut called := false
+	allow := fn [mut called] (_ string, _ string, _ string) bool {
+		called = true
+		return true
+	}
+	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', 'file-approval-missing', 30_000,
+		ignore_provider_text_delta, allow) or { panic(err) }
+	assert turn.outcome == 'completed'
+	assert turn.approvals_denied == 1
+	assert turn.approvals_approved == 0
+	assert !called
+	assert turn.text == 'decline'
+}
+
+fn test_codex_file_change_approval_does_not_reuse_a_stale_turn_snapshot() {
+	shim, ok := codex_file_approval_fixture_shim()
+	if !ok {
+		return
+	}
+	defer { os.rm(shim) or {} }
+	mut called := false
+	allow := fn [mut called] (_ string, _ string, _ string) bool {
+		called = true
+		return true
+	}
+	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', 'file-approval-stale-turn', 30_000,
+		ignore_provider_text_delta, allow) or { panic(err) }
+	assert turn.outcome == 'completed'
+	assert turn.approvals_denied == 1
+	assert turn.approvals_approved == 0
+	assert !called
+}
+
+fn test_codex_file_change_approval_invalidates_cache_after_patch_update_without_item_id() {
+	for prompt in ['file-approval-missing-item-id', 'file-approval-missing-turn-id'] {
+		shim, ok := codex_file_approval_fixture_shim()
+		if !ok {
+			continue
+		}
+		defer { os.rm(shim) or {} }
+		mut called := false
+		allow := fn [mut called] (_ string, _ string, _ string) bool {
+			called = true
+			return true
+		}
+		turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', prompt, 30_000,
+			ignore_provider_text_delta, allow) or { panic(err) }
+		assert turn.outcome == 'completed'
+		assert turn.approvals_denied == 1
+		assert turn.approvals_approved == 0
+		assert !called
+		assert turn.text == 'decline'
+	}
+}
+
+fn test_codex_file_change_approval_never_reaches_review_outside_active_thread_or_turn() {
+	for prompt in ['file-approval-other-thread', 'file-approval-stale-request-turn'] {
+		shim, ok := codex_file_approval_fixture_shim()
+		if !ok {
+			continue
+		}
+		defer { os.rm(shim) or {} }
+		mut called := false
+		allow := fn [mut called] (_ string, _ string, _ string) bool {
+			called = true
+			return true
+		}
+		turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', prompt, 30_000,
+			ignore_provider_text_delta, allow) or { panic(err) }
+		assert turn.outcome == 'completed'
+		assert turn.approvals_denied == 0
+		assert turn.approvals_approved == 0
+		assert !called
+	}
 }
 
 fn test_run_codex_cli_turn_records_redacted_effect_receipts() {

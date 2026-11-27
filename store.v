@@ -1389,7 +1389,7 @@ fn open_store_at(path string) !&Store {
 			return error('unable to record interrupted session operation')
 		}
 	}
-	_ = db.exec("UPDATE subagent_runs SET status = 'cancelled', error = 'The server restarted before this queued child run started.', updated_at = CURRENT_TIMESTAMP WHERE status = 'queued'") or {
+	_ = db.exec("UPDATE subagent_runs SET status = 'cancelled', error = 'The server restarted before this queued child run started.', updated_at = CURRENT_TIMESTAMP WHERE status = 'queued' AND id NOT IN (SELECT reviewer_run_id FROM goal_task_verifier_bindings WHERE status = 'bound' AND reviewer_run_id IS NOT NULL)") or {
 		db.rollback() or {}
 		db.close() or {}
 		return error('unable to cancel queued child agent run')

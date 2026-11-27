@@ -1098,9 +1098,20 @@ binding fence with the lease; an expired bound reviewer run fails closed and
 cannot be reclaimed under a new fence. Binding a run also requires the exact
 fence captured by its dispatching worker, so a delayed worker cannot rebind
 after a reserved binding was reclaimed. Verified task state and consumed
-bindings both block lease reacquisition. Keep Goal dispatch integration,
-executable checks, and atomic `verified` to `succeeded` acceptance open until
-those paths are implemented and tested.
+bindings both block lease reacquisition. The server now scans eligible tasks
+after startup and after worker completion, prepares and durably binds a queued
+read-only reviewer before launch, renews its lease while it runs, and records
+its receipt on completion. Installed CLI reviewers are forced into `ask` mode;
+dispatch goroutines participate in shutdown draining. Startup preserves a
+completed worker candidate for retry, accepts `completed_with_denials` for
+independent review, resumes bound queued reviewers, and re-fences one only
+after confirming its lease expired and it never started. Dispatch defers rather
+than failing a Goal task when the per-session active subagent limit is reached.
+Focused candidate, receipt, lease-recovery, and subagent preparation tests pass.
+Still open: an end-to-end automatic dispatch-to-receipt test, executable
+acceptance policy/checks, and the atomic `verified` to `succeeded` acceptance
+transition. Provider/model lineage independence and actual CLI sandbox behavior
+also need stronger evidence than route identity and local mode selection.
 
 - [x] Publish a versioned Toolkit Goal v1/task/evidence contract with an offline
   validator and planner for authorized repositories, acceptance criteria,

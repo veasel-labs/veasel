@@ -286,6 +286,53 @@ fn migrate_goal_task_verifying_state(mut db sqlite.DB) ! {
 // process-start identity. Dead, reused, legacy, or unverifiable ownership is
 // uncertain and never replayed. Opening another Store preserves verified live
 // claims in the current process.
+fn goal_task_verification_attempt_is_dispatchable_after_restart(row sqlite.Row) bool {
+	if row.val(9) != 'completed' || row.val(10) !in ['completed', 'completed_with_denials'] || row.val(11) != 'ready'
+		|| row.val(3).len == 0 || row.val(4).len == 0 || row.val(18).int() != 0 {
+		return false
+	}
+	if row.val(15).len > 0 {
+		if row.val(15) == 'bound' && row.val(16).len > 0 && row.val(19) == 'queued'
+			&& row.val(6).int() > 0 {
+			// A queued reviewer has not started provider execution and can safely
+			// be re-fenced after downtime.
+		} else if row.val(15) != 'reserved' || row.val(16).len > 0 {
+			return false
+		}
+	}
+	if row.val(6).int() > 0 {
+		hard_deadline := time.parse_rfc3339(row.val(7)) or { return false }
+		lease_expiry := time.parse_rfc3339(row.val(8)) or { return false }
+		now := time.now()
+		if now >= hard_deadline || now < lease_expiry {
+			return false
+		}
+	}
+	goal := json2.decode[GoalAdmission](row.val(17)) or { return false }
+	if goal.id != row.val(0) {
+		return false
+	}
+	validate_goal_admission(goal) or { return false }
+	task := goal_task_by_id(goal, row.val(1)) or { return false }
+	mut admitted_root := ''
+	for repository in goal.authorized_repositories {
+		if task.repository.to_lower() == '${repository.owner}/${repository.name}'.to_lower() {
+			admitted_root = repository.path
+			break
+		}
+	}
+	root := row.val(12)
+	workspace_path := row.val(13)
+	if admitted_root.len == 0 || root != admitted_root || row.val(14) != task.base_sha
+		|| !os.is_abs_path(root) || !os.is_abs_path(workspace_path) || os.is_link(root)
+		|| os.is_link(workspace_path) || !os.is_dir(root) || !os.is_dir(workspace_path)
+		|| os.real_path(root) != root || os.real_path(workspace_path) != workspace_path
+		|| goal_task_path_is_within(root, workspace_path) {
+		return false
+	}
+	return true
+}
+
 fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 	admissions := db.exec('SELECT manifest FROM goal_admissions')!
 	db.begin()!
@@ -320,10 +367,16 @@ fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 		}
 	}
 	// A verified task state is the durable result of receipt validation. Its
-	// worker attempt intentionally remains `verifying` until Goal acceptance;
-	// missing or expired verifier leases must not undo that result on restart.
-	verification_expired := db.exec("SELECT a.goal_id, a.task_id, a.attempt, a.session_id, a.session_operation_id, COALESCE(v.fencing_token, ''), COALESCE(v.generation, 0) FROM goal_task_attempts a JOIN goal_task_states s ON s.goal_id = a.goal_id AND s.task_id = a.task_id LEFT JOIN goal_task_verification_leases v ON v.goal_id = a.goal_id AND v.task_id = a.task_id AND v.attempt = a.attempt WHERE a.status = 'verifying' AND s.status != 'verified' AND (v.generation IS NULL OR julianday(v.verification_deadline) IS NULL OR julianday(v.lease_expires_at) IS NULL OR julianday(v.verification_deadline) <= julianday('now') OR julianday(v.lease_expires_at) <= julianday('now'))")!
+	// worker attempt intentionally remains `verifying` until Goal acceptance.
+	// Also preserve a completed worker result that has not yet been dispatched:
+	// a missing lease is expected before the first reviewer run, and an expired
+	// lease can be reclaimed only while its hard deadline is still live and no
+	// reviewer run was bound. Everything else with a stale lease fails closed.
+	verification_expired := db.exec("SELECT a.goal_id, a.task_id, a.attempt, a.session_id, a.session_operation_id, COALESCE(v.fencing_token, ''), COALESCE(v.generation, 0), COALESCE(v.verification_deadline, ''), COALESCE(v.lease_expires_at, ''), COALESCE(o.status, ''), COALESCE(o.outcome, ''), COALESCE(w.status, ''), COALESCE(w.repository_root, ''), COALESCE(w.worktree_path, ''), COALESCE(w.base_sha, ''), COALESCE(b.status, ''), COALESCE(b.reviewer_run_id, ''), COALESCE(g.manifest, ''), EXISTS (SELECT 1 FROM goal_task_verification_receipts r WHERE r.goal_id = a.goal_id AND r.task_id = a.task_id AND r.attempt = a.attempt), COALESCE(sr.status, '') FROM goal_task_attempts a JOIN goal_task_states s ON s.goal_id = a.goal_id AND s.task_id = a.task_id LEFT JOIN goal_task_verification_leases v ON v.goal_id = a.goal_id AND v.task_id = a.task_id AND v.attempt = a.attempt LEFT JOIN session_operations o ON o.session_id = a.session_id AND o.id = a.session_operation_id LEFT JOIN goal_task_attempt_workspaces w ON w.goal_id = a.goal_id AND w.task_id = a.task_id AND w.attempt = a.attempt LEFT JOIN goal_task_verifier_bindings b ON b.goal_id = a.goal_id AND b.task_id = a.task_id AND b.attempt = a.attempt LEFT JOIN goal_admissions g ON g.id = a.goal_id LEFT JOIN subagent_runs sr ON sr.id = b.reviewer_run_id WHERE a.status = 'verifying' AND s.status != 'verified' AND (v.generation IS NULL OR julianday(v.verification_deadline) IS NULL OR julianday(v.lease_expires_at) IS NULL OR julianday(v.verification_deadline) <= julianday('now') OR julianday(v.lease_expires_at) <= julianday('now'))")!
 	for row in verification_expired {
+		if goal_task_verification_attempt_is_dispatchable_after_restart(row) {
+			continue
+		}
 		if row.val(5) != '' && row.val(6).int() > 0 {
 			db.exec_param_many('DELETE FROM goal_task_verification_leases WHERE goal_id = ? AND task_id = ? AND attempt = ? AND fencing_token = ? AND generation = ?', [
 				row.val(0),

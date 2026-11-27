@@ -18,6 +18,7 @@ mut:
 	parent_hits                 int
 	child_hits                  int
 	fail_child                  bool
+	plain_child_response        bool
 	pause_child_until_released  bool
 	pause_parent_until_released bool
 	child_request_started       chan bool
@@ -96,6 +97,7 @@ fn (mut fixture SubagentProviderFixture) handle(request http.Request) http.Respo
 	pause_child := fixture.pause_child_until_released && is_child && hit == 1
 	pause_parent := fixture.pause_parent_until_released && !is_child && hit == 2
 	fail_child := fixture.fail_child && is_child
+	plain_child_response := fixture.plain_child_response && is_child
 	fixture.mu.unlock()
 	if pause_child {
 		fixture.child_request_started <- true
@@ -109,6 +111,23 @@ fn (mut fixture SubagentProviderFixture) handle(request http.Request) http.Respo
 		mut response := http.Response{}
 		response.set_status(.internal_server_error)
 		response.body = 'fixture child provider failure'
+		return response
+	}
+	if plain_child_response {
+		chunk := OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{ content: 'Reviewer inspected the committed candidate.' }
+			}]
+			usage:   OpenAIUsage{
+				prompt_tokens:     10
+				completion_tokens: 3
+				total_tokens:      13
+			}
+		}
+		mut response := http.Response{}
+		response.set_status(.ok)
+		response.header.set(.content_type, 'text/event-stream')
+		response.body = 'data: ${json2.encode(chunk)}\n\ndata: [DONE]\n\n'
 		return response
 	}
 	chunk := if is_child && hit == 1 {
@@ -394,6 +413,95 @@ fn test_subagent_targets_route_to_distinct_configured_provider_instances() {
 	assert provider_c.request_bodies.any(it.contains('"model":"provider-c-model"'))
 	assert provider_b.request_bodies.all(!it.contains('provider-c-model'))
 	assert provider_c.request_bodies.all(!it.contains('provider-b-model'))
+}
+
+fn test_prepared_reviewer_run_stays_queued_until_explicit_launch() {
+	root := os.join_path(os.temp_dir(), 'veasel-subagent-prepared-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_subagent_runtime_test_repo(root)
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	mut fixture := &SubagentProviderFixture{
+		plain_child_response: true
+	}
+	mut server, server_thread := start_subagent_provider_fixture(mut fixture) or { panic(err) }
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	parent := store.create_session(SessionInput{
+		title:     'Prepared reviewer parent'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
+	prepared := app.prepare_subagent_task_with_policy(parent.id, operation_id, 'prepared-reviewer',
+		'reviewer', 'Review the committed candidate read-only.', '', '',
+		execution_policy_turn_from_input('', false, false), AgentToolPolicy{}) or { panic(err) }
+	assert prepared.run.status == 'queued'
+	assert prepared.run.workspace_ready
+	assert !prepared.run.workspace_started
+	assert prepared.run.agent_id == 'reviewer'
+	assert fixture.child_hits == 0, 'preparation must not issue a provider request'
+	reserved := store.get_subagent_run(prepared.run.id) or { panic(err) }
+	assert reserved.status == 'queued'
+	assert !reserved.workspace_started
+
+	launched := app.launch_prepared_subagent_task(prepared) or { panic(err) }
+	assert launched.id == prepared.run.id
+	completed := wait_for_subagent_terminal(mut store, prepared.run.id)
+	assert completed.status == 'completed'
+	assert fixture.child_hits == 1
+}
+
+fn test_normal_subagent_delegation_still_launches_prepared_run() {
+	root := os.join_path(os.temp_dir(), 'veasel-subagent-normal-launch-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_subagent_runtime_test_repo(root)
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	mut fixture := &SubagentProviderFixture{
+		plain_child_response: true
+	}
+	mut server, server_thread := start_subagent_provider_fixture(mut fixture) or { panic(err) }
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	parent := store.create_session(SessionInput{
+		title:     'Normal delegation parent'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
+	run := app.delegate_subagent_task(parent.id, operation_id, 'normal-launch', 'explorer',
+		'Inspect the candidate and report.', '', '') or { panic(err) }
+	assert run.status in ['running', 'completed']
+	completed := wait_for_subagent_terminal(mut store, run.id)
+	assert completed.status == 'completed'
+	assert fixture.child_hits == 1, 'normal delegation must launch the prepared run'
 }
 
 fn test_model_callable_subagent_delivers_child_provider_failure_to_parent() {

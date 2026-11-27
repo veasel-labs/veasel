@@ -18,6 +18,11 @@ pub:
 	fencing_token         string
 }
 
+struct GoalTaskVerificationLeaseLookup {
+	found bool
+	lease GoalTaskVerificationLease
+}
+
 fn migrate_goal_task_verification_leases(mut db sqlite.DB) ! {
 	db.begin()!
 	defer { db.rollback() or {} }
@@ -75,18 +80,34 @@ fn (mut store Store) claim_goal_task_verification_lease(goal_id string, task_id 
 		if now < lease_expiry {
 			return error('goal task verification lease is already held')
 		}
-		binding_rows := store.db.exec_param_many("SELECT status, COALESCE(reviewer_run_id, '') FROM goal_task_verifier_bindings WHERE goal_id = ? AND task_id = ? AND attempt = ?", [
+		binding_rows := store.db.exec_param_many("SELECT b.status, COALESCE(b.reviewer_run_id, ''), COALESCE(r.status, '') FROM goal_task_verifier_bindings b LEFT JOIN subagent_runs r ON r.id = b.reviewer_run_id WHERE b.goal_id = ? AND b.task_id = ? AND b.attempt = ?", [
+			goal_id,
+			task_id,
+			attempt.str(),
+		])!
+		if binding_rows.len == 1 {
+			queued_unstarted := binding_rows[0].val(0) == 'bound'
+				&& binding_rows[0].val(1).len > 0 && binding_rows[0].val(2) == 'queued'
+			if (binding_rows[0].val(0) == 'bound' || binding_rows[0].val(1).len > 0)
+				&& !queued_unstarted {
+				return error('expired bound reviewer run cannot be reclaimed safely; expire the task as uncertain')
+			}
+		}
+		existing_hard := time.parse_rfc3339(rows[0].val(4)) or { return error('goal task verification deadline is invalid') }
+		if now >= existing_hard {
+			return error('goal task verification deadline has expired')
+		}
+	} else {
+		binding_rows := store.db.exec_param_many("SELECT b.status, COALESCE(b.reviewer_run_id, ''), COALESCE(r.status, '') FROM goal_task_verifier_bindings b LEFT JOIN subagent_runs r ON r.id = b.reviewer_run_id WHERE b.goal_id = ? AND b.task_id = ? AND b.attempt = ?", [
 			goal_id,
 			task_id,
 			attempt.str(),
 		])!
 		if binding_rows.len == 1
-			&& (binding_rows[0].val(0) == 'bound' || binding_rows[0].val(1).len > 0) {
-			return error('expired bound reviewer run cannot be reclaimed safely; expire the task as uncertain')
-		}
-		existing_hard := time.parse_rfc3339(rows[0].val(4)) or { return error('goal task verification deadline is invalid') }
-		if now >= existing_hard {
-			return error('goal task verification deadline has expired')
+			&& (binding_rows[0].val(0) == 'bound' || binding_rows[0].val(1).len > 0)
+			&& !(binding_rows[0].val(0) == 'bound' && binding_rows[0].val(1).len > 0
+				&& binding_rows[0].val(2) == 'queued') {
+			return error('unleased bound reviewer run cannot be safely reclaimed')
 		}
 	}
 	mut hard_deadline := now.add(time.second * goal_task_verification_hard_deadline_seconds)
@@ -111,17 +132,42 @@ fn (mut store Store) claim_goal_task_verification_lease(goal_id string, task_id 
 		hard_deadline.format_rfc3339(),
 		expires.format_rfc3339(),
 	])!
-	if rows[0].val(2) != '' {
-		store.db.exec_param_many("UPDATE goal_task_verifier_bindings SET fencing_token = ?, lease_generation = ?, updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status IN ('reserved', 'bound')", [
-			token,
-			generation.str(),
-			goal_id,
-			task_id,
-			attempt.str(),
-		])!
-	}
+	store.db.exec_param_many("UPDATE goal_task_verifier_bindings SET fencing_token = ?, lease_generation = ?, updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status IN ('reserved', 'bound')", [
+		token,
+		generation.str(),
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
 	store.db.commit()!
 	return GoalTaskVerificationLease{ verification_deadline: hard_deadline.format_rfc3339(), lease_expires_at: expires.format_rfc3339(), generation: generation, fencing_token: token }
+}
+
+// current_goal_task_verification_lease returns the durable fence without
+// claiming or renewing it. Startup recovery uses this to reconnect a queued
+// or running bound reviewer without minting a competing generation.
+fn (mut store Store) current_goal_task_verification_lease(goal_id string, task_id string,
+	attempt int) !GoalTaskVerificationLeaseLookup {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	rows := store.db.exec_param_many('SELECT verification_deadline, lease_expires_at, generation, fencing_token FROM goal_task_verification_leases WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	if rows.len == 0 {
+		return GoalTaskVerificationLeaseLookup{}
+	}
+	if rows.len != 1 { return error('goal task verification lease identity is ambiguous') }
+	return GoalTaskVerificationLeaseLookup{
+		found: true
+		lease: GoalTaskVerificationLease{
+			verification_deadline: rows[0].val(0)
+			lease_expires_at:      rows[0].val(1)
+			generation:            rows[0].val(2).int()
+			fencing_token:         rows[0].val(3)
+		}
+	}
 }
 
 fn (mut store Store) renew_goal_task_verification_lease(goal_id string, task_id string, attempt int,

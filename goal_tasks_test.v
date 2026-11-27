@@ -3,6 +3,7 @@ module main
 import os
 import json2
 import rand
+import time
 
 fn test_goal_task_projection_is_stable_topological_order() {
 	goal := GoalAdmission{
@@ -129,13 +130,14 @@ fn test_goal_task_state_is_seeded_idempotently_and_recovery_never_replays_runnin
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 38') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 39') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 40') or { panic(err) }
+	store.db.exec('DELETE FROM schema_migrations WHERE version = 41') or { panic(err) }
 	store.close() or { panic(err) }
 
 	store = open_store(path) or { panic(err) }
 	seeded := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
 	assert seeded.status == 'pending'
 	assert seeded.attempt_count == 0
-	for version in [36, 37, 38, 39, 40] {
+	for version in [36, 37, 38, 39, 40, 41] {
 		store.db.exec_param_many('DELETE FROM schema_migrations WHERE version = ?', [version.str()]) or {
 			panic(err)
 		}
@@ -863,11 +865,20 @@ fn test_goal_task_claim_is_atomic_across_store_connections() {
 }
 
 fn goal_task_test_admission() GoalAdmission {
+	return goal_task_test_admission_with('goal-task-test', '', GoalBudget{
+		max_attempts:   2
+		wall_seconds:   60
+		provider_turns: 4
+	})
+}
+
+fn goal_task_test_admission_with(id string, deadline string, budget GoalBudget) GoalAdmission {
 	return GoalAdmission{
 		schema_version: 1
-		id:             'goal-task-test'
+		id:             id
 		title:          'Test durable goal task state'
-		budget:         GoalBudget{ max_attempts: 2, wall_seconds: 60, provider_turns: 4 }
+		deadline:       deadline
+		budget:         budget
 		tasks:          [GoalTask{
 			id:         'prepare'
 			title:      'Prepare'
@@ -892,4 +903,116 @@ fn record_ready_goal_dispatch_test_workspace(mut store Store, goal GoalAdmission
 		path,
 		base_sha,
 	]) or { panic(err) }
+}
+
+fn test_goal_task_claim_deadline_lease_fence_and_reopen_are_durable() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-leases-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'veasel.sqlite3')
+	goal := goal_task_test_admission_with('goal-task-leases',
+		time.now().add(5 * time.minute).format_rfc3339(),
+		GoalBudget{ max_attempts: 2, wall_seconds: 10, provider_turns: 2 })
+	mut store := open_store(path) or { panic(err) }
+	_ = store.admit_goal(goal) or { panic(err) }
+	claim := store.claim_goal_task_for_dispatch(goal.id, 'prepare') or { panic(err) }
+	assert claim.lease_generation == 1
+	effective := time.parse_rfc3339(claim.effective_deadline) or { panic(err) }
+	lease := time.parse_rfc3339(claim.lease_expires_at) or { panic(err) }
+	now := time.now()
+	assert effective.unix() <= now.add(11 * time.second).unix()
+	assert lease.unix() <= effective.unix()
+	assert lease.unix() >= now.unix()
+	store.close() or { panic(err) }
+	mut reopened := open_store(path) or { panic(err) }
+	defer { reopened.close() or {} }
+	persisted := reopened.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	persisted_attempt := persisted.attempts[0]
+	assert persisted_attempt.effective_deadline == claim.effective_deadline
+	assert persisted_attempt.lease_expires_at == claim.lease_expires_at
+	assert persisted_attempt.lease_generation == 1
+	renewed := reopened.renew_goal_task_attempt_lease(goal.id, 'prepare', 1, claim.fencing_token, 1, 3) or {
+		panic(err)
+	}
+	assert renewed.generation == 2
+	mut stale_generation_rejected := false
+	reopened.renew_goal_task_attempt_lease(goal.id, 'prepare', 1, claim.fencing_token, 1, 3) or {
+		assert err.msg().contains('stale')
+		stale_generation_rejected = true
+		GoalTaskLease{}
+	}
+	assert stale_generation_rejected
+	mut stale_token_rejected := false
+	reopened.renew_goal_task_attempt_lease(goal.id, 'prepare', 1, 'stale-token', 2, 3) or {
+		assert err.msg().contains('stale')
+		stale_token_rejected = true
+		GoalTaskLease{}
+	}
+	assert stale_token_rejected
+}
+
+fn test_goal_task_expiry_is_fail_closed_and_never_retries() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-expiry-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'veasel.sqlite3')
+	goal := goal_task_test_admission_with('goal-task-expiry',
+		time.now().add(5 * time.minute).format_rfc3339(),
+		GoalBudget{ max_attempts: 2, wall_seconds: 60, provider_turns: 4 })
+	mut store := open_store(path) or { panic(err) }
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{ title: 'lease expiry', directory: root }) or { panic(err) }
+	claim := store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or { panic(err) }
+	record_ready_goal_dispatch_test_workspace(mut store, goal, 'prepare', 1, os.join_path(root, 'worktree'))
+	mut premature_rejected := false
+	store.expire_goal_task_attempt_lease(goal.id, 'prepare', 1, claim.fencing_token, claim.lease_generation) or {
+		assert err.msg().contains('not expired')
+		premature_rejected = true
+	}
+	assert premature_rejected
+	// The canonical operation may have recorded a terminal result just before
+	// lease expiry. Preserve it while fencing the attempt itself uncertain.
+	store.db.exec_param_many("UPDATE session_operations SET status = 'completed', outcome = 'completed' WHERE session_id = ? AND id = ?", [
+		session.id,
+		claim.session_operation_id,
+	]) or { panic(err) }
+	store.db.exec_param_many("UPDATE goal_task_attempts SET lease_expires_at = '2000-01-01T00:00:00Z' WHERE goal_id = ? AND task_id = ? AND attempt = 1", [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	assert store.expire_goal_task_attempt_lease(goal.id, 'prepare', 1, claim.fencing_token, claim.lease_generation) or { panic(err) }
+	state := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'uncertain'
+	assert state.attempts[0].status == 'uncertain'
+	workspace := store.db.exec_param_many('SELECT status FROM goal_task_attempt_workspaces WHERE goal_id = ? AND task_id = ? AND attempt = 1', [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	assert workspace[0].val(0) == 'uncertain'
+	operation := store.get_session_operation(session.id, claim.session_operation_id) or { panic(err) }
+	assert operation.status == 'completed'
+	events := store.db.exec_param_many("SELECT COUNT(*) FROM events WHERE session_id = ? AND type = 'goal.task_attempt_completed'", [session.id]) or { panic(err) }
+	assert events[0].val(0).int() == 1
+	store.claim_goal_task(goal.id, 'prepare') or {
+		assert err.msg().contains('dependencies') || err.msg().contains('claimable')
+		return
+	}
+	assert false, 'uncertain attempt was retried'
+}
+
+fn test_goal_task_claim_rejects_expired_deadline() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-expired-deadline-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	goal := goal_task_test_admission_with('goal-task-expired-deadline',
+		time.now().add(-1 * time.second).format_rfc3339(),
+		GoalBudget{ max_attempts: 2, wall_seconds: 60, provider_turns: 4 })
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	_ = store.admit_goal(goal) or { panic(err) }
+	store.claim_goal_task(goal.id, 'prepare') or {
+		assert err.msg().contains('deadline')
+		return
+	}
+	assert false, 'expired goal deadline was claimed'
 }

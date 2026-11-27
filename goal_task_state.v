@@ -3,6 +3,7 @@ module main
 import db.sqlite
 import json2
 import os
+import time
 import uuid
 
 // Lifecycle values stay typed in the V state machine. Projections encode their
@@ -56,10 +57,13 @@ fn goal_task_status_from_db(value string) !GoalTaskStatus {
 
 pub struct GoalTaskAttemptProjection {
 pub:
-	attempt    int
-	status     string
-	started_at string
-	ended_at   string
+	attempt            int
+	status             string
+	started_at         string
+	ended_at           string
+	effective_deadline string
+	lease_expires_at   string
+	lease_generation   int
 }
 
 pub struct GoalTaskProjectionState {
@@ -73,7 +77,20 @@ struct GoalTaskClaim {
 	state                GoalTaskProjectionState
 	session_operation_id string
 	fencing_token        string
+	lease_generation     int
+	effective_deadline   string
+	lease_expires_at     string
 }
+
+struct GoalTaskLease {
+pub:
+	effective_deadline string
+	lease_expires_at   string
+	generation         int
+	fencing_token      string
+}
+
+const goal_task_initial_lease_seconds = 90
 
 struct GoalTaskEventData {
 	goal_id      string
@@ -126,6 +143,20 @@ fn migrate_goal_task_state(mut db sqlite.DB) ! {
 	db.exec('CREATE INDEX IF NOT EXISTS idx_goal_task_attempts_status ON goal_task_attempts(status)')!
 	db.exec('INSERT OR IGNORE INTO schema_migrations (version) VALUES (36)')!
 	db.exec('INSERT OR IGNORE INTO schema_migrations (version) VALUES (37)')!
+	db.commit()!
+}
+
+// This migration is deliberately additive. Existing attempts remain terminal
+// or recoverable exactly as before; only newly claimed attempts receive a
+// durable deadline and lease fence.
+fn migrate_goal_task_attempt_deadline_leases(mut db sqlite.DB) ! {
+	db.begin()!
+	defer { db.rollback() or {} }
+	add_column_if_missing(&db, 'goal_task_attempts', 'effective_deadline', "TEXT NOT NULL DEFAULT ''")!
+	add_column_if_missing(&db, 'goal_task_attempts', 'lease_expires_at', "TEXT NOT NULL DEFAULT ''")!
+	add_column_if_missing(&db, 'goal_task_attempts', 'lease_generation', 'INTEGER NOT NULL DEFAULT 0 CHECK (lease_generation >= 0)')!
+	db.exec('CREATE INDEX IF NOT EXISTS idx_goal_task_attempt_leases ON goal_task_attempts(status, lease_expires_at)')!
+	db.exec('INSERT OR IGNORE INTO schema_migrations (version) VALUES (41)')!
 	db.commit()!
 }
 
@@ -212,6 +243,31 @@ fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 	for row in admissions {
 		goal := json2.decode[GoalAdmission](row.val(0))!
 		seed_goal_task_state(mut db, goal)!
+	}
+	expired_attempts := db.exec("SELECT goal_id, task_id, attempt, session_id, session_operation_id FROM goal_task_attempts WHERE status = 'running' AND effective_deadline != '' AND (julianday(effective_deadline) <= julianday('now') OR julianday(lease_expires_at) <= julianday('now'))")!
+	// Lease expiry wins over any separately completed operation receipt. The
+	// worker may have finished after losing its lease, so recovery must not
+	// promote that ambiguous result to verifying.
+	db.exec("UPDATE goal_task_attempts SET status = 'uncertain', ended_at = CURRENT_TIMESTAMP, owner_pid = 0, owner_start_id = '' WHERE status = 'running' AND effective_deadline != '' AND (julianday(effective_deadline) <= julianday('now') OR julianday(lease_expires_at) <= julianday('now'))")!
+	db.exec("UPDATE goal_task_attempt_workspaces SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP WHERE status IN ('preparing', 'ready') AND EXISTS (SELECT 1 FROM goal_task_attempts a WHERE a.goal_id = goal_task_attempt_workspaces.goal_id AND a.task_id = goal_task_attempt_workspaces.task_id AND a.attempt = goal_task_attempt_workspaces.attempt AND a.status = 'uncertain')")!
+	db.exec("UPDATE goal_task_states SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP, owner_pid = 0, owner_start_id = '' WHERE status = 'running' AND EXISTS (SELECT 1 FROM goal_task_attempts a WHERE a.goal_id = goal_task_states.goal_id AND a.task_id = goal_task_states.task_id AND a.status = 'uncertain')")!
+	db.exec("UPDATE session_operations SET status = 'uncertain', outcome = 'uncertain', error = 'The task attempt lease expired before a result was recorded.', updated_at = CURRENT_TIMESTAMP WHERE status IN ('queued', 'running', 'cancelling') AND EXISTS (SELECT 1 FROM goal_task_attempts a WHERE a.session_id = session_operations.session_id AND a.session_operation_id = session_operations.id AND a.status = 'uncertain')")!
+	for row in expired_attempts {
+		if row.val(3) != '' && row.val(4) != '' {
+			db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+				'goal.task_attempt_completed',
+				row.val(3),
+				json2.encode[GoalTaskEventData](GoalTaskEventData{
+					goal_id:      row.val(0)
+					task_id:      row.val(1)
+					attempt:      row.val(2).int()
+					operation_id: row.val(4)
+					status:       'uncertain'
+					outcome:      'uncertain'
+					error:        'The task attempt lease expired before a result was recorded.'
+				}),
+			])!
+		}
 	}
 	interrupted_attempts := db.exec("SELECT a.goal_id, a.task_id, a.attempt, a.owner_pid, a.owner_start_id, a.session_id, a.session_operation_id, COALESCE(o.status, ''), COALESCE(o.outcome, '') FROM goal_task_attempts AS a LEFT JOIN session_operations AS o ON o.session_id = a.session_id AND o.id = a.session_operation_id WHERE a.status = 'running'")!
 	for row in interrupted_attempts {
@@ -326,7 +382,7 @@ fn (mut store Store) goal_task_state(goal_id string, task_id string) !GoalTaskPr
 		return error('goal task state not found')
 	}
 	state := rows[0]
-	attempt_rows := store.db.exec_param_many('SELECT attempt, status, started_at, ended_at FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? ORDER BY attempt', [
+	attempt_rows := store.db.exec_param_many('SELECT attempt, status, started_at, ended_at, effective_deadline, lease_expires_at, lease_generation FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? ORDER BY attempt', [
 		goal_id,
 		task_id,
 	])!
@@ -334,10 +390,13 @@ fn (mut store Store) goal_task_state(goal_id string, task_id string) !GoalTaskPr
 	mut attempts := []GoalTaskAttemptProjection{}
 	for row in attempt_rows {
 		attempts << GoalTaskAttemptProjection{
-			attempt:    row.val(0).int()
-			status:     goal_task_attempt_status_from_db(row.val(1))!.str()
-			started_at: row.val(2)
-			ended_at:   row.val(3)
+			attempt:            row.val(0).int()
+			status:             goal_task_attempt_status_from_db(row.val(1))!.str()
+			started_at:         row.val(2)
+			ended_at:           row.val(3)
+			effective_deadline: row.val(4)
+			lease_expires_at:   row.val(5)
+			lease_generation:   row.val(6).int()
 		}
 	}
 	return GoalTaskProjectionState{
@@ -357,17 +416,20 @@ fn (mut store Store) goal_task_states_for_goal(goal_id string) !map[string]GoalT
 	])!
 	mut states := map[string]GoalTaskProjectionState{}
 	for row in rows {
-		attempt_rows := store.db.exec_param_many('SELECT attempt, status, started_at, ended_at FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? ORDER BY attempt', [
+		attempt_rows := store.db.exec_param_many('SELECT attempt, status, started_at, ended_at, effective_deadline, lease_expires_at, lease_generation FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? ORDER BY attempt', [
 			goal_id,
 			row.val(0),
 		])!
 		mut attempts := []GoalTaskAttemptProjection{}
 		for attempt_row in attempt_rows {
 			attempts << GoalTaskAttemptProjection{
-				attempt:    attempt_row.val(0).int()
-				status:     goal_task_attempt_status_from_db(attempt_row.val(1))!.str()
-				started_at: attempt_row.val(2)
-				ended_at:   attempt_row.val(3)
+				attempt:            attempt_row.val(0).int()
+				status:             goal_task_attempt_status_from_db(attempt_row.val(1))!.str()
+				started_at:         attempt_row.val(2)
+				ended_at:           attempt_row.val(3)
+				effective_deadline: attempt_row.val(4)
+				lease_expires_at:   attempt_row.val(5)
+				lease_generation:   attempt_row.val(6).int()
 			}
 		}
 		states[row.val(0)] = GoalTaskProjectionState{
@@ -470,11 +532,34 @@ fn (mut store Store) claim_goal_task_internal(goal_id string, task_id string,
 		task_id,
 	])!
 	attempt := attempt_rows[0].val(0)
+	claimed_at := time.now()
+	budget_deadline := claimed_at.add(time.Duration(goal.budget.wall_seconds) * time.second)
+	goal_deadline := if goal.deadline.trim_space() == '' {
+		budget_deadline
+	} else {
+		time.parse_rfc3339(goal.deadline)!
+	}
+	effective_deadline := if goal_deadline < budget_deadline {
+		goal_deadline
+	} else {
+		budget_deadline
+	}
+	if effective_deadline <= claimed_at {
+		return error('goal task deadline has expired')
+	}
+	deadline_text := effective_deadline.format_rfc3339()
+	initial_lease_deadline := claimed_at.add(time.Duration(goal_task_initial_lease_seconds) * time.second)
+	lease_text := (if initial_lease_deadline < effective_deadline {
+		initial_lease_deadline
+	} else {
+		effective_deadline
+	}).format_rfc3339()
 	mut session_operation_id := ''
 	// Every claim gets a fencing token, including the short unlinked window
 	// used by the local dispatcher while it creates the isolated worktree and
 	// session. This prevents a stale dispatcher from attaching an operation.
-	mut fencing_token := if force_fencing || session_id != '' { uuid.new_v4().str() } else { '' }
+	_ = force_fencing
+	fencing_token := uuid.new_v4().str()
 	if session_id != '' {
 		session_operation_id = uuid.new_v4().str()
 		_ = store.db.exec_param_many("INSERT INTO session_operations (id, session_id, status, request_json, queue_order) VALUES (?, ?, 'running', '', (SELECT COALESCE(MAX(queue_order), 0) + 1 FROM session_operations WHERE session_id = ?))", [
@@ -494,7 +579,7 @@ fn (mut store Store) claim_goal_task_internal(goal_id string, task_id string,
 			}),
 		])!
 	}
-	_ = store.db.exec_param_many("INSERT INTO goal_task_attempts (goal_id, task_id, attempt, status, owner_pid, owner_start_id, session_id, session_operation_id, fencing_token) VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?)", [
+	_ = store.db.exec_param_many("INSERT INTO goal_task_attempts (goal_id, task_id, attempt, status, owner_pid, owner_start_id, session_id, session_operation_id, fencing_token, effective_deadline, lease_expires_at, lease_generation) VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, 1)", [
 		goal_id,
 		task_id,
 		attempt,
@@ -503,13 +588,150 @@ fn (mut store Store) claim_goal_task_internal(goal_id string, task_id string,
 		session_id,
 		session_operation_id,
 		fencing_token,
+		deadline_text,
+		lease_text,
 	])!
 	store.db.commit()!
 	return GoalTaskClaim{
 		state:                store.goal_task_state_unlocked(goal_id, task_id)!
 		session_operation_id: session_operation_id
 		fencing_token:        fencing_token
+		lease_generation:     1
+		effective_deadline:   deadline_text
+		lease_expires_at:     lease_text
 	}
+}
+
+fn (mut store Store) renew_goal_task_attempt_lease(goal_id string, task_id string, attempt int,
+	fencing_token string, generation int, lease_seconds int) !GoalTaskLease {
+	if fencing_token.len == 0 || generation <= 0 || lease_seconds <= 0 {
+		return error('goal task lease renewal requires token, generation and duration')
+	}
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	store.db.exec('BEGIN IMMEDIATE')!
+	defer { store.db.rollback() or {} }
+	rows := store.db.exec_param_many('SELECT status, effective_deadline, lease_generation, fencing_token FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	if rows.len != 1 || rows[0].val(0) != 'running' || rows[0].val(2).int() != generation || rows[0].val(3) != fencing_token {
+		return error('goal task lease is stale or not running')
+	}
+	now := time.now()
+	effective := time.parse_rfc3339(rows[0].val(1)) or { return error('goal task effective deadline is invalid') }
+	if now >= effective {
+		return error('goal task attempt deadline has expired')
+	}
+	requested := now.add(time.Duration(lease_seconds) * time.second)
+	expires := if requested < effective { requested } else { effective }
+	new_generation := generation + 1
+	new_token := uuid.new_v4().str()
+	store.db.exec_param_many("UPDATE goal_task_attempts SET lease_expires_at = ?, lease_generation = ?, fencing_token = ? WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running' AND fencing_token = ? AND lease_generation = ?", [
+		expires.format_rfc3339(),
+		new_generation.str(),
+		new_token,
+		goal_id,
+		task_id,
+		attempt.str(),
+		fencing_token,
+		generation.str(),
+	])!
+	if store.db.get_affected_rows_count() != 1 {
+		return error('goal task lease changed while renewing')
+	}
+	store.db.commit()!
+	return GoalTaskLease{ effective_deadline: effective.format_rfc3339(), lease_expires_at: expires.format_rfc3339(), generation: new_generation, fencing_token: new_token }
+}
+
+fn (mut store Store) expire_goal_task_attempt_lease(goal_id string, task_id string, attempt int,
+	fencing_token string, generation int) !bool {
+	if fencing_token.len == 0 || generation <= 0 {
+		return error('goal task lease expiry requires token and generation')
+	}
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	store.db.exec('BEGIN IMMEDIATE')!
+	defer { store.db.rollback() or {} }
+	rows := store.db.exec_param_many('SELECT status, lease_expires_at, effective_deadline, lease_generation, fencing_token, session_id, session_operation_id FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	if rows.len != 1 || rows[0].val(0) != 'running' || rows[0].val(3).int() != generation || rows[0].val(4) != fencing_token {
+		return error('goal task lease is stale or not running')
+	}
+	now := time.now()
+	lease_expiry := time.parse_rfc3339(rows[0].val(1)) or { return error('goal task lease expiry is invalid') }
+	effective := time.parse_rfc3339(rows[0].val(2)) or { return error('goal task effective deadline is invalid') }
+	if now < lease_expiry && now < effective {
+		return error('goal task lease has not expired')
+	}
+	store.db.exec_param_many("UPDATE goal_task_attempts SET status = 'uncertain', ended_at = CURRENT_TIMESTAMP, owner_pid = 0, owner_start_id = '' WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running' AND fencing_token = ? AND lease_generation = ?", [
+		goal_id,
+		task_id,
+		attempt.str(),
+		fencing_token,
+		generation.str(),
+	])!
+	if store.db.get_affected_rows_count() != 1 {
+		return error('goal task attempt changed while expiring lease')
+	}
+	store.db.exec_param_many("UPDATE goal_task_states SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP, owner_pid = 0, owner_start_id = '' WHERE goal_id = ? AND task_id = ? AND status = 'running'", [
+		goal_id,
+		task_id,
+	])!
+	if store.db.get_affected_rows_count() != 1 {
+		return error('goal task state changed while expiring lease')
+	}
+	store.db.exec_param_many("UPDATE goal_task_attempt_workspaces SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status IN ('preparing', 'ready')", [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	workspace_rows := store.db.exec_param_many('SELECT status FROM goal_task_attempt_workspaces WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	if workspace_rows.len == 1 && workspace_rows[0].val(0) != 'uncertain' {
+		return error('goal task workspace changed while expiring lease')
+	}
+	if rows[0].val(6) != '' {
+		store.db.exec_param_many("UPDATE session_operations SET status = 'uncertain', outcome = 'uncertain', error = 'The task attempt lease expired before a result was recorded.', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status IN ('queued', 'running', 'cancelling')", [
+			rows[0].val(5),
+			rows[0].val(6),
+		])!
+		if store.db.get_affected_rows_count() != 1 {
+			operation_rows := store.db.exec_param_many('SELECT status FROM session_operations WHERE session_id = ? AND id = ?', [
+				rows[0].val(5),
+				rows[0].val(6),
+			])!
+			// A terminal canonical operation is preserved: it may have recorded
+			// its result before lease expiry, but the attempt itself is still
+			// fenced and therefore uncertain until independently reconciled.
+			if operation_rows.len != 1 || operation_rows[0].val(0) !in ['completed', 'failed',
+				'cancelled', 'uncertain'] {
+				return error('linked operation changed while expiring lease')
+			}
+		}
+		store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+			'goal.task_attempt_completed',
+			rows[0].val(5),
+			json2.encode[GoalTaskEventData](GoalTaskEventData{
+				goal_id:      goal_id
+				task_id:      task_id
+				attempt:      attempt
+				operation_id: rows[0].val(6)
+				status:       'uncertain'
+				outcome:      'uncertain'
+				error:        'The task attempt lease expired before a result was recorded.'
+			}),
+		])!
+	}
+	store.db.commit()!
+	return true
 }
 
 // attach_goal_task_attempt_session closes the dispatcher handoff after the
@@ -589,7 +811,20 @@ fn (mut store Store) attach_goal_task_attempt_session(goal_id string, task_id st
 // complete_goal_task_attempt records an explicit result. Failed attempts return
 // the task to pending while budget remains; uncertain results are never retried.
 fn (mut store Store) complete_goal_task_attempt(goal_id string, task_id string, attempt int, result GoalTaskResult) ! {
-	return store.complete_goal_task_attempt_internal(goal_id, task_id, attempt, '', result)
+	store.mu.lock()
+	rows := store.db.exec_param_many('SELECT fencing_token FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+		goal_id,
+		task_id,
+		attempt.str(),
+	]) or {
+		store.mu.unlock()
+		return err
+	}
+	store.mu.unlock()
+	if rows.len != 1 {
+		return error('goal task attempt not found')
+	}
+	return store.complete_goal_task_attempt_internal(goal_id, task_id, attempt, rows[0].val(0), result)
 }
 
 fn (mut store Store) complete_linked_goal_task_attempt(goal_id string, task_id string, attempt int,
@@ -630,6 +865,53 @@ fn (mut store Store) complete_goal_task_attempt_internal(goal_id string, task_id
 	defer { store.mu.unlock() }
 	store.db.begin()!
 	defer { store.db.rollback() or {} }
+	lease_rows := store.db.exec_param_many("SELECT effective_deadline, lease_expires_at, session_id, session_operation_id FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running'", [
+		goal_id,
+		task_id,
+		attempt.str(),
+	])!
+	if lease_rows.len != 1 {
+		return error('goal task attempt is not running')
+	}
+	now := time.now()
+	effective := time.parse_rfc3339(lease_rows[0].val(0)) or { return error('goal task effective deadline is invalid') }
+	lease_expiry := time.parse_rfc3339(lease_rows[0].val(1)) or { return error('goal task lease expiry is invalid') }
+	if now >= effective || now >= lease_expiry {
+		store.db.exec_param_many("UPDATE goal_task_attempts SET status = 'uncertain', ended_at = CURRENT_TIMESTAMP, owner_pid = 0, owner_start_id = '' WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running'", [
+			goal_id,
+			task_id,
+			attempt.str(),
+		])!
+		store.db.exec_param_many("UPDATE goal_task_states SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP, owner_pid = 0, owner_start_id = '' WHERE goal_id = ? AND task_id = ? AND status = 'running'", [
+			goal_id,
+			task_id,
+		])!
+		store.db.exec_param_many("UPDATE goal_task_attempt_workspaces SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status IN ('preparing', 'ready')", [
+			goal_id,
+			task_id,
+			attempt.str(),
+		])!
+		if lease_rows[0].val(3) != '' {
+			store.db.exec_param_many("UPDATE session_operations SET status = 'uncertain', outcome = 'uncertain', error = 'The task attempt lease expired before a result was recorded.', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status IN ('queued', 'running', 'cancelling')", [
+				lease_rows[0].val(2),
+				lease_rows[0].val(3),
+			])!
+			store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+				'goal.task_attempt_completed',
+				lease_rows[0].val(2),
+				json2.encode[GoalTaskEventData](GoalTaskEventData{
+					goal_id:      goal_id
+					task_id:      task_id
+					attempt:      attempt
+					operation_id: lease_rows[0].val(3)
+					status:       'uncertain'
+					outcome:      'uncertain'
+					error:        'The task attempt lease expired before a result was recorded.'
+				}),
+			])!
+		}
+		return error('goal task lease has expired; result is uncertain')
+	}
 	_ = store.db.exec_param_many("UPDATE goal_task_attempts SET status = ?, ended_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'running' AND fencing_token = ?", [
 		result.str(),
 		goal_id,
@@ -762,7 +1044,7 @@ fn (mut store Store) goal_task_state_unlocked(goal_id string, task_id string) !G
 		return error('goal task state not found')
 	}
 	state := rows[0]
-	attempt_rows := store.db.exec_param_many('SELECT attempt, status, started_at, ended_at FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? ORDER BY attempt', [
+	attempt_rows := store.db.exec_param_many('SELECT attempt, status, started_at, ended_at, effective_deadline, lease_expires_at, lease_generation FROM goal_task_attempts WHERE goal_id = ? AND task_id = ? ORDER BY attempt', [
 		goal_id,
 		task_id,
 	])!
@@ -770,10 +1052,13 @@ fn (mut store Store) goal_task_state_unlocked(goal_id string, task_id string) !G
 	mut attempts := []GoalTaskAttemptProjection{}
 	for row in attempt_rows {
 		attempts << GoalTaskAttemptProjection{
-			attempt:    row.val(0).int()
-			status:     goal_task_attempt_status_from_db(row.val(1))!.str()
-			started_at: row.val(2)
-			ended_at:   row.val(3)
+			attempt:            row.val(0).int()
+			status:             goal_task_attempt_status_from_db(row.val(1))!.str()
+			started_at:         row.val(2)
+			ended_at:           row.val(3)
+			effective_deadline: row.val(4)
+			lease_expires_at:   row.val(5)
+			lease_generation:   row.val(6).int()
 		}
 	}
 	return GoalTaskProjectionState{

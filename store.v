@@ -40,7 +40,7 @@ const session_columns = "id, title, directory, created_at, preferred_provider, p
 // latest_schema_version is the highest migration open_store applies. Tests
 // compare against it instead of a literal so adding a migration never breaks
 // them; keep it equal to the last `if current < N` block below.
-const latest_schema_version = 40
+const latest_schema_version = 41
 
 // add_column_if_missing makes ADD COLUMN migrations re-runnable: a ledger row
 // that was removed (tests, manual repair) must not fail on a duplicate column.
@@ -1301,6 +1301,12 @@ fn open_store_at(path string) !&Store {
 		migrate_goal_task_verifying_state(mut db) or {
 			db.close() or {}
 			return error('unable to migrate goal task verifying state: ${err}')
+		}
+	}
+	if current < 41 {
+		migrate_goal_task_attempt_deadline_leases(mut db) or {
+			db.close() or {}
+			return error('unable to migrate goal task attempt deadline leases: ${err}')
 		}
 	}
 	initialize_and_recover_goal_task_state(mut db) or {

@@ -267,14 +267,14 @@ fn test_goal_worker_completion_dispatches_bound_reviewer_and_persists_one_receip
 	assert counts.reviewer == 1
 	assert (store.goal_task_state(goal.id, 'review-docs') or { panic(err) }).status == 'verified'
 	assert (store.goal_task_verification_dispatch_candidates() or { panic(err) }).len == 0
-	binding_rows := store.db.exec_param_many('SELECT status, reviewer_run_id FROM goal_task_verifier_bindings WHERE goal_id = ? AND task_id = ? AND attempt = 1', [
+	binding_rows := store.db.exec_param_many('SELECT id, status, reviewer_run_id FROM goal_task_verifier_bindings WHERE goal_id = ? AND task_id = ? AND attempt = 1', [
 		goal.id,
 		'review-docs',
 	]) or { panic(err) }
 	assert binding_rows.len == 1
-	assert binding_rows[0].val(0) == 'consumed'
-	assert binding_rows[0].val(1).len > 0
-	run := store.get_subagent_run(binding_rows[0].val(1)) or { panic(err) }
+	assert binding_rows[0].val(1) == 'consumed'
+	assert binding_rows[0].val(2).len > 0
+	run := store.get_subagent_run(binding_rows[0].val(2)) or { panic(err) }
 	assert run.status == 'completed'
 	assert run.agent_id == 'reviewer'
 	assert run.workspace_base_commit == fixture.candidate_sha
@@ -289,4 +289,16 @@ fn test_goal_worker_completion_dispatches_bound_reviewer_and_persists_one_receip
 	assert store.db.q_int("SELECT COUNT(*) FROM goal_task_verification_receipts WHERE goal_id = 'goal-verifier-e2e' AND task_id = 'review-docs'") or {
 		panic(err)
 	} == 1
+	receipt_before_delete := store.get_goal_task_verification_receipt_unlocked(goal.id, 'review-docs',
+		1) or {
+		panic(err)
+	}
+	store.delete_session(parent.id) or { panic(err) }
+	replayed_after_delete := store.record_goal_task_verification_receipt(binding_rows[0].val(0)) or {
+		panic(err)
+	}
+	assert replayed_after_delete.candidate_sha == receipt_before_delete.candidate_sha
+	assert replayed_after_delete.reviewer_run_id == receipt_before_delete.reviewer_run_id
+	assert replayed_after_delete.evidence == receipt_before_delete.evidence
+	assert replayed_after_delete.created_at == receipt_before_delete.created_at
 }

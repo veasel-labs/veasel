@@ -384,7 +384,7 @@ fn (mut store Store) record_goal_task_verification_receipt(binding_id string) !G
 	defer { store.mu.unlock() }
 	store.db.exec('BEGIN IMMEDIATE')!
 	defer { store.db.rollback() or {} }
-	rows := store.db.exec_param_many("SELECT b.goal_id, b.task_id, b.attempt, b.fencing_token, b.lease_generation, b.repository, b.repository_root, b.worktree_path, b.base_sha, b.candidate_sha, b.verifier_id, b.verifier_version, b.reviewer_run_id, b.status, a.status, a.session_id, a.session_operation_id, a.effective_deadline, COALESCE(v.fencing_token, ''), COALESCE(v.generation, 0), COALESCE(v.verification_deadline, ''), COALESCE(v.lease_expires_at, ''), w.repository_root, w.worktree_path, w.base_sha, w.status, s.directory, b.reviewer_provider, b.reviewer_model FROM goal_task_verifier_bindings b JOIN goal_task_attempts a ON a.goal_id = b.goal_id AND a.task_id = b.task_id AND a.attempt = b.attempt LEFT JOIN goal_task_verification_leases v ON v.goal_id = b.goal_id AND v.task_id = b.task_id AND v.attempt = b.attempt JOIN goal_task_attempt_workspaces w ON w.goal_id = b.goal_id AND w.task_id = b.task_id AND w.attempt = b.attempt JOIN sessions s ON s.id = a.session_id WHERE b.id = ?", [binding_id])!
+	rows := store.db.exec_param_many("SELECT b.goal_id, b.task_id, b.attempt, b.fencing_token, b.lease_generation, b.repository, b.repository_root, b.worktree_path, b.base_sha, b.candidate_sha, b.verifier_id, b.verifier_version, b.reviewer_run_id, b.status, a.status, a.session_id, a.session_operation_id, a.effective_deadline, COALESCE(v.fencing_token, ''), COALESCE(v.generation, 0), COALESCE(v.verification_deadline, ''), COALESCE(v.lease_expires_at, ''), w.repository_root, w.worktree_path, w.base_sha, w.status, COALESCE(s.directory, ''), b.reviewer_provider, b.reviewer_model FROM goal_task_verifier_bindings b JOIN goal_task_attempts a ON a.goal_id = b.goal_id AND a.task_id = b.task_id AND a.attempt = b.attempt LEFT JOIN goal_task_verification_leases v ON v.goal_id = b.goal_id AND v.task_id = b.task_id AND v.attempt = b.attempt JOIN goal_task_attempt_workspaces w ON w.goal_id = b.goal_id AND w.task_id = b.task_id AND w.attempt = b.attempt LEFT JOIN sessions s ON s.id = a.session_id WHERE b.id = ?", [binding_id])!
 	if rows.len != 1 || rows[0].val(13) !in ['bound', 'consumed'] {
 		return error('goal task verifier binding no longer matches its attempt or worktree')
 	}
@@ -397,7 +397,7 @@ fn (mut store Store) record_goal_task_verification_receipt(binding_id string) !G
 		return error('consumed goal task verifier binding has no replayable attempt')
 	}
 	if rows[0].val(6) != rows[0].val(22) || rows[0].val(7) != rows[0].val(23)
-		|| rows[0].val(8) != rows[0].val(24) || rows[0].val(26) != rows[0].val(7)
+		|| rows[0].val(8) != rows[0].val(24) || !is_replay && rows[0].val(26) != rows[0].val(7)
 		|| !is_replay && rows[0].val(25) != 'ready'
 		|| is_replay && rows[0].val(25) !in ['ready', 'uncertain'] {
 		return error('goal task verifier binding no longer matches its attempt or worktree')
@@ -409,6 +409,28 @@ fn (mut store Store) record_goal_task_verification_receipt(binding_id string) !G
 		expires := time.parse_rfc3339(rows[0].val(21)) or { return error('goal task verification lease expiry is invalid') }
 		if now >= effective || now >= hard || now >= expires {
 			return error('goal task verification receipt lease has expired')
+		}
+	}
+	if is_replay {
+		existing := store.db.exec_param_many('SELECT binding_id, reviewer_run_id, candidate_sha, lease_generation, reviewer_provider, reviewer_model FROM goal_task_verification_receipts WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+			rows[0].val(0),
+			rows[0].val(1),
+			rows[0].val(2),
+		])!
+		if existing.len != 1 || existing[0].val(0) != binding_id
+			|| existing[0].val(1) != rows[0].val(12) || existing[0].val(2) != rows[0].val(9)
+			|| existing[0].val(3).int() != rows[0].val(4).int()
+			|| existing[0].val(4) != rows[0].val(27) || existing[0].val(5) != rows[0].val(28) {
+			return error('consumed goal task verifier binding has no matching immutable receipt')
+		}
+		runs := store.db.exec_param('SELECT id FROM subagent_runs WHERE id = ?', rows[0].val(12))!
+		if runs.len == 0 {
+			store.db.commit()!
+			return store.get_goal_task_verification_receipt_unlocked(rows[0].val(0), rows[0].val(1),
+				rows[0].val(2).int())
+		}
+		if runs.len != 1 {
+			return error('consumed goal task verifier binding has no unique reviewer run')
 		}
 	}
 	manifest_rows := store.db.exec_param('SELECT manifest FROM goal_admissions WHERE id = ?', rows[0].val(0))!

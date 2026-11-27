@@ -106,14 +106,14 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   AppImage FUSE mounting. Its top-down pixel-art World rendered nine real
   destinations; no session or productivity activity was fabricated. A
   separate isolated profile also opened the World with real temporary sessions.
-  Screenshots are retained under `/home/ulisesjcf/.cache/veasel-validation/`.
+  Screenshots are retained under `~/.cache/veasel-validation/`.
 - On 2026-11-26, the published `v0.106.1-next.0` AppImage was downloaded and
   SHA-256 verified against its release manifest before extraction. Its packaged
   Desktop launched with a throwaway HOME, data directory and workspace. The
   Cozy Valley at 1440×900 and Cyberpunk City at 1024×640 were rendered and
   visually reviewed; the map composition and pixel scaling are coherent at
   both sizes. Screenshots are retained in
-  `/home/ulisesjcf/.cache/veasel-validation/v0.106.1-next.0/`. This isolated
+  `~/.cache/veasel-validation/v0.106.1-next.0/`. This isolated
   profile had no authenticated providers or active sessions, and its runtime
   detail queries were unavailable. It proves packaged launch and visual
   framing only, not the daily-driver journey or live-agent display.
@@ -132,14 +132,14 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   The 1920×1080 World screenshot shows the Cozy Valley top-down pixel-art map
   with 15 real destinations and the honest banner that unavailable live
   runtime details are omitted; it is retained at
-  `/home/ulisesjcf/.cache/veasel-validation/v0.106.3-next.0/packaged-world-fullscreen.png`.
+  `~/.cache/veasel-validation/v0.106.3-next.0/packaged-world-fullscreen.png`.
   This is visual and provider-response evidence, not clean live-session
   acceptance or a publishable unqualified Desktop screenshot.
 - On 2026-11-27, packaged TUI `v0.111.0-next.0` reached a real Codex file-edit
   approval in `ask` mode, but the approval payload contained no patch. The
   request was explicitly denied; the fixture workspace remained unchanged.
   The sanitized receipt is retained outside the repository at
-  `/home/ulisesjcf/.cache/veasel-validation/acceptance-v0.111.0-next.0/tui-approval-denial.json`.
+  `~/.cache/veasel-validation/acceptance-v0.111.0-next.0/tui-approval-denial.json`.
   The current worktree adds bounded correlation of Codex v2
   `item/fileChange/patchUpdated` snapshots to approval by exact thread, turn,
   and item IDs, and denies malformed, stale, missing, or oversized snapshots.

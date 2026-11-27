@@ -1065,6 +1065,14 @@ not replayed. Ordinary session operations do not start heartbeats. This does
 not add an objective scheduler, a multi-worker fleet, remote runner
 authentication, or independent verification receipts.
 
+Schema 42 adds a separate deadline-bound verification lease for attempts in
+`verifying`, with its own fencing token and generation. Its fixed hard deadline
+is capped by the attempt deadline; expired, malformed, or missing verifier
+leases fail closed to `uncertain` on recovery, including a crash before the
+first verifier claim. This is lease and recovery infrastructure only: it does
+not execute a reviewer, persist a task-verification receipt, or promote a task
+to `succeeded`.
+
 - [x] Publish a versioned Toolkit Goal v1/task/evidence contract with an offline
   validator and planner for authorized repositories, acceptance criteria,
   deadline, budget, delivery mode, DAG, base SHA, paths, runner, verifier, and

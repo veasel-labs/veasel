@@ -286,6 +286,56 @@ fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 			])!
 		}
 	}
+	verification_expired := db.exec("SELECT a.goal_id, a.task_id, a.attempt, a.session_id, a.session_operation_id, COALESCE(v.fencing_token, ''), COALESCE(v.generation, 0) FROM goal_task_attempts a LEFT JOIN goal_task_verification_leases v ON v.goal_id = a.goal_id AND v.task_id = a.task_id AND v.attempt = a.attempt WHERE a.status = 'verifying' AND (v.generation IS NULL OR julianday(v.verification_deadline) IS NULL OR julianday(v.lease_expires_at) IS NULL OR julianday(v.verification_deadline) <= julianday('now') OR julianday(v.lease_expires_at) <= julianday('now'))")!
+	for row in verification_expired {
+		if row.val(5) != '' && row.val(6).int() > 0 {
+			db.exec_param_many('DELETE FROM goal_task_verification_leases WHERE goal_id = ? AND task_id = ? AND attempt = ? AND fencing_token = ? AND generation = ?', [
+				row.val(0),
+				row.val(1),
+				row.val(2),
+				row.val(5),
+				row.val(6),
+			])!
+			if db.get_affected_rows_count() != 1 {
+				return error('unable to recover expired verification lease fence')
+			}
+		}
+		db.exec_param_many("UPDATE goal_task_attempts SET status = 'uncertain', ended_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'verifying'", [
+			row.val(0),
+			row.val(1),
+			row.val(2),
+		])!
+		if db.get_affected_rows_count() != 1 {
+			return error('unable to recover expired verification attempt')
+		}
+		db.exec_param_many("UPDATE goal_task_states SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND status = 'verifying'", [
+			row.val(0),
+			row.val(1),
+		])!
+		if db.get_affected_rows_count() != 1 {
+			return error('unable to recover expired verification state')
+		}
+		db.exec_param_many("UPDATE goal_task_attempt_workspaces SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status IN ('preparing', 'ready')", [
+			row.val(0),
+			row.val(1),
+			row.val(2),
+		])!
+		if row.val(3) != '' && row.val(4) != '' {
+			db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+				'goal.task_attempt_completed',
+				row.val(3),
+				json2.encode[GoalTaskEventData](GoalTaskEventData{
+					goal_id:      row.val(0)
+					task_id:      row.val(1)
+					attempt:      row.val(2).int()
+					operation_id: row.val(4)
+					status:       'uncertain'
+					outcome:      'uncertain'
+					error:        'The verification lease expired before a receipt was recorded.'
+				}),
+			])!
+		}
+	}
 	interrupted_attempts := db.exec("SELECT a.goal_id, a.task_id, a.attempt, a.owner_pid, a.owner_start_id, a.session_id, a.session_operation_id, COALESCE(o.status, ''), COALESCE(o.outcome, '') FROM goal_task_attempts AS a LEFT JOIN session_operations AS o ON o.session_id = a.session_id AND o.id = a.session_operation_id WHERE a.status = 'running'")!
 	for row in interrupted_attempts {
 		owner := goal_task_owner_status(row.val(3).int())

@@ -134,6 +134,7 @@ fn test_goal_task_state_is_seeded_idempotently_and_recovery_never_replays_runnin
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 39') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 40') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 41') or { panic(err) }
+	store.db.exec('DELETE FROM schema_migrations WHERE version = 42') or { panic(err) }
 	store.close() or { panic(err) }
 
 	store = open_store(path) or { panic(err) }
@@ -399,7 +400,7 @@ fn test_linked_goal_task_attempt_uses_fencing_and_durable_session_operation() {
 	assert session_turn_events[0].val(0).int() == 0
 }
 
-fn test_successful_linked_operation_enters_verifying_until_independent_receipt() {
+fn test_verifying_attempt_without_a_lease_becomes_uncertain_after_restart() {
 	root := os.join_path(os.temp_dir(), 'veasel-goal-task-verifying-${rand.ulid()}')
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
@@ -437,8 +438,8 @@ fn test_successful_linked_operation_enters_verifying_until_independent_receipt()
 	mut recovered := open_store(path) or { panic(err) }
 	defer { recovered.close() or {} }
 	recovered_state := recovered.goal_task_state(goal.id, 'prepare') or { panic(err) }
-	assert recovered_state.status == 'verifying'
-	assert recovered_state.attempts[0].status == 'verifying'
+	assert recovered_state.status == 'uncertain'
+	assert recovered_state.attempts[0].status == 'uncertain'
 }
 
 fn test_recovery_promotes_completed_session_operation_only_to_verifying() {

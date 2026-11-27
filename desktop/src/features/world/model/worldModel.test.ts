@@ -58,12 +58,104 @@ describe('project target paths', () => {
 });
 
 describe('jobBelongsToProject', () => {
-  it('matches by target path and by project name segment', () => {
+  it('matches only the normalized project root and descendants', () => {
     const project = { name: 'alpha', target: '/repos/alpha', status: 'ok' as const };
     expect(jobBelongsToProject({ workspace: '/repos/alpha' }, project)).toBe(true);
     expect(jobBelongsToProject({ workspace: '/repos/alpha/src' }, project)).toBe(true);
-    expect(jobBelongsToProject({ workspace: '/ws/projects/alpha' }, project)).toBe(true);
+    expect(jobBelongsToProject({ workspace: '/repos/alpha/../alpha/src' }, project)).toBe(true);
+    expect(jobBelongsToProject({ workspace: '/other/alpha' }, project)).toBe(false);
+    expect(jobBelongsToProject({ workspace: '/repos/alpha-old' }, project)).toBe(false);
     expect(jobBelongsToProject({ workspace: '/repos/beta' }, project)).toBe(false);
+  });
+
+  it('does not assign same-name work or sessions outside the canonical project root', () => {
+    const project = { name: 'alpha', target: '/repos/alpha', status: 'ok' as const };
+    const model = buildWorldModel(
+      baseInput({
+        projects: [project],
+        jobs: [{ id: 'collision-job', cmd: 'work', args: [], status: 'running', workspace: '/other/alpha' }],
+        personSessions: [
+          {
+            id: 'collision-session',
+            personId: 'p1',
+            name: 'Same name',
+            role: 'agent',
+            cwd: '/other/alpha',
+            projectId: 'alpha',
+            status: 'running',
+          },
+        ],
+      }),
+    );
+    expect(model.entities.find((entity) => entity.id === 'character:job:collision-job')?.projectId).toBeUndefined();
+    expect(
+      model.entities.find((entity) => entity.id === 'character:person:p1:collision-session')?.projectId,
+    ).toBeUndefined();
+    expect(model.entities.find((entity) => entity.id === 'place:project:alpha')?.state).toBe('calm');
+  });
+
+  it('does not attach sessions to a project with an empty target', () => {
+    const model = buildWorldModel(
+      baseInput({
+        projects: [{ name: 'alpha', target: '', status: 'ok' }],
+        personSessions: [
+          { id: 'root-session', personId: 'p1', name: 'Worker', role: 'agent', cwd: '/', status: 'running' },
+        ],
+      }),
+    );
+    expect(
+      model.entities.find((entity) => entity.id === 'character:person:p1:root-session')?.projectId,
+    ).toBeUndefined();
+  });
+
+  it('matches Windows paths case-insensitively without crossing a drive path boundary', () => {
+    const project = { name: 'alpha', target: 'C:\\Repos\\Alpha', status: 'ok' as const };
+    expect(jobBelongsToProject({ workspace: 'c:\\repos\\alpha\\src' }, project)).toBe(true);
+    expect(jobBelongsToProject({ workspace: 'C:\\Repos\\Alpha-old' }, project)).toBe(false);
+    expect(jobBelongsToProject({ workspace: 'D:\\Repos\\Alpha' }, project)).toBe(false);
+  });
+
+  it('assigns nested project paths to the most specific root and honors a valid session projectId', () => {
+    const projects = [
+      { name: 'outer', target: '/repos/alpha', status: 'ok' as const },
+      { name: 'inner', target: '/repos/alpha/packages/inner', status: 'ok' as const },
+    ];
+    const model = buildWorldModel(
+      baseInput({
+        projects,
+        jobs: [
+          { id: 'nested-job', cmd: 'work', args: [], status: 'running', workspace: '/repos/alpha/packages/inner/src' },
+        ],
+        personSessions: [
+          {
+            id: 'explicit-session',
+            personId: 'p1',
+            name: 'Explicit',
+            role: 'agent',
+            cwd: '/repos/alpha/packages/inner',
+            projectId: 'outer',
+            status: 'running',
+          },
+          {
+            id: 'inferred-session',
+            personId: 'p2',
+            name: 'Inferred',
+            role: 'agent',
+            cwd: '/repos/alpha/packages/inner',
+            status: 'running',
+          },
+        ],
+      }),
+    );
+    const job = model.entities.find((entity) => entity.id === 'character:job:nested-job');
+    expect(job?.projectId).toBe('inner');
+    expect(model.entities.find((entity) => entity.id === 'character:person:p1:explicit-session')?.projectId).toBe(
+      'outer',
+    );
+    expect(model.entities.find((entity) => entity.id === 'character:person:p2:inferred-session')?.projectId).toBe(
+      'inner',
+    );
+    expect(model.entities.filter((entity) => entity.id === 'character:job:nested-job')).toHaveLength(1);
   });
 });
 
@@ -140,13 +232,65 @@ describe('buildWorldModel', () => {
         }),
       ).entities.find((entity) => entity.id === 'character:person:th-1:th-1');
     expect(withStatus('running')).toMatchObject({ themeKey: 'agent.working', state: 'running' });
-    expect(withStatus('awaiting-approval')).toMatchObject({ themeKey: 'agent.working' });
+    expect(withStatus('awaiting-approval')).toMatchObject({ themeKey: 'agent.idle', state: 'awaiting-approval' });
+    expect(withStatus('awaiting-input')).toMatchObject({ themeKey: 'agent.idle', state: 'awaiting-input' });
     expect(withStatus('failed')).toMatchObject({ themeKey: 'agent.blocked', state: 'failed' });
+    expect(withStatus('error')).toMatchObject({ themeKey: 'agent.blocked', state: 'error' });
+    expect(withStatus('interrupted')).toMatchObject({ themeKey: 'agent.idle', state: 'interrupted' });
     expect(withStatus('idle')).toMatchObject({ themeKey: 'agent.idle', state: 'idle' });
     // A Focus-backed character opens the same thread, not a People page.
     expect(withStatus('running')).toMatchObject({
       hrefPath: '/focus',
       hrefExtra: { thread: 'th-1' },
+    });
+  });
+
+  it('includes live session state in the project activity summary', () => {
+    const project = { name: 'alpha', target: '/repos/alpha', status: 'ok' as const };
+    const build = (status: string) =>
+      buildWorldModel(
+        baseInput({
+          projects: [project],
+          personSessions: [
+            {
+              id: 's1',
+              personId: 'p1',
+              name: 'Worker',
+              role: 'agent',
+              cwd: '/repos/alpha/src',
+              projectId: 'alpha',
+              status,
+            },
+          ],
+        }),
+      ).entities.find((entity) => entity.id === 'place:project:alpha');
+    expect(build('running')).toMatchObject({ activity: 'working', state: '1 session working' });
+    expect(build('awaiting-approval')?.state).toBe('1 awaiting approval');
+    expect(build('awaiting-input')?.state).toBe('1 awaiting input');
+    expect(build('error')).toMatchObject({ activity: 'blocked', state: 'needs attention' });
+    expect(build('interrupted')?.state).toBe('1 session stopped');
+  });
+
+  it('keeps a failed session visible when another session is awaiting a response', () => {
+    const model = buildWorldModel(
+      baseInput({
+        projects: [{ name: 'alpha', target: '/repos/alpha', status: 'ok' }],
+        personSessions: [
+          {
+            id: 'waiting',
+            personId: 'p1',
+            name: 'Waiting',
+            role: 'agent',
+            cwd: '/repos/alpha',
+            status: 'awaiting-approval',
+          },
+          { id: 'broken', personId: 'p2', name: 'Broken', role: 'agent', cwd: '/repos/alpha', status: 'error' },
+        ],
+      }),
+    );
+    expect(model.entities.find((entity) => entity.id === 'place:project:alpha')).toMatchObject({
+      activity: 'blocked',
+      state: 'needs attention',
     });
   });
 
@@ -651,6 +795,36 @@ describe('buildWorldModel', () => {
     expect(project?.state).toBe('job state unknown');
     expect(project?.activity).toBe('unknown');
     expect(model.entities.filter((e) => e.kind === 'character')).toEqual([]);
+  });
+
+  it('keeps known failed sessions visible when the job registry is unavailable', () => {
+    const model = buildWorldModel(
+      baseInput({
+        projects: [{ name: 'only', target: '/r', status: 'ok' }],
+        memory: emptyMemory(true, []),
+        jobsKnown: false,
+        personSessions: [{ id: 'broken', personId: 'p1', name: 'Worker', role: 'agent', cwd: '/r', status: 'error' }],
+      }),
+    );
+    const project = model.entities.find((e) => e.id === 'place:project:only');
+    expect(project?.state).toBe('needs attention');
+    expect(project?.activity).toBe('blocked');
+  });
+
+  it('keeps missing job state visible alongside approval waits', () => {
+    const model = buildWorldModel(
+      baseInput({
+        projects: [{ name: 'only', target: '/r', status: 'ok' }],
+        memory: emptyMemory(true, []),
+        jobsKnown: false,
+        personSessions: [
+          { id: 'waiting', personId: 'p1', name: 'Worker', role: 'agent', cwd: '/r', status: 'awaiting-approval' },
+        ],
+      }),
+    );
+    const project = model.entities.find((e) => e.id === 'place:project:only');
+    expect(project?.state).toBe('1 awaiting approval · job state unknown');
+    expect(project?.activity).toBe('unknown');
   });
 
   it('locks house activity to real API job statuses', () => {

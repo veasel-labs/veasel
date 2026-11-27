@@ -133,6 +133,20 @@ fn test_goal_task_attempt_worktree_rejects_symlinked_storage_root() {
 	}
 }
 
+fn test_goal_task_worktree_accepts_relative_store_directory() {
+	fixture := new_goal_task_worktree_fixture('https://github.com/owner/repo.git') or {
+		panic(err)
+	}
+	defer { os.rmdir_all(os.dir(fixture.root)) or {} }
+	relative_directory := '.veasel-goal-data-${rand.ulid()}'
+	os.mkdir(relative_directory) or { panic(err) }
+	defer { os.rmdir_all(relative_directory) or {} }
+	path := goal_task_attempt_worktree_path(os.join_path(relative_directory, 'veasel.sqlite3'),
+		fixture.root, 'goal-worktree-test', 'prepare', 1) or { panic(err) }
+	assert path.starts_with(os.join_path(os.real_path(relative_directory),
+		goal_task_worktree_root_name) + os.path_separator)
+}
+
 fn goal_task_worktree_test_admission(fixture GoalTaskWorktreeFixture) GoalAdmission {
 	return GoalAdmission{
 		schema_version:          1

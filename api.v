@@ -2272,6 +2272,13 @@ fn (app &App) record_session_turn_failure(id string, operation_id string, messag
 		user_content, visible_failed_turn(streamed, public_error), outcome) or {
 		eprintln('veasel: unable to persist session turn completion (${err.msg()})')
 	}
+	store.reconcile_goal_task_operation(operation_id, if status == 'cancelled' {
+		.uncertain
+	} else {
+		.failed
+	}) or {
+		eprintln('veasel: unable to reconcile goal task operation (${err.msg()})')
+	}
 	facts_registry.finish(id)
 	store.cleanup_unstarted_subagent_workspaces()
 }
@@ -2528,6 +2535,9 @@ fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id strin
 		assistant_content, output.provider, output.model, trace_json, result.usage, outcome) or {
 		return error('unable to persist session messages')
 	}
+	// A successful model turn is intentionally left in the running goal state
+	// until an independent verifier emits a receipt. Model completion alone is
+	// never acceptance or draft_ready.
 	turn_facts_registry.finish(id)
 	mut store := app.store
 	// Finishing a parent turn cancels any queued children; only clean workspaces

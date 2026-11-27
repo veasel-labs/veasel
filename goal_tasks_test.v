@@ -422,6 +422,100 @@ fn test_linked_goal_task_claim_recovery_marks_operation_uncertain_without_replay
 	assert false, 'recovery replayed a linked ambiguous attempt'
 }
 
+fn test_linked_queued_goal_dispatch_recovery_marks_operation_uncertain_without_replay() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-queued-recovery-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'veasel.sqlite3')
+	goal := goal_task_test_admission()
+	mut store := open_store(path) or { panic(err) }
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'queued linked task recovery'
+		directory: root
+	}) or { panic(err) }
+	claim := store.claim_goal_task_for_dispatch(goal.id, 'prepare') or { panic(err) }
+	record_ready_goal_dispatch_test_workspace(mut store, goal, 'prepare', 1, root)
+	operation_id := store.attach_goal_task_attempt_session(goal.id, 'prepare', 1,
+		claim.fencing_token, session.id, '{"content":"resume must not run"}') or { panic(err) }
+	queued := store.list_queued_session_operations() or { panic(err) }
+	assert queued.len == 1
+	assert queued[0].id == operation_id
+	_ = store.db.exec_param_many("UPDATE goal_task_states SET owner_start_id = '' WHERE goal_id = ? AND task_id = ?", [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	_ = store.db.exec_param_many("UPDATE goal_task_attempts SET owner_start_id = '' WHERE goal_id = ? AND task_id = ?", [
+		goal.id,
+		'prepare',
+	]) or { panic(err) }
+	store.close() or { panic(err) }
+	mut recovered_store := open_store(path) or { panic(err) }
+	defer { recovered_store.close() or {} }
+	state := recovered_store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'uncertain'
+	assert state.attempts[0].status == 'uncertain'
+	operation := recovered_store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'uncertain'
+	recovered_queue := recovered_store.list_queued_session_operations() or { panic(err) }
+	assert recovered_queue.len == 0
+}
+
+fn test_rejected_queued_goal_operation_reconciles_attempt_for_retry() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-queued-reject-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	goal := goal_task_test_admission()
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'queued goal rejection'
+		directory: root
+	}) or { panic(err) }
+	claim := store.claim_goal_task_for_dispatch(goal.id, 'prepare') or { panic(err) }
+	record_ready_goal_dispatch_test_workspace(mut store, goal, 'prepare', 1, root)
+	operation_id := store.attach_goal_task_attempt_session(goal.id, 'prepare', 1,
+		claim.fencing_token, session.id, '{"content":"must be rejected"}') or { panic(err) }
+	store.reject_queued_session_operation(session.id, operation_id,
+		'provider is unavailable') or { panic(err) }
+	state := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'pending'
+	assert state.attempts[0].status == 'failed'
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+}
+
+fn test_cancelled_queued_goal_operation_reconciles_as_uncertain() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-queued-cancel-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	goal := goal_task_test_admission()
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'queued goal cancellation'
+		directory: root
+	}) or { panic(err) }
+	claim := store.claim_goal_task_for_dispatch(goal.id, 'prepare') or { panic(err) }
+	record_ready_goal_dispatch_test_workspace(mut store, goal, 'prepare', 1, root)
+	operation_id := store.attach_goal_task_attempt_session(goal.id, 'prepare', 1,
+		claim.fencing_token, session.id, '{"content":"must be cancelled"}') or { panic(err) }
+	store.cancel_session_operation(session.id, operation_id) or { panic(err) }
+	state := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'uncertain'
+	assert state.attempts[0].status == 'uncertain'
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+	workspace := store.db.exec_param_many('SELECT status FROM goal_task_attempt_workspaces WHERE goal_id = ? AND task_id = ? AND attempt = ?', [
+		goal.id,
+		'prepare',
+		'1',
+	]) or { panic(err) }
+	assert workspace[0].val(0) == 'uncertain'
+}
+
 fn test_linked_goal_task_recovery_tolerates_deleted_session() {
 	root := os.join_path(os.temp_dir(), 'veasel-goal-task-deleted-session-${rand.ulid()}')
 	os.mkdir_all(root) or { panic(err) }
@@ -475,6 +569,52 @@ fn test_linked_goal_task_completion_survives_deleted_session() {
 		claim.session_operation_id,
 	]) or { panic(err) }
 	assert operations[0].val(0).int() == 0
+}
+
+fn test_linked_goal_task_completion_fails_closed_when_operation_is_missing() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-task-missing-operation-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	goal := goal_task_test_admission()
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'missing operation completion'
+		directory: root
+	}) or { panic(err) }
+	claim := store.claim_goal_task_for_session(goal.id, 'prepare', session.id) or { panic(err) }
+	_ = store.db.exec_param_many('DELETE FROM session_operations WHERE session_id = ? AND id = ?', [
+		session.id,
+		claim.session_operation_id,
+	]) or { panic(err) }
+	store.complete_linked_goal_task_attempt(goal.id, 'prepare', 1, claim.fencing_token,
+		.failed) or {
+		assert err.msg().contains('session operation not found')
+		state := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+		assert state.status == 'running'
+		assert state.attempts[0].status == 'running'
+		return
+	}
+	assert false, 'completion must fail when the linked operation is missing'
+}
+
+fn test_dispatch_claim_has_fencing_before_session_link_and_is_fail_closed() {
+	root := os.join_path(os.temp_dir(), 'veasel-goal-dispatch-claim-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	goal := goal_task_test_admission()
+	_ = store.admit_goal(goal) or { panic(err) }
+	claim := store.claim_goal_task_for_dispatch(goal.id, 'prepare') or { panic(err) }
+	assert claim.fencing_token.len > 0
+	assert claim.session_operation_id == ''
+	store.complete_linked_goal_task_attempt(goal.id, 'prepare', claim.state.attempt_count,
+		claim.fencing_token, .uncertain) or { panic(err) }
+	state := store.goal_task_state(goal.id, 'prepare') or { panic(err) }
+	assert state.status == 'uncertain'
+	assert state.attempts[0].status == 'uncertain'
 }
 
 fn test_goal_task_completion_rolls_back_when_state_row_is_not_running() {
@@ -604,4 +744,17 @@ fn goal_task_test_admission() GoalAdmission {
 			verifier:   'test-verifier'
 		}]
 	}
+}
+
+fn record_ready_goal_dispatch_test_workspace(mut store Store, goal GoalAdmission, task_id string,
+	attempt int, path string) {
+	base_sha := goal.tasks.filter(it.id == task_id)[0].base_sha
+	_ = store.db.exec_param_many("INSERT INTO goal_task_attempt_workspaces (goal_id, task_id, attempt, repository_root, worktree_path, base_sha, status) VALUES (?, ?, ?, ?, ?, ?, 'ready')", [
+		goal.id,
+		task_id,
+		attempt.str(),
+		path,
+		path,
+		base_sha,
+	]) or { panic(err) }
 }

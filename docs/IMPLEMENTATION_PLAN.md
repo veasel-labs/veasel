@@ -991,6 +991,16 @@ until a per-loop handoff is reviewed and accepted. HorneroOS and
 `agentic-workstation` retain privileged desktop and OS actions; Veasel must not
 duplicate those capabilities.
 
+The current `codex/local-goal-task-dispatch` branch adds the first local
+dispatch slice: an authenticated task start creates a fenced attempt, an
+exact-base isolated worktree, and a durable session operation using the
+canonical session worker. Recovery, live queued cancellation/rejection, and
+concurrent attempt paths are covered fail-closed. This is not yet a verified
+draft: successful turns remain in progress until independent candidate-SHA
+verification is implemented. It does not provide goal CLI commands, autonomous
+retry/recovery, leases, GitHub publication, or fleet concurrency. Keep those
+items below open until receipts and end-to-end acceptance exist.
+
 - [ ] Publish a versioned Toolkit goal/task/evidence contract with an offline
   validator and planner; require authorized repositories, observable finish
   conditions, playbook, deadline, budget, permissions, delivery mode, DAG,

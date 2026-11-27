@@ -44,8 +44,8 @@ fn migrate_goal_task_workspaces(mut db sqlite.DB) ! {
 // immediately before Git creates the worktree.
 fn (mut store Store) prepare_goal_task_attempt_worktree(goal_id string, task_id string,
 	claim GoalTaskClaim) !GoalTaskWorktree {
-	if claim.fencing_token.len == 0 || claim.session_operation_id.len == 0
-		|| claim.state.attempt_count <= 0 || claim.state.status != 'running' {
+	if claim.fencing_token.len == 0 || claim.state.attempt_count <= 0
+		|| claim.state.status != 'running' {
 		return error('goal task attempt is not a valid linked running claim')
 	}
 	manifest := store.admitted_goal_manifest(goal_id)!
@@ -98,10 +98,11 @@ fn goal_task_attempt_worktree_path(store_path string, repository_root string, go
 		|| !valid_goal_id(task_id) {
 		return error('goal task worktree identity is invalid')
 	}
-	if !os.is_abs_path(store_path) || workspace_has_hidden_controls(store_path) {
-		return error('goal task worktree store path must be absolute and canonical')
+	if workspace_has_hidden_controls(store_path) {
+		return error('goal task worktree store path is invalid')
 	}
-	store_directory := os.dir(store_path)
+	abs_store_path := if os.is_abs_path(store_path) { store_path } else { os.abs_path(store_path) }
+	store_directory := os.dir(abs_store_path)
 	if !os.is_dir(store_directory) || os.is_link(store_directory) {
 		return error('goal task worktree store directory must exist and must not be a symlink')
 	}
@@ -234,14 +235,14 @@ fn (mut store Store) record_goal_task_worktree_intent(worktree GoalTaskWorktree,
 	defer { store.mu.unlock() }
 	store.db.begin()!
 	defer { store.db.rollback() or {} }
-	rows := store.db.exec_param_many('SELECT a.status, a.session_operation_id, a.fencing_token, o.status FROM goal_task_attempts AS a JOIN session_operations AS o ON o.session_id = a.session_id AND o.id = a.session_operation_id WHERE a.goal_id = ? AND a.task_id = ? AND a.attempt = ?', [
+	rows := store.db.exec_param_many("SELECT a.status, a.session_operation_id, a.fencing_token, COALESCE(o.status, '') FROM goal_task_attempts AS a LEFT JOIN session_operations AS o ON o.session_id = a.session_id AND o.id = a.session_operation_id WHERE a.goal_id = ? AND a.task_id = ? AND a.attempt = ?", [
 		worktree.goal_id,
 		worktree.task_id,
 		worktree.attempt.str(),
 	])!
 	if rows.len != 1 || rows[0].val(0) != 'running'
-		|| rows[0].val(1) != claim.session_operation_id
-		|| rows[0].val(2) != claim.fencing_token || rows[0].val(3) != 'running' {
+		|| rows[0].val(2) != claim.fencing_token
+		|| (claim.session_operation_id.len > 0 && (rows[0].val(1) != claim.session_operation_id || rows[0].val(3) != 'running')) {
 		return error('goal task attempt fencing check failed')
 	}
 	store.db.exec_param_many("INSERT INTO goal_task_attempt_workspaces (goal_id, task_id, attempt, repository_root, worktree_path, base_sha, status) VALUES (?, ?, ?, ?, ?, ?, 'preparing')", [
@@ -264,14 +265,14 @@ fn (mut store Store) classify_goal_task_worktree(worktree GoalTaskWorktree, clai
 	defer { store.mu.unlock() }
 	store.db.begin()!
 	defer { store.db.rollback() or {} }
-	rows := store.db.exec_param_many('SELECT a.status, a.session_operation_id, a.fencing_token, w.status, o.status FROM goal_task_attempts AS a JOIN goal_task_attempt_workspaces AS w ON w.goal_id = a.goal_id AND w.task_id = a.task_id AND w.attempt = a.attempt JOIN session_operations AS o ON o.session_id = a.session_id AND o.id = a.session_operation_id WHERE a.goal_id = ? AND a.task_id = ? AND a.attempt = ?', [
+	rows := store.db.exec_param_many("SELECT a.status, a.session_operation_id, a.fencing_token, w.status, COALESCE(o.status, '') FROM goal_task_attempts AS a JOIN goal_task_attempt_workspaces AS w ON w.goal_id = a.goal_id AND w.task_id = a.task_id AND w.attempt = a.attempt LEFT JOIN session_operations AS o ON o.session_id = a.session_id AND o.id = a.session_operation_id WHERE a.goal_id = ? AND a.task_id = ? AND a.attempt = ?", [
 		worktree.goal_id,
 		worktree.task_id,
 		worktree.attempt.str(),
 	])!
 	if rows.len != 1 || rows[0].val(0) != 'running'
-		|| rows[0].val(1) != claim.session_operation_id || rows[0].val(2) != claim.fencing_token
-		|| rows[0].val(3) != 'preparing' || (status == 'ready' && rows[0].val(4) != 'running') {
+		|| rows[0].val(2) != claim.fencing_token || rows[0].val(3) != 'preparing'
+		|| (claim.session_operation_id.len > 0 && (rows[0].val(1) != claim.session_operation_id || (status == 'ready' && rows[0].val(4) != 'running'))) {
 		return error('goal task worktree fencing check failed')
 	}
 	store.db.exec_param_many('UPDATE goal_task_attempt_workspaces SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ?', [

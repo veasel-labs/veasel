@@ -2552,7 +2552,8 @@ fn (mut store Store) mark_session_operation_cancelling(session_id string, operat
 }
 
 fn (mut store Store) cancel_session_operation(session_id string, operation_id string) !string {
-	return store.finish_queued_session_operation(session_id, operation_id, 'Cancelled before a worker claimed this queued turn.')
+	return store.finish_queued_session_operation(session_id, operation_id,
+		'Cancelled before a worker claimed this queued turn.', .uncertain)
 }
 
 fn (mut store Store) reject_queued_session_operation(session_id string, operation_id string,
@@ -2565,15 +2566,28 @@ fn (mut store Store) reject_queued_session_operation(session_id string, operatio
 	if reason.len > 1024 {
 		return error('queued rejection error exceeds the size limit')
 	}
-	return store.finish_queued_session_operation(session_id, operation_id, reason)
+	return store.finish_queued_session_operation(session_id, operation_id, reason, .failed)
 }
 
 fn (mut store Store) finish_queued_session_operation(session_id string, operation_id string,
-	public_error string) !string {
+	public_error string, goal_result GoalTaskResult) !string {
 	store.mu.lock()
-	defer {
+	status := store.finish_queued_session_operation_locked(session_id, operation_id, public_error) or {
+		store.mu.unlock()
+		return err
+	}
+	store.mu.unlock()
+	if status == 'cancelled' {
+		store.reconcile_goal_task_operation(operation_id, goal_result)!
+		store.mu.lock()
+		store.prune_terminal_session_operations_unlocked(session_id)
 		store.mu.unlock()
 	}
+	return status
+}
+
+fn (mut store Store) finish_queued_session_operation_locked(session_id string, operation_id string,
+	public_error string) !string {
 	rows := store.db.exec_param_many('SELECT status FROM session_operations WHERE session_id = ? AND id = ?', [
 		session_id,
 		operation_id,
@@ -2607,7 +2621,6 @@ fn (mut store Store) finish_queued_session_operation(session_id string, operatio
 			store.db.rollback() or {}
 			return error('unable to commit queued cancellation')
 		}
-		store.prune_terminal_session_operations_unlocked(session_id)
 		return 'cancelled'
 	}
 	if status == 'running' {

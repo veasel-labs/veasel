@@ -15,6 +15,32 @@ test('walks in the world only while it has focus and keeps typing local to the c
     const player = world.getByRole('img', { name: 'You, exploring the workspace' });
     await expect(player).toHaveAttribute('data-ready', 'true');
     const originalViewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    const controls = page.getByRole('group', { name: 'Map view controls' });
+    for (const viewport of [
+      { width: 320, height: 640 },
+      { width: 480, height: 800 },
+    ]) {
+      await setViewport(desktop.app, viewport.width, viewport.height);
+      await expect.poll(() => page.evaluate(() => innerWidth)).toBe(viewport.width);
+      await expect(controls).toBeVisible();
+      const responsiveLayout = await page.evaluate(() => {
+        const header = document.querySelector<HTMLElement>('[class*="worldHeader"]');
+        const hud = document.querySelector<HTMLElement>('[aria-label="Map view controls"]');
+        const map = hud?.closest<HTMLElement>('[class*="mapRegion"]');
+        if (!header || !hud || !map) return null;
+        const hudBounds = hud.getBoundingClientRect();
+        const mapBounds = map.getBoundingClientRect();
+        return {
+          documentFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+          headerFits: header.scrollWidth <= header.clientWidth,
+          controlsStayInMap: hudBounds.left >= mapBounds.left && hudBounds.right <= mapBounds.right,
+        };
+      });
+      expect(responsiveLayout).toEqual({ documentFits: true, headerFits: true, controlsStayInMap: true });
+      for (const name of ['Explore by walking', 'Zoom out', 'Zoom in', 'Fit world']) {
+        await expect(page.getByRole('button', { name })).toBeVisible();
+      }
+    }
     await setViewport(desktop.app, 1024, 640);
     await expect(world).toHaveAttribute('data-zoom', '32');
     await setViewport(desktop.app, 1920, 1080);
@@ -161,6 +187,21 @@ test('walks in the world only while it has focus and keeps typing local to the c
       }
     }
     expect(moved).toBe(true);
+
+    await setViewport(desktop.app, 320, 640);
+    for (let step = 0; step < 5 && Number(await world.getAttribute('data-zoom')) < 80; step += 1) {
+      await page.getByRole('button', { name: 'Zoom in' }).click();
+    }
+    await expect(world).toHaveAttribute('data-zoom', '80');
+    const highZoomHudFits = await page.evaluate(() => {
+      const hud = document.querySelector<HTMLElement>('[aria-label="Map view controls"]');
+      const map = hud?.closest<HTMLElement>('[class*="mapRegion"]');
+      if (!hud || !map) return false;
+      const hudBounds = hud.getBoundingClientRect();
+      const mapBounds = map.getBoundingClientRect();
+      return hudBounds.left >= mapBounds.left && hudBounds.right <= mapBounds.right;
+    });
+    expect(highZoomHudFits).toBe(true);
 
     // The original spec also asserted that typing in the command-palette
     // filter does not move the player. The palette is not mounted in the

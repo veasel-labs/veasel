@@ -336,10 +336,14 @@ export default function WorldView() {
   return (
     <div className={styles.world} data-focus={model.focusProjectId ? 'interior' : 'grounds'}>
       <header className={styles.worldHeader}>
-        <h1 className={styles.worldTitle}>{title}</h1>
-        <span className={styles.worldMeta}>
-          {model.focusProjectId ? 'project interior' : worldPack.label} · {layout.entities.length} places
-        </span>
+        <div className={styles.worldHeading}>
+          <h1 className={styles.worldTitle} title={title}>
+            {title}
+          </h1>
+          <span className={styles.worldMeta}>
+            {model.focusProjectId ? 'project interior' : worldPack.label} · {layout.entities.length} places
+          </span>
+        </div>
         {!model.focusProjectId ? (
           <div className={styles.worldThemePackPicker} role="group" aria-label="World theme">
             {WORLD_THEME_PACKS.map((pack) => (

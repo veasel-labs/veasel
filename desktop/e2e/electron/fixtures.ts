@@ -202,6 +202,9 @@ export async function setViewport(app: ElectronApplication, width: number, heigh
     async ({ BrowserWindow }, size) => {
       const [win] = BrowserWindow.getAllWindows();
       if (!win) throw new Error('Desktop window is unavailable while resizing.');
+      // The production minimum is optimized for normal desktop use, while
+      // responsive journeys deliberately exercise narrower renderer layouts.
+      win.setMinimumSize(0, 0);
       if (win.isMaximized()) {
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(() => reject(new Error('Desktop window did not unmaximize within 5s.')), 5000);

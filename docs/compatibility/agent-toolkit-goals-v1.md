@@ -36,6 +36,18 @@ same authorized repositories, acceptance criteria, budgets, delivery mode,
 task order, dependencies, paths, runner/verifier identities, and base SHAs.
 Admission does not imply that a task ran or that a change was verified.
 
+Veasel also accepts the optional task fields `verifier_provider` and
+`verifier_model` as a paired routing extension. Existing Toolkit v1 exports
+without these fields remain admissible and round-trip with empty route values.
+Dispatch of `independent-review` requires an explicit pair; Veasel will not
+silently reuse the implementation route and call it independent. These fields
+express the requested route. The receipt binding verifies that the persisted
+reviewer run used that route and rejects an `independent-review` run whose
+provider and model both match the implementation operation. Runtime dispatch
+and provider/model availability checks are not implemented yet. This enforces
+distinct configured route strings only; provider aliases, proxies, and model
+aliases may still resolve to the same underlying service or model family.
+
 Compatibility currently covers the canonical fields emitted by `goal export`.
 Although the upstream JSON Schema permits additional properties, Veasel's
 Goal v1 decoder does not preserve extension fields during admission and

@@ -26,6 +26,25 @@ fn test_goal_admission_persists_and_replay_cannot_replace_manifest() {
 	assert (store.admitted_goals() or { panic(err) }).len == 1
 }
 
+fn test_goal_admission_replays_legacy_manifest_after_optional_verifier_routes() {
+	root := os.join_path(os.temp_dir(), 'veasel-goals-legacy-replay-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	goal := example_goal_admission()
+	legacy_manifest := json2.encode(goal, escape_unicode: true, time_as_unix: true)
+	assert !legacy_manifest.contains('verifier_provider')
+	assert !legacy_manifest.contains('verifier_model')
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	store.db.exec_param_many('INSERT INTO goal_admissions (id, title, manifest) VALUES (?, ?, ?)', [
+		goal.id,
+		goal.title,
+		legacy_manifest,
+	]) or { panic(err) }
+	assert (store.admit_goal(goal) or { panic(err) }) == .replayed
+	assert (store.admitted_goal_manifest(goal.id) or { panic(err) }) == legacy_manifest
+}
+
 fn test_goal_admission_rejects_bad_scope_and_cyclic_dependencies() {
 	goal := example_goal_admission()
 	for task in [

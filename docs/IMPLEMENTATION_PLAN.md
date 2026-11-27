@@ -1079,8 +1079,11 @@ Goal attempt, verification fence, parent session/operation, admitted repository,
 base SHA, candidate SHA, declared paths, and acceptance criteria; receipt
 recording rechecks the active lease and candidate and parses a bounded strict
 result envelope. The receipt is review evidence only: this slice does not
-launch the reviewer, configure an independent provider/model route, run
-executable acceptance checks, or promote `verifying` to `succeeded`. Keep Goal
+launch the reviewer or resolve provider/model availability; it only records
+the requested route and checks the durable run is independent when a task uses
+`independent-review`. That check establishes distinct configured provider or
+model strings, not distinct underlying model lineage. It does not run
+executable acceptance checks or promote `verifying` to `succeeded`. Keep Goal
 dispatch integration and atomic acceptance as open work until an end-to-end
 reviewer run and those checks are implemented and tested.
 

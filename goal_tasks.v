@@ -26,6 +26,8 @@ pub:
 	status        string
 	attempt_count int
 	attempts      []GoalTaskAttemptProjection
+	verifier_provider string
+	verifier_model    string
 }
 
 fn project_goal_task_graph(goal GoalAdmission) !GoalTasksProjection {
@@ -51,6 +53,8 @@ fn goal_task_projection_item(task GoalTask) GoalTaskProjectionItem {
 		verifier:    task.verifier
 		permissions: task.permissions.clone()
 		status:      'pending'
+		verifier_provider: task.verifier_provider
+		verifier_model:    task.verifier_model
 	}
 }
 

@@ -18,8 +18,10 @@ pub:
 
 pub struct GoalVerifierCapability {
 pub:
-	id      string
-	version string
+	id       string
+	version  string
+	provider string
+	model    string
 }
 
 pub struct GoalTaskDispatchCapabilities {
@@ -64,8 +66,20 @@ fn resolve_goal_verifier_capability(id string) !GoalVerifierCapability {
 
 fn resolve_goal_task_dispatch_capabilities(task GoalTask, permission_mode string) !GoalTaskDispatchCapabilities {
 	mode := if permission_mode.trim_space().len == 0 { 'ask' } else { permission_mode.trim_space() }
+	if (task.verifier_provider.trim_space().len == 0) != (task.verifier_model.trim_space().len == 0) {
+		return error('goal task verifier provider and model must be selected together')
+	}
+	if task.verifier == 'independent-review'
+		&& (task.verifier_provider.trim_space().len == 0 || task.verifier_model.trim_space().len == 0) {
+		return error('independent-review requires an explicit verifier provider and model route')
+	}
+	base_verifier := resolve_goal_verifier_capability(task.verifier)!
 	return GoalTaskDispatchCapabilities{
 		runner:   resolve_goal_runner_capability(task.runner, mode)!
-		verifier: resolve_goal_verifier_capability(task.verifier)!
+		verifier: GoalVerifierCapability{
+			...base_verifier
+			provider: task.verifier_provider.trim_space()
+			model:    task.verifier_model.trim_space()
+		}
 	}
 }

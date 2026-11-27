@@ -39,6 +39,14 @@ fn test_goal_task_verifier_envelope_requires_exact_bounded_identity_fields() {
 	if _ := parse_goal_task_verifier_envelope(extra) {
 		assert false, 'unexpected fields must fail closed'
 	}
+	duplicate := valid.replace('}', ',"goal_id":"other"}')
+	if _ := parse_goal_task_verifier_envelope(duplicate) {
+		assert false, 'duplicate fields must fail closed'
+	}
+	escaped_duplicate := valid.replace(',"task_id"', r',"goal\u005fid":"other","task_id"')
+	if _ := parse_goal_task_verifier_envelope(escaped_duplicate) {
+		assert false, 'escaped duplicate field names must fail closed'
+	}
 	wrong_type := valid.replace('"attempt":"1"', '"attempt":1')
 	if _ := parse_goal_task_verifier_envelope(wrong_type) {
 		assert false, 'non-string identity fields must fail closed'
@@ -51,6 +59,24 @@ fn test_goal_task_verifier_envelope_requires_exact_bounded_identity_fields() {
 	if _ := parse_goal_task_verifier_envelope(oversized_evidence) {
 		assert false, 'oversized evidence must fail closed'
 	}
+}
+
+fn test_independent_goal_verifier_requires_a_distinct_selected_provider_or_model() {
+	task := GoalTask{
+		verifier:          'independent-review'
+		verifier_provider: 'openai'
+		verifier_model:    'review-model'
+	}
+	assert goal_task_verifier_route_is_independent(task, 'anthropic', 'writer-model', 'openai',
+		'review-model')
+	assert goal_task_verifier_route_is_independent(task, 'openai', 'writer-model', 'openai',
+		'review-model')
+	assert !goal_task_verifier_route_is_independent(task, 'openai', 'review-model', 'openai',
+		'review-model')
+	assert !goal_task_verifier_route_is_independent(task, 'anthropic', 'writer-model', 'openai',
+		'other-review-model')
+	assert !goal_task_verifier_route_is_independent(task, '', 'writer-model', 'openai',
+		'review-model')
 }
 
 fn test_goal_task_verifier_binding_rejects_stale_fence_before_git_observation() {
@@ -124,14 +150,16 @@ fn test_goal_task_verification_receipt_binds_real_candidate_and_never_promotes()
 		budget:                  GoalBudget{ max_attempts: 2, wall_seconds: 120, provider_turns: 4 }
 		delivery_mode:           'draft'
 		tasks:                   [GoalTask{
-			id:         'review-docs'
-			title:      'Review documentation change'
-			repository: 'owner/repo'
-			base_sha:   fixture.base_sha
-			paths:      ['docs']
-			recipe:     'feature'
-			runner:     'local-v'
-			verifier:   'review'
+			id:                'review-docs'
+			title:             'Review documentation change'
+			repository:        'owner/repo'
+			base_sha:          fixture.base_sha
+			paths:             ['docs']
+			recipe:            'feature'
+			runner:            'local-v'
+			verifier:          'review'
+			verifier_provider: 'openai'
+			verifier_model:    'review-model'
 		}]
 	}
 	data_dir := os.join_path(parent, 'veasel-data')
@@ -157,8 +185,9 @@ fn test_goal_task_verification_receipt_binds_real_candidate_and_never_promotes()
 	assert binding.candidate_sha == candidate_sha
 	assert binding.status == 'reserved'
 	prompt := goal_task_verifier_review_prompt(binding, goal, goal.tasks[0])
-	run := store.create_subagent_run_with_task(session.id, claim.session_operation_id,
-		'verifier-request-1', 'reviewer', 1, 'Goal candidate review', worktree_path, prompt) or {
+	run := store.create_subagent_run_with_cancel_reason(session.id, claim.session_operation_id,
+		'verifier-request-1', 'reviewer', 1, 'Goal candidate review', worktree_path, '', 'openai',
+		'review-model', 'openai', 'review-model', prompt) or {
 		panic(err)
 	}
 	assert run.workspace_ready
@@ -187,6 +216,8 @@ fn test_goal_task_verification_receipt_binds_real_candidate_and_never_promotes()
 	assert receipt.candidate_sha == candidate_sha
 	assert receipt.verifier_id == 'review'
 	assert receipt.verifier_version == 'builtin-review-v1'
+	assert receipt.reviewer_provider == 'openai'
+	assert receipt.reviewer_model == 'review-model'
 	assert receipt.reviewer_run_id == claimed.id
 	assert receipt.lease_generation == lease.generation
 	assert receipt.verdict == 'pass'

@@ -32,14 +32,16 @@ fn test_goal_task_projection_is_stable_topological_order() {
 				verifier:   'review'
 			},
 			GoalTask{
-				id:         'b-independent'
-				title:      'Independent task'
-				repository: 'owner/repo'
-				base_sha:   'a'.repeat(40)
-				paths:      ['docs']
-				recipe:     'research'
-				runner:     'local-v'
-				verifier:   'review'
+				id:                'b-independent'
+				title:             'Independent task'
+				repository:        'owner/repo'
+				base_sha:          'a'.repeat(40)
+				paths:             ['docs']
+				recipe:            'research'
+				runner:            'local-v'
+				verifier:          'review'
+				verifier_provider: 'anthropic'
+				verifier_model:    'claude-sonnet-5-5'
 			},
 			GoalTask{
 				id:         'a-start'
@@ -60,6 +62,8 @@ fn test_goal_task_projection_is_stable_topological_order() {
 	assert first.tasks.map(it.id) == ['b-independent', 'a-start', 'm-middle', 'z-final']
 	assert first.tasks.map(it.status) == ['pending', 'pending', 'pending', 'pending']
 	assert first.tasks[3].depends_on == ['m-middle', 'a-start']
+	assert first.tasks[0].verifier_provider == 'anthropic'
+	assert first.tasks[0].verifier_model == 'claude-sonnet-5-5'
 	assert first.tasks.map(it.id) == second.tasks.map(it.id)
 	encoded := json2.encode(first)
 	assert !encoded.contains('policy_ceiling')

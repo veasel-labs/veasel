@@ -47,6 +47,8 @@ struct GoalTask {
 	runner      string
 	verifier    string
 	permissions []string @[omitempty]
+	verifier_provider string @[omitempty]
+	verifier_model    string @[omitempty]
 }
 
 struct AdmittedGoal {
@@ -244,6 +246,11 @@ fn validate_goal_tasks(tasks []GoalTask, repositories map[string]bool) ! {
 			|| task.paths.len == 0 || task.runner.trim_space() == '' || task.verifier.trim_space() == ''
 			|| task.recipe !in ['research', 'bug', 'feature', 'migration', 'release'] {
 			return error('Goal task requires an authorized repository, pinned base, paths, recipe, runner and verifier')
+		}
+		if (task.verifier_provider.trim_space().len == 0) != (task.verifier_model.trim_space().len == 0)
+			|| task.verifier_provider.len > 128 || task.verifier_model.len > 256
+			|| task.verifier_provider.contains('\0') || task.verifier_model.contains('\0') {
+			return error('Goal task verifier provider and model must be supplied together with valid lengths')
 		}
 		if task.paths.any(!valid_goal_relative_path(it)) {
 			return error('Goal task paths must be relative to an authorized repository')

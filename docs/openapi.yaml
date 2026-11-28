@@ -145,6 +145,49 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/goals/{id}/tasks/{task_id}/attempts/{attempt}/receipts:
+    get:
+      operationId: getGoalTaskAttemptReceipts
+      description: >-
+        Returns a versioned safe API projection of evidence recorded for one
+        durable task attempt. Full portable interoperability with Toolkit is
+        not yet provided. The projection omits local repository and worktree
+        filesystem paths.
+        These receipts report Veasel's recorded reviewer result and operator
+        acceptance; they are not independently verifiable proofs of repository
+        contents or test execution.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: task_id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: attempt
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 999999999 }
+      responses:
+        '200':
+          description: Evidence projection for the requested attempt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalTaskReceiptProjection'
+        '400':
+          description: Invalid attempt number.
+        '401':
+          description: Authentication is required.
+        '404':
+          description: No goal, task, or attempt exists for the request.
+        '500':
+          description: Stored evidence could not be read or decoded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/goals/{id}/preflight:
     get:
       operationId: preflightAdmittedGoal
@@ -2750,6 +2793,43 @@ components:
         integrity_checks:
           type: array
           items: { const: candidate_commit_descendant_and_declared_paths }
+        created_at: { type: string }
+    GoalTaskReceiptProjection:
+      type: object
+      required: [schema_version, goal_id, task_id, attempt]
+      properties:
+        schema_version: { const: 1 }
+        goal_id: { type: string }
+        task_id: { type: string }
+        attempt: { type: integer, minimum: 1 }
+        verification_receipt: { $ref: '#/components/schemas/GoalTaskVerificationEvidence' }
+        acceptance_receipt: { $ref: '#/components/schemas/GoalTaskAcceptanceEvidence' }
+    GoalTaskVerificationEvidence:
+      type: object
+      required: [repository, base_sha, candidate_sha, verifier_id, verifier_version, reviewer_provider, reviewer_model, reviewer_run_id, lease_generation, verdict, changed_paths, created_at]
+      properties:
+        repository: { type: string }
+        base_sha: { type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$' }
+        candidate_sha: { type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$' }
+        verifier_id: { type: string }
+        verifier_version: { type: string }
+        reviewer_provider: { type: string }
+        reviewer_model: { type: string }
+        reviewer_run_id: { type: string }
+        lease_generation: { type: integer, minimum: 1 }
+        verdict: { enum: [pass, fail, uncertain] }
+        changed_paths: { type: array, items: { type: string } }
+        created_at: { type: string }
+    GoalTaskAcceptanceEvidence:
+      type: object
+      required: [repository, base_sha, candidate_sha, decision, actor, integrity_checks, created_at]
+      properties:
+        repository: { type: string }
+        base_sha: { type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$' }
+        candidate_sha: { type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$' }
+        decision: { const: accept }
+        actor: { const: local-api-bearer, description: Capability label; not a named human identity. }
+        integrity_checks: { type: array, items: { type: string } }
         created_at: { type: string }
     GoalTaskProjectionItem:
       type: object

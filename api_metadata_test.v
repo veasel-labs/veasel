@@ -38,6 +38,19 @@ fn test_openapi_goal_projection_matches_durable_verification_states() {
 	assert goal_projection.contains('lease_generation: { type: integer, minimum: 0 }')
 }
 
+fn test_openapi_documents_goal_task_receipt_projection_without_local_paths() {
+	openapi := os.read_file('docs/openapi.yaml') or { panic(err) }
+	assert openapi.contains('operationId: getGoalTaskAttemptReceipts')
+	assert openapi.contains('/v1/goals/{id}/tasks/{task_id}/attempts/{attempt}/receipts:')
+	receipt_schema := openapi.all_after('    GoalTaskReceiptProjection:').all_before('\n    GoalTaskProjectionItem:')
+	assert receipt_schema.contains('schema_version: { const: 1 }')
+	assert receipt_schema.contains('GoalTaskVerificationEvidence')
+	assert receipt_schema.contains('GoalTaskAcceptanceEvidence')
+	assert receipt_schema.contains('verifier_version: { type: string }')
+	assert !receipt_schema.contains('repository_root')
+	assert !receipt_schema.contains('worktree_path')
+}
+
 fn test_model_catalog_error_message_explains_provider_auth_rejection() {
 	message := model_catalog_error_message('openai', 'model catalog endpoint returned HTTP 401')
 	assert message.contains('rejected the API key')

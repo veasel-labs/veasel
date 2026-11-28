@@ -272,6 +272,17 @@ fn test_goal_worker_completion_dispatches_bound_reviewer_and_persists_one_receip
 		time.sleep(10 * time.millisecond)
 	}
 	assert receipt_count == 1, 'automatic reviewer dispatch did not persist its receipt'
+	verification_projection := store.goal_task_receipt_projection(goal.id, 'review-docs', 1) or {
+		panic(err)
+	}
+	assert verification_projection.schema_version == 1
+	if verification_receipt := verification_projection.verification_receipt {
+		assert verification_receipt.candidate_sha == fixture.candidate_sha
+		assert verification_receipt.verdict == 'pass'
+	} else {
+		assert false, 'persisted verification receipt must appear in attempt projection'
+	}
+	assert verification_projection.acceptance_receipt == none
 	counts = provider_fixture.request_counts()
 	assert counts.parent == 1
 	assert counts.reviewer == 1
@@ -340,6 +351,21 @@ fn test_goal_worker_completion_dispatches_bound_reviewer_and_persists_one_receip
 		candidate_sha: fixture.candidate_sha
 		decision:      'accept'
 	}) or { panic(err) }
+	accepted_projection := store.goal_task_receipt_projection(goal.id, 'review-docs', 1) or {
+		panic(err)
+	}
+	if verification_receipt := accepted_projection.verification_receipt {
+		assert verification_receipt.candidate_sha == accepted.candidate_sha
+	} else {
+		assert false, 'accepted attempt projection must retain verification evidence'
+	}
+	if acceptance_receipt := accepted_projection.acceptance_receipt {
+		assert acceptance_receipt.candidate_sha == accepted.candidate_sha
+		assert acceptance_receipt.integrity_checks == [goal_task_acceptance_check]
+	} else {
+		assert false, 'accepted attempt projection must include operator evidence'
+	}
+	assert !json2.encode[GoalTaskReceiptProjection](accepted_projection).contains(fixture.root)
 	assert accepted.candidate_sha == fixture.candidate_sha
 	assert accepted.actor == goal_task_acceptance_actor
 	assert accepted.integrity_checks == [goal_task_acceptance_check]

@@ -15,6 +15,7 @@ goal_dispatch_test.v
 goal_repository_identity_test.v
 goal_task_acceptance_test.v
 goal_task_heartbeat_test.v
+goal_task_receipt_projection_test.v
 goal_task_verification_dispatch_e2e_test.v
 goal_task_verification_dispatch_test.v
 goal_task_verification_lease_test.v

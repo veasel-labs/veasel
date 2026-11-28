@@ -243,6 +243,13 @@ fn test_library_git_metadata_walk_fails_closed_at_entry_limit() {
 	}
 }
 
+fn test_library_git_runner_disables_hooks_and_returns_command_output() {
+	hooks_path := run_library_git_command(os.temp_dir(), ['config', '--get', 'core.hooksPath']) or {
+		panic(err)
+	}
+	assert hooks_path.trim_space() == '/dev/null'
+}
+
 fn test_bundled_offline_catalog_is_approved_installable_and_permission_scoped() {
 	// The catalog physically shipped in this repository (bundled/) is the
 	// offline fallback: it loads with no network, lists only bundled

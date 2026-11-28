@@ -3738,7 +3738,7 @@ components:
         update: { type: boolean, default: false }
     LibraryEntryView:
       type: object
-      required: [id, version, license, trust, review, installable, installable_reason, opt_in_required, permissions_summary, installed, review_provenance_valid]
+      required: [id, version, license, trust, review, installable, installable_reason, opt_in_required, permissions_summary, installed]
       properties:
         id: { type: string }
         version: { type: string }

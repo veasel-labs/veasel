@@ -1106,7 +1106,7 @@ duplicate those capabilities.
 - [x] Merge `veasel-labs/agent-toolkit#20` (`22bbf47`), which preserves the
   YAML registry's review provenance in `generated/veasel-catalog.json` on
   marketplace `main`.
-- [ ] Merge `veasel-labs/veasel#869`, which confines local package and Git
+- [x] Merge `veasel-labs/veasel#869` (`64fa8fc9`), which confines local package and Git
   checkout paths before installation.
 - [ ] Keep Veasel's catalog consumer fail-closed: only known trust tiers are
   installable, and approved external entries must carry reviewer, date,

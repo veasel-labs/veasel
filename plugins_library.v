@@ -19,6 +19,19 @@ pub:
 	sha  string
 }
 
+// Registry review evidence is retained internally so approved external
+// entries can be checked against the immutable source they claim to review.
+// The free-form values are deliberately omitted from the public view.
+pub struct LibraryProvenance {
+pub:
+	submitted_by        string
+	reviewed_by         string
+	review              string
+	reviewed_at         string
+	reviewed_source_sha string
+	review_evidence     string
+}
+
 pub struct LibraryEntry {
 pub:
 	id              string
@@ -30,6 +43,7 @@ pub:
 	opt_in_required bool
 	source          LibrarySource
 	permissions     map[string]json2.Any
+	provenance      LibraryProvenance
 }
 
 pub struct LibraryCatalog {
@@ -85,7 +99,7 @@ fn load_library_catalog(catalog_path string) !LibraryCatalog {
 			return error('library catalog has duplicate entry `${entry.id}`')
 		}
 		seen[entry.id] = true
-		if entry.source.typ == 'github' && !is_hex_sha(entry.source.sha) {
+		if entry.source.typ in ['github', 'git-subdir'] && !is_hex_sha(entry.source.sha) {
 			return error('library catalog entry `${entry.id}` must pin a full commit sha')
 		}
 		if entry.source.typ !in ['github', 'git-subdir', 'relative'] {
@@ -104,13 +118,81 @@ fn library_entry_installable(entry LibraryEntry) (bool, string) {
 	if entry.trust == 'experimental' {
 		return false, 'experimental trust tier is not published'
 	}
+	if entry.trust !in ['first-party', 'verified', 'community'] {
+		return false, 'unknown trust tier is not installable'
+	}
 	if entry.review != 'approved' {
 		return false, 'review is not approved (${entry.review})'
+	}
+	if entry.source.typ in ['github', 'git-subdir'] && !library_review_provenance_valid(entry) {
+		return false, 'approved external source is missing valid review provenance'
 	}
 	if !entry.installable {
 		return false, 'catalog marks this entry not installable'
 	}
 	return true, ''
+}
+
+fn library_review_provenance_valid(entry LibraryEntry) bool {
+	if entry.source.typ !in ['github', 'git-subdir'] {
+		return true
+	}
+	if !is_hex_sha(entry.source.sha) || entry.provenance.reviewed_source_sha != entry.source.sha {
+		return false
+	}
+	if entry.provenance.submitted_by.trim_space() in ['', 'null'] {
+		return false
+	}
+	if entry.provenance.review != 'approved' || entry.provenance.reviewed_by.trim_space() in ['',
+		'null'] {
+		return false
+	}
+	date := entry.provenance.reviewed_at
+	if date.len != 10 || date[4] != `-` || date[7] != `-` {
+		return false
+	}
+	for i, ch in date {
+		if i != 4 && i != 7 && (ch < `0` || ch > `9`) {
+			return false
+		}
+	}
+	return library_is_review_evidence_url(entry.provenance.review_evidence)
+}
+
+fn library_is_review_evidence_url(value string) bool {
+	if !value.starts_with('https://github.com/') {
+		return false
+	}
+	for ch in value {
+		if ch <= ` ` {
+			return false
+		}
+	}
+	path := value.all_after('https://github.com/').split('/')
+	if path.len != 4 || path[0].len == 0 || path[1].len == 0 || path[2] !in ['pull', 'issues'] {
+		return false
+	}
+	issue := path[3].all_before('#')
+	if issue.len == 0 {
+		return false
+	}
+	for ch in issue {
+		if ch < `0` || ch > `9` {
+			return false
+		}
+	}
+	if path[3].contains('#') {
+		fragment := path[3].all_after('#')
+		if !fragment.starts_with('issuecomment-') || fragment.len == 'issuecomment-'.len {
+			return false
+		}
+		for ch in fragment.all_after('issuecomment-') {
+			if ch < `0` || ch > `9` {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 fn library_permission_text(entry LibraryEntry, key string) string {
@@ -350,16 +432,17 @@ fn remove_library_entry(plugin_directory string, registry_path string, entry Lib
 
 pub struct LibraryEntryView {
 pub:
-	id                  string
-	version             string
-	license             string
-	trust               string
-	review              string
-	installable         bool
-	installable_reason  string
-	opt_in_required     bool
-	permissions_summary string
-	installed           bool
+	id                      string
+	version                 string
+	license                 string
+	trust                   string
+	review                  string
+	installable             bool
+	installable_reason      string
+	opt_in_required         bool
+	permissions_summary     string
+	installed               bool
+	review_provenance_valid bool
 }
 
 pub struct LibraryCatalogView {
@@ -407,16 +490,17 @@ fn library_catalog_view(plugin_directory string, registry_path string, catalog_p
 	for entry in catalog.plugins {
 		installable, reason := library_entry_installable(entry)
 		entries << LibraryEntryView{
-			id:                  entry.id
-			version:             entry.version
-			license:             entry.license
-			trust:               entry.trust
-			review:              entry.review
-			installable:         installable
-			installable_reason:  reason
-			opt_in_required:     entry.opt_in_required || entry.trust == 'community'
-			permissions_summary: library_permission_summary(entry)
-			installed:           entry.id in installed
+			id:                      entry.id
+			version:                 entry.version
+			license:                 entry.license
+			trust:                   entry.trust
+			review:                  entry.review
+			installable:             installable
+			installable_reason:      reason
+			opt_in_required:         entry.opt_in_required || entry.trust == 'community'
+			permissions_summary:     library_permission_summary(entry)
+			installed:               entry.id in installed
+			review_provenance_valid: library_review_provenance_valid(entry)
 		}
 	}
 	return LibraryCatalogView{

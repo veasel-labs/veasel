@@ -130,6 +130,117 @@ fn test_goal_task_verification_dispatch_candidates_are_current_and_receipt_free(
 	assert (store.goal_task_verification_dispatch_candidates() or { panic(err) }).len == 0
 }
 
+fn test_list_bound_goal_task_verifiers_and_concurrent_reconcile_serialize_store_access() {
+	fixture := new_goal_verification_dispatch_repo_fixture() or { panic(err) }
+	defer { os.rmdir_all(os.dir(fixture.root)) or {} }
+	root := os.join_path(os.dir(fixture.root), 'veasel-data-concurrent-${rand.ulid()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	goal := GoalAdmission{
+		schema_version:          1
+		id:                      'goal-verifier-concurrent'
+		title:                   'Serialize verifier binding lookups under store.mu'
+		authorized_repositories: [GoalRepository{
+			owner: 'owner'
+			name:  'repo'
+			path:  fixture.root
+		}]
+		acceptance_criteria:     [GoalCriterion{
+			id:           'scoped-change'
+			description:  'The change stays within docs.'
+			verification: 'Review the committed candidate.'
+		}]
+		deadline:                '2999-01-01T00:00:00Z'
+		budget:                  GoalBudget{ max_attempts: 2, wall_seconds: 120, provider_turns: 4 }
+		delivery_mode:           'draft'
+		tasks:                   [GoalTask{
+			id:                'review-docs'
+			title:             'Review documentation change'
+			repository:        'owner/repo'
+			base_sha:          fixture.base_sha
+			paths:             ['docs']
+			recipe:            'feature'
+			runner:            'local-v'
+			verifier:          'review'
+			verifier_provider: 'openai'
+			verifier_model:    'review-model'
+		}]
+	}
+	mut store := open_store(os.join_path(root, 'store.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	_ = store.admit_goal(goal) or { panic(err) }
+	session := store.create_session(SessionInput{ title: 'Worker', directory: fixture.worktree }) or {
+		panic(err)
+	}
+	claim := store.claim_goal_task_for_session(goal.id, 'review-docs', session.id) or { panic(err) }
+	store.db.exec_param_many("INSERT INTO goal_task_attempt_workspaces (goal_id, task_id, attempt, repository_root, worktree_path, base_sha, status) VALUES (?, ?, 1, ?, ?, ?, 'ready')", [
+		goal.id,
+		'review-docs',
+		fixture.root,
+		fixture.worktree,
+		fixture.base_sha,
+	]) or { panic(err) }
+	store.reconcile_goal_task_operation(claim.session_operation_id, .succeeded) or { panic(err) }
+	lease := store.claim_goal_task_verification_lease(goal.id, 'review-docs', 1, 60) or {
+		panic(err)
+	}
+	store.db.exec_param_many("INSERT INTO goal_task_verifier_bindings (id, goal_id, task_id, attempt, fencing_token, lease_generation, repository, repository_root, worktree_path, base_sha, candidate_sha, verifier_id, verifier_version, reviewer_run_id, status) VALUES ('bound-run-1', ?, 'review-docs', 1, ?, ?, 'owner/repo', ?, ?, ?, ?, 'review', 'builtin-review-v1', 'reviewer-run-bound', 'bound')", [
+		goal.id,
+		lease.fencing_token,
+		lease.generation.str(),
+		fixture.root,
+		fixture.worktree,
+		fixture.base_sha,
+		fixture.candidate_sha,
+	]) or { panic(err) }
+	bound := store.list_bound_goal_task_verifiers('reviewer-run-bound') or { panic(err) }
+	assert bound == [
+		BoundGoalTaskVerifier{
+			id:      'bound-run-1'
+			goal_id: goal.id
+			task_id: 'review-docs'
+			attempt: 1
+		},
+	]
+	assert (store.list_bound_goal_task_verifiers('other-run') or { panic(err) }).len == 0
+
+	mut workers := []thread{}
+	for worker_idx in 0 .. 4 {
+		workers << spawn fn (app &App, mut store Store, worker_idx int) {
+			for iter in 0 .. 25 {
+				app.reconcile_goal_task_verifier_run('nonexistent-run-${worker_idx}-${iter}')
+				assert (store.list_bound_goal_task_verifiers('reviewer-run-bound') or { panic(err) }).len == 1
+			}
+		}(app, mut store, worker_idx)
+	}
+	for worker in workers {
+		worker.wait()
+	}
+}
+
+fn test_no_value_copied_store_mutex_in_backend_sources() {
+	root := os.dir(@FILE)
+	entries := os.ls(root) or { panic(err) }
+	for entry in entries {
+		if !entry.ends_with('.v') {
+			continue
+		}
+		content := os.read_file(os.join_path(root, entry)) or { panic(err) }
+		for idx, line in content.split_into_lines() {
+			trimmed := line.trim_space()
+			if trimmed.starts_with('//') {
+				continue
+			}
+			if trimmed.contains(':=') && !trimmed.contains('.mutex')
+				&& (trimmed.ends_with('.mu') || trimmed.contains('.mu ')
+					|| trimmed.contains('.mu\t')) {
+				assert false, '${entry}:${idx + 1} copies a value-type .mu mutex: ${trimmed}'
+			}
+		}
+	}
+}
+
 fn new_goal_verification_dispatch_repo_fixture() !GoalVerificationDispatchRepoFixture {
 	parent := os.join_path(os.temp_dir(), 'veasel-goal-dispatch-repo-${rand.ulid()}')
 	root := os.join_path(parent, 'checkout')

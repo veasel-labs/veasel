@@ -65,3 +65,29 @@ fn (mut store Store) goal_task_verification_dispatch_candidates() ![]GoalTaskVer
 	}
 	return candidates
 }
+
+struct BoundGoalTaskVerifier {
+	id      string
+	goal_id string
+	task_id string
+	attempt int
+}
+
+// Return bound verifier rows for a completed reviewer run under store.mu.
+fn (mut store Store) list_bound_goal_task_verifiers(run_id string) ![]BoundGoalTaskVerifier {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	rows := store.db.exec_param_many("SELECT goal_id, task_id, attempt, id FROM goal_task_verifier_bindings WHERE reviewer_run_id = ? AND status = 'bound'", [
+		run_id,
+	])!
+	mut bindings := []BoundGoalTaskVerifier{cap: rows.len}
+	for row in rows {
+		bindings << BoundGoalTaskVerifier{
+			goal_id: row.val(0)
+			task_id: row.val(1)
+			attempt: row.val(2).int()
+			id:      row.val(3)
+		}
+	}
+	return bindings
+}

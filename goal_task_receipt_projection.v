@@ -27,7 +27,6 @@ pub:
 	reviewer_run_id   string
 	lease_generation  int
 	verdict           string
-	evidence          string
 	changed_paths     []string
 	created_at        string
 }
@@ -70,7 +69,6 @@ fn project_goal_task_receipts(verification ?GoalTaskVerificationReceipt,
 			reviewer_run_id:   receipt.reviewer_run_id
 			lease_generation:  receipt.lease_generation
 			verdict:           receipt.verdict
-			evidence:          receipt.evidence
 			changed_paths:     receipt.changed_paths.clone()
 			created_at:        receipt.created_at
 		}

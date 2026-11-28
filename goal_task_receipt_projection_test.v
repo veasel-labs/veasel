@@ -19,7 +19,7 @@ fn test_goal_task_receipt_projection_is_versioned_and_omits_local_paths() {
 		reviewer_run_id:   'run'
 		lease_generation:  3
 		verdict:           'pass'
-		evidence:          'reviewed candidate'
+		evidence:          'reviewed candidate at /var/lib/private/worktree'
 		changed_paths:     ['src/main.v']
 		created_at:        '2026-11-27T12:00:00Z'
 	}
@@ -44,6 +44,8 @@ fn test_goal_task_receipt_projection_is_versioned_and_omits_local_paths() {
 	assert encoded.contains('"candidate_sha":"${'b'.repeat(40)}"')
 	assert encoded.contains('"integrity_checks":["${goal_task_acceptance_check}"]')
 	assert !encoded.contains('/home/user/private')
+	assert !encoded.contains('/var/lib/private/worktree')
+	assert !encoded.contains('reviewed candidate at')
 	assert !encoded.contains('repository_root')
 	assert !encoded.contains('worktree_path')
 }

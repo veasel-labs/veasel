@@ -2806,7 +2806,7 @@ components:
         acceptance_receipt: { $ref: '#/components/schemas/GoalTaskAcceptanceEvidence' }
     GoalTaskVerificationEvidence:
       type: object
-      required: [repository, base_sha, candidate_sha, verifier_id, verifier_version, reviewer_provider, reviewer_model, reviewer_run_id, lease_generation, verdict, evidence, changed_paths, created_at]
+      required: [repository, base_sha, candidate_sha, verifier_id, verifier_version, reviewer_provider, reviewer_model, reviewer_run_id, lease_generation, verdict, changed_paths, created_at]
       properties:
         repository: { type: string }
         base_sha: { type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$' }
@@ -2818,7 +2818,6 @@ components:
         reviewer_run_id: { type: string }
         lease_generation: { type: integer, minimum: 1 }
         verdict: { enum: [pass, fail, uncertain] }
-        evidence: { type: string }
         changed_paths: { type: array, items: { type: string } }
         created_at: { type: string }
     GoalTaskAcceptanceEvidence:

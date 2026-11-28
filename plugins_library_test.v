@@ -27,6 +27,17 @@ fn write_library_fixture() (string, string, string) {
 	return base, catalog_path, plugin_dir
 }
 
+fn write_library_git_cache_fixture() (string, string) {
+	base := os.join_path(os.temp_dir(), 'veasel-library-cache-${uuid.new_v4().str()}')
+	cache := os.join_path(base, 'cache')
+	clone := os.join_path(cache, 'plugin-aaaaaaaaaaaa')
+	os.mkdir_all(os.join_path(clone, '.git', 'hooks')) or { panic(err) }
+	os.write_file(os.join_path(clone, '.git', 'config'), '[core]\nrepositoryformatversion = 0\n') or {
+		panic(err)
+	}
+	return base, clone
+}
+
 fn test_library_pending_revoked_and_lying_entries_fail_closed() {
 	base, catalog_path, plugin_dir := write_library_fixture()
 	defer { os.rmdir_all(base) or {} }
@@ -127,6 +138,116 @@ fn test_library_invalid_catalog_structures_rejected() {
 		_ := load_library_catalog(path) or { continue }
 		panic('invalid catalog must be rejected: ${raw}')
 	}
+}
+
+fn test_library_relative_source_rejects_symlink_escape() {
+	$if windows {
+		return
+	}
+	base, _, _ := write_library_fixture()
+	defer { os.rmdir_all(base) or {} }
+	outside := '${base}-outside'
+	defer { os.rmdir_all(outside) or {} }
+	os.mkdir_all(outside) or { panic(err) }
+	link := os.join_path(base, 'plugins', 'escape')
+	os.symlink(outside, link) or { panic(err) }
+	entry := LibraryEntry{
+		id:     'escape'
+		trust:  'first-party'
+		review: 'approved'
+		source: LibrarySource{
+			typ:  'relative'
+			path: 'plugins/escape'
+		}
+	}
+	if _ := library_resolve_package(base, entry, LibraryInstallOptions{}) {
+		assert false, 'relative library source must not follow a symlink outside the catalog'
+	}
+}
+
+fn test_library_package_path_rejects_symlinked_git_subdirectory_escape() {
+	$if windows {
+		return
+	}
+	base := os.join_path(os.temp_dir(), 'veasel-library-subdir-${uuid.new_v4().str()}')
+	root := os.join_path(base, 'repo')
+	outside := os.join_path(base, 'outside')
+	os.mkdir_all(root) or { panic(err) }
+	os.mkdir_all(outside) or { panic(err) }
+	defer { os.rmdir_all(base) or {} }
+	os.symlink(outside, os.join_path(root, 'plugin')) or { panic(err) }
+	if _ := library_package_path_under_root(root, os.join_path(root, 'plugin')) {
+		assert false, 'git-subdir package must not follow a symlink outside its cloned repository'
+	}
+}
+
+fn test_library_cached_clone_rejects_symlinked_root_and_git_metadata() {
+	$if windows {
+		return
+	}
+	base := os.join_path(os.temp_dir(), 'veasel-library-cache-links-${uuid.new_v4().str()}')
+	cache := os.join_path(base, 'cache')
+	outside := os.join_path(base, 'outside')
+	clone := os.join_path(cache, 'plugin-aaaaaaaaaaaa')
+	os.mkdir_all(cache) or { panic(err) }
+	os.mkdir_all(outside) or { panic(err) }
+	defer { os.rmdir_all(base) or {} }
+	os.symlink(outside, clone) or { panic(err) }
+	if _ := library_validate_cached_clone(cache, clone) {
+		assert false, 'library cache must reject a symlinked clone root'
+	}
+	os.rm(clone) or { panic(err) }
+	_, normal_clone := write_library_git_cache_fixture()
+	defer { os.rmdir_all(os.dir(os.dir(normal_clone))) or {} }
+	os.symlink(outside, os.join_path(normal_clone, '.git', 'metadata-link')) or { panic(err) }
+	if _ := library_validate_cached_clone(os.dir(normal_clone), normal_clone) {
+		assert false, 'library cache must reject symlinks inside git metadata'
+	}
+}
+
+fn test_library_cached_clone_rejects_git_filter_configuration() {
+	base, clone := write_library_git_cache_fixture()
+	defer { os.rmdir_all(base) or {} }
+	os.write_file(os.join_path(clone, '.git', 'config'), '[filter "unsafe"]\nsmudge = touch outside\n') or {
+		panic(err)
+	}
+	if _ := library_validate_cached_clone(os.dir(clone), clone) {
+		assert false, 'library cache must reject Git filters before checkout'
+	}
+}
+
+fn test_library_cached_clone_rejects_symlinked_git_directory() {
+	$if windows {
+		return
+	}
+	base, clone := write_library_git_cache_fixture()
+	defer { os.rmdir_all(base) or {} }
+	git_dir := os.join_path(clone, '.git')
+	outside := os.join_path(base, 'outside-git')
+	os.mkdir_all(outside) or { panic(err) }
+	os.rmdir_all(git_dir) or { panic(err) }
+	os.symlink(outside, git_dir) or { panic(err) }
+	if _ := library_validate_cached_clone(os.dir(clone), clone) {
+		assert false, 'library cache must reject a symlinked git metadata directory'
+	}
+}
+
+fn test_library_git_metadata_walk_fails_closed_at_entry_limit() {
+	root := os.join_path(os.temp_dir(), 'veasel-library-git-limit-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(root, 'one'), '1') or { panic(err) }
+	os.write_file(os.join_path(root, 'two'), '2') or { panic(err) }
+	if _ := library_git_metadata_has_symlink_with_limit(root, 1) {
+		assert false, 'Git metadata walk must fail closed after its entry limit'
+	}
+}
+
+fn test_library_git_runner_disables_hooks_and_returns_command_output() {
+	hooks_path := run_library_git_command(os.temp_dir(), ['config', '--get', 'core.hooksPath']) or {
+		panic(err)
+	}
+	assert hooks_path.trim_space() == '/dev/null'
 }
 
 fn test_bundled_offline_catalog_is_approved_installable_and_permission_scoped() {

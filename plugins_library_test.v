@@ -62,7 +62,7 @@ fn test_library_pending_revoked_and_lying_entries_fail_closed() {
 }
 
 fn test_library_catalog_decodes_and_checks_external_review_provenance() {
-	base, catalog_path, _ := write_library_fixture()
+	base, catalog_path, plugin_dir := write_library_fixture()
 	defer { os.rmdir_all(base) or {} }
 	catalog := load_library_catalog(catalog_path) or { panic(err) }
 	entry := catalog.entry('approved-external') or { panic('approved entry missing') }
@@ -71,6 +71,20 @@ fn test_library_catalog_decodes_and_checks_external_review_provenance() {
 	assert entry.provenance.reviewed_source_sha == entry.source.sha
 	installable, reason := library_entry_installable(entry)
 	assert installable, reason
+	registry := os.join_path(base, 'plugin-links.json')
+	view := library_catalog_view(plugin_dir, registry, catalog_path) or { panic(err) }
+	mut approved_provenance_valid := false
+	mut pending_provenance_valid := true
+	for row in view.entries {
+		if row.id == 'approved-external' {
+			approved_provenance_valid = row.review_provenance_valid
+		}
+		if row.id == 'pending-one' {
+			pending_provenance_valid = row.review_provenance_valid
+		}
+	}
+	assert approved_provenance_valid
+	assert !pending_provenance_valid
 }
 
 fn test_library_unknown_trust_and_unbound_external_approval_fail_closed() {

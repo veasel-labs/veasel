@@ -1093,19 +1093,23 @@ PR #856 (`87103cf7`) adds fail-closed runner/verifier identifier preflight
 through the local registry before claiming work or creating a worktree/session;
 runner readiness/authentication and verifier execution remain open.
 #850 (`be8313b2`) adds the durable `verifying` state and rejects generic
-success transitions without an independent receipt. The open draft PR #861
-contains durable candidate-bound reviewer receipts, the `verified` state, and
-automatic dispatch of bound reviewer runs under the runtime's tool and
-approval policies. The current open branch adds an authenticated
+success transitions without an independent receipt. PR #861 merged as
+`5ac3eb97` with durable candidate-bound reviewer receipts, the `verified`
+state, and automatic dispatch of bound reviewer runs under the runtime's tool
+and approval policies. It also adds an authenticated
 `POST /v1/goals/:id/tasks/:task_id/accept` transition: a local operator must
 explicitly accept the exact pass-receipt candidate; Veasel revalidates the
 immutable commit SHA, base ancestry, and committed path/tree boundary in the
 shared Git object store, then persists the acceptance receipt and task/attempt
 `succeeded` states in one transaction. The mutable worktree's later HEAD does
 not change which commit was accepted. The bearer token identifies only the
-local API capability, not a named person. This slice does not execute
-repository test commands or prove free-text acceptance criteria. Redacted
-Codex app-server effect receipts are integrated in #851
+local API capability, not a named person. The bound reviewer can assess the
+listed criteria through model judgment, but this slice does not execute
+repository test commands or turn free-text criteria into executable checks.
+The current task projection also does not surface persisted verification or
+acceptance evidence. Canonical portable evidence serialization, an evidence
+projection, and executable acceptance checks remain open.
+Redacted Codex app-server effect receipts are integrated in #851
 (`8a7900c7`); those receipts document tool effects and do not prove task
 correctness. Recovery never replays `verifying`; `verified` remains distinct
 from success and does not satisfy dependencies until the explicit acceptance
@@ -1126,11 +1130,12 @@ mechanisms and end-to-end acceptance exist.
 The candidate-observation slice adds a pure, non-accepting check for a ready
 attempt worktree: the requested full candidate SHA must resolve exactly, match
 `HEAD`, descend from the admitted base, leave the worktree clean, and change
-only the task's declared paths. The open draft PR #861 adds trusted built-in
-reviewer bindings, immutable candidate-bound receipts, strict result parsing, and
-durable pass/fail/uncertain settlement. It does not execute free-form task
-tests. The current branch adds an atomic `verified` to `succeeded` operator
-acceptance endpoint after revalidating the immutable candidate commit.
+only the task's declared paths. PR #861 (`5ac3eb97`) adds trusted built-in
+reviewer bindings, immutable candidate-bound receipts, strict result parsing,
+durable pass/fail/uncertain settlement, and atomic operator acceptance after
+revalidating the immutable candidate commit. The reviewer can assess listed
+criteria through model judgment; it does not execute free-form task tests or
+make those criteria executable.
 Candidate observation is not itself a receipt: dispatch must hold the
 verification fence, confirm no live operation can mutate the worktree,
 re-observe immediately before persistence, and bind acceptance to the exact
@@ -1150,12 +1155,12 @@ Schema 42 adds a separate deadline-bound verification lease for attempts in
 `verifying`, with its own fencing token and generation. Its fixed hard deadline
 is capped by the attempt deadline; expired, malformed, or missing verifier
 leases fail closed to `uncertain` on recovery, including a crash before the
-first verifier claim. The open draft PR #861 builds on this infrastructure
-with durable reviewer bindings, receipt persistence, schema 44's `verified` task state, and
-transactional settlement for all receipt verdicts. Schema 45 on the current
-branch adds operator acceptance records and an atomic state transition to
-`succeeded`. Executable repository acceptance checks, `draft_ready`, and
-publication remain open.
+first verifier claim. PR #861 (`5ac3eb97`) builds on this infrastructure with
+durable reviewer bindings, receipt persistence, schema 44's `verified` task
+state, and transactional settlement for all receipt verdicts. Schema 45 adds
+operator acceptance records and an atomic state transition to `succeeded`.
+Portable evidence serialization, executable repository acceptance checks,
+`draft_ready`, and publication remain open.
 
 Schema 43 adds durable verifier-run bindings and immutable, candidate-bound
 review receipts. The server binds the built-in read-only reviewer run to the
@@ -1252,10 +1257,14 @@ mode selection.
   20 seconds and expire at 90 seconds; an expired or ambiguous effect becomes
   `uncertain` and is never replayed without reconciliation. A stale attempt
   cannot publish after losing its generation.
-- [ ] Bind independent verification receipts to repository, base and candidate
-  SHAs, task attempt, verifier/version, environment, modality, result, artifact
-  digest, and source links. Label fixture, simulated, and real runs distinctly;
-  any push invalidates evidence for the previous candidate SHA.
+- [ ] Export and validate internal verifier receipts as the portable evidence
+  contract: versioned repository/base/candidate SHAs, task attempt,
+  verifier/version, environment, modality, result, artifact digest, and source
+  links. The merged implementation binds receipts to repository/base/candidate,
+  attempt, verifier/version, provider/model/run, lease, verdict, evidence text,
+  and changed paths, but does not yet provide the Toolkit evidence schema,
+  digest/source-link fields, or fixture/simulated/real labels. Any push must
+  invalidate evidence for the previous candidate SHA.
 - [ ] Require an owner agent and a separate verifier for every PR. The owner
   cannot approve its own work. Run the verifier swarm against the code-ready
   SHA; a later rebase or narrow fix gets a fresh verifier, while new behavior

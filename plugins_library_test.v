@@ -16,9 +16,10 @@ fn write_library_fixture() (string, string, string) {
 		'---\nname: hello\ndescription: Say hello.\n---\n\nHello body.') or { panic(err) }
 	catalog := '{\n"name":"veasel","version":1,"plugins":[\n' +
 		'{"id":"essentials","version":"0.1.0","license":"MIT","trust":"first-party","review":"approved","installable":true,"opt_in_required":false,"source":{"type":"relative","path":"plugins/essentials","ref":"main","sha":"0000000000000000000000000000000000000000"},"permissions":{"shell":"false","network":"false","mcp":"[]","hooks":"[]","dangerous_permissions":"[]"}},\n' +
-		'{"id":"pending-one","version":"1.0.0","license":"MIT","trust":"community","review":"pending-initial-review","installable":false,"opt_in_required":true,"source":{"type":"github","repo":"example/pending","ref":"v1","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"permissions":{"shell":"false","network":"false","mcp":"[]","hooks":"[]","dangerous_permissions":"[]"}},\n' +
+		'{"id":"pending-one","version":"1.0.0","license":"MIT","trust":"community","review":"pending-initial-review","installable":false,"opt_in_required":true,"source":{"type":"github","repo":"example/pending","ref":"v1","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"permissions":{"shell":"false","network":"false","mcp":"[]","hooks":"[]","dangerous_permissions":"[]"},"provenance":{"submitted_by":"fixture","reviewed_by":null,"review":"pending-initial-review"}},\n' +
 		'{"id":"lying-one","version":"1.0.0","license":"MIT","trust":"community","review":"pending-initial-review","installable":true,"opt_in_required":true,"source":{"type":"github","repo":"example/lying","ref":"v1","sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"permissions":{"shell":"true","network":"false","mcp":"[]","hooks":"[]","dangerous_permissions":"[]"}},\n' +
-		'{"id":"revoked-one","version":"1.0.0","license":"MIT","trust":"verified","review":"revoked","installable":true,"opt_in_required":false,"source":{"type":"github","repo":"example/revoked","ref":"v1","sha":"cccccccccccccccccccccccccccccccccccccccc"},"permissions":{"shell":"false","network":"false","mcp":"[]","hooks":"[]","dangerous_permissions":"[]"}}\n]}'
+		'{"id":"revoked-one","version":"1.0.0","license":"MIT","trust":"verified","review":"revoked","installable":true,"opt_in_required":false,"source":{"type":"github","repo":"example/revoked","ref":"v1","sha":"cccccccccccccccccccccccccccccccccccccccc"},"permissions":{"shell":"false","network":"false","mcp":"[]","hooks":"[]","dangerous_permissions":"[]"}},\n' +
+		'{"id":"approved-external","version":"1.0.0","license":"MIT","trust":"verified","review":"approved","installable":true,"opt_in_required":false,"source":{"type":"github","repo":"example/approved","path":"plugins/approved","ref":"v1","sha":"dddddddddddddddddddddddddddddddddddddddd"},"permissions":{"shell":"false","network":"false","mcp":"[]","hooks":"[]","dangerous_permissions":"[]"},"provenance":{"submitted_by":"maintainer","reviewed_by":"reviewer","review":"approved","reviewed_at":"2026-11-28","reviewed_source_sha":"dddddddddddddddddddddddddddddddddddddddd","review_evidence":"https://github.com/example/registry/pull/20"}}\n]}'
 	catalog_path := os.join_path(base, 'veasel-catalog.json')
 	os.write_file(catalog_path, catalog) or { panic(err) }
 	plugin_dir := os.join_path(base, 'installed')
@@ -43,7 +44,9 @@ fn test_library_pending_revoked_and_lying_entries_fail_closed() {
 	defer { os.rmdir_all(base) or {} }
 	registry := os.join_path(base, 'plugin-links.json')
 	catalog := load_library_catalog(catalog_path) or { panic(err) }
-	assert catalog.plugins.len == 4
+	assert catalog.plugins.len == 5
+	pending := catalog.entry('pending-one') or { panic('pending entry missing') }
+	assert pending.provenance.reviewed_by == ''
 	for id in ['pending-one', 'lying-one', 'revoked-one'] {
 		entry := catalog.entry(id) or { panic('missing catalog entry') }
 		installable, reason := library_entry_installable(entry)
@@ -56,6 +59,131 @@ fn test_library_pending_revoked_and_lying_entries_fail_closed() {
 	}
 	links := list_plugin_links(plugin_dir, registry) or { panic(err) }
 	assert links.links.len == 0
+}
+
+fn test_library_catalog_decodes_and_checks_external_review_provenance() {
+	base, catalog_path, plugin_dir := write_library_fixture()
+	defer { os.rmdir_all(base) or {} }
+	catalog := load_library_catalog(catalog_path) or { panic(err) }
+	entry := catalog.entry('approved-external') or { panic('approved entry missing') }
+	assert entry.provenance.submitted_by == 'maintainer'
+	assert entry.provenance.reviewed_by == 'reviewer'
+	assert entry.provenance.reviewed_source_sha == entry.source.sha
+	installable, reason := library_entry_installable(entry)
+	assert installable, reason
+	registry := os.join_path(base, 'plugin-links.json')
+	view := library_catalog_view(plugin_dir, registry, catalog_path) or { panic(err) }
+	mut approved_provenance_valid := false
+	mut pending_provenance_valid := true
+	for row in view.entries {
+		if row.id == 'approved-external' {
+			approved_provenance_valid = row.review_provenance_valid
+		}
+		if row.id == 'pending-one' {
+			pending_provenance_valid = row.review_provenance_valid
+		}
+	}
+	assert approved_provenance_valid
+	assert !pending_provenance_valid
+}
+
+fn test_library_unknown_trust_and_unbound_external_approval_fail_closed() {
+	sha := 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+	unknown := LibraryEntry{
+		id:          'external-one'
+		trust:       'mystery'
+		review:      'approved'
+		installable: true
+		source:      LibrarySource{
+			typ:  'github'
+			path: 'plugins/external-one'
+			sha:  sha
+		}
+	}
+	unknown_installable, unknown_reason := library_entry_installable(unknown)
+	assert !unknown_installable
+	assert unknown_reason.contains('unknown trust tier')
+
+	missing_provenance := LibraryEntry{
+		id:          'external-one'
+		trust:       'verified'
+		review:      'approved'
+		installable: true
+		source:      LibrarySource{
+			typ:  'github'
+			path: 'plugins/external-one'
+			sha:  sha
+		}
+	}
+	missing_installable, missing_reason := library_entry_installable(missing_provenance)
+	assert !missing_installable
+	assert missing_reason.contains('review provenance')
+
+	valid_provenance := LibraryEntry{
+		id:          'external-one'
+		trust:       'verified'
+		review:      'approved'
+		installable: true
+		source:      LibrarySource{
+			typ:  'github'
+			path: 'plugins/external-one'
+			sha:  sha
+		}
+		provenance:  LibraryProvenance{
+			submitted_by:        'author'
+			review:              'approved'
+			reviewed_by:         'reviewer'
+			reviewed_at:         '2026-11-28'
+			reviewed_source_sha: sha
+			review_evidence:     'https://github.com/veasel-labs/agent-toolkit/pull/20'
+		}
+	}
+	valid_installable, valid_reason := library_entry_installable(valid_provenance)
+	assert valid_installable, valid_reason
+
+	unsubmitted_provenance := LibraryEntry{
+		id:          'external-one'
+		trust:       'verified'
+		review:      'approved'
+		installable: true
+		source:      LibrarySource{
+			typ:  'github'
+			path: 'plugins/external-one'
+			sha:  sha
+		}
+		provenance:  LibraryProvenance{
+			review:              'approved'
+			reviewed_by:         'reviewer'
+			reviewed_at:         '2026-11-28'
+			reviewed_source_sha: sha
+			review_evidence:     'https://github.com/veasel-labs/agent-toolkit/pull/20'
+		}
+	}
+	unsubmitted_installable, unsubmitted_reason := library_entry_installable(unsubmitted_provenance)
+	assert !unsubmitted_installable
+	assert unsubmitted_reason.contains('review provenance')
+
+	mismatched_provenance := LibraryEntry{
+		id:          'external-one'
+		trust:       'verified'
+		review:      'approved'
+		installable: true
+		source:      LibrarySource{
+			typ:  'github'
+			path: 'plugins/external-one'
+			sha:  sha
+		}
+		provenance:  LibraryProvenance{
+			review:              'approved'
+			reviewed_by:         'reviewer'
+			reviewed_at:         '2026-11-28'
+			reviewed_source_sha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+			review_evidence:     'https://github.com/veasel-labs/agent-toolkit/pull/20'
+		}
+	}
+	mismatch_installable, mismatch_reason := library_entry_installable(mismatched_provenance)
+	assert !mismatch_installable
+	assert mismatch_reason.contains('review provenance')
 }
 
 fn test_library_install_review_remove_relative_entry() {

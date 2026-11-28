@@ -3750,6 +3750,9 @@ components:
         opt_in_required: { type: boolean }
         permissions_summary: { type: string }
         installed: { type: boolean }
+        review_provenance_valid:
+          type: boolean
+          description: Whether approved external source review metadata is complete and bound to the pinned commit. Free-form reviewer text and evidence URLs are not exposed.
     LibraryCatalogView:
       type: object
       required: [name, entries]

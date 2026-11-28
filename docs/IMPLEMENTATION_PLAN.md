@@ -1101,6 +1101,22 @@ until a per-loop handoff is reviewed and accepted. HorneroOS and
 `agentic-workstation` retain privileged desktop and OS actions; Veasel must not
 duplicate those capabilities.
 
+### Marketplace catalog consumption
+
+- [x] Merge `veasel-labs/agent-toolkit#20` (`22bbf47`), which preserves the
+  YAML registry's review provenance in `generated/veasel-catalog.json` on
+  marketplace `main`.
+- [x] Merge `veasel-labs/veasel#869` (`64fa8fc9`), which confines local package and Git
+  checkout paths before installation.
+- [ ] Keep Veasel's catalog consumer fail-closed: only known trust tiers are
+  installable, and approved external entries must carry reviewer, date,
+  evidence URL, and a reviewed source SHA matching the catalog pin. The public
+  API reports provenance validity without returning free-form reviewer text.
+- [ ] Define how the official generated catalog is versioned and made
+  available to Veasel clients. `VEASEL_CATALOG_PATH` and the offline bundled
+  catalog remain the current mechanisms; do not duplicate external plugin
+  source files or start a second runtime.
+
 The local task-dispatch foundation is integrated in #845
 (`6f8845b4`): an authenticated task start creates a fenced attempt, an
 exact-base isolated worktree, and a durable session operation using the

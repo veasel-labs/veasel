@@ -1,0 +1,74 @@
+{
+  "date": "2026-11-28",
+  "release": {
+    "tag": "v0.116.0-next.0",
+    "source_commit": "5ac3eb97f12a7915acc66c85b13fd9acbbc5743a",
+    "manifest_sha256": "328b40ba2fed9581f9b9a4b5e64147818b82bee7223abe390765259404729e41",
+    "assets": [
+      {
+        "name": "veasel-Linux.tar.gz",
+        "sha256": "a9a1e786c9f1c8a6b69f943e642f27f0ec2b41565a7cd8fde782df60a6c5a0b5"
+      },
+      {
+        "name": "veasel-tui-runtime-Linux.tar.gz",
+        "sha256": "0c2674f85eff9796d714dc784b98a8cfd4ca80dcf7ec092759d6ae9f3a29b90a"
+      },
+      {
+        "name": "veasel-desktop-0.116.0-next.0-linux-x86_64.AppImage",
+        "sha256": "e5d546c1a4fff1033b3940a57e9e81146167ee7c858cdf7ba49e48c7b9652daf"
+      }
+    ],
+    "platform_status": {
+      "linux": "published",
+      "windows": "published",
+      "macos_cli": "failed",
+      "macos_desktop": "unavailable"
+    }
+  },
+  "installation": {
+    "version": "0.116.0-next.0",
+    "side_by_side": true,
+    "existing_active_install_replaced": false,
+    "cli_version_verified": true,
+    "tui_version_verified": true,
+    "desktop_process_launched": true,
+    "desktop_window_mapped": true,
+    "screenshot_captured": false,
+    "reason_screenshot_not_captured": "The HorneroOS lock screen covered the application."
+  },
+  "runtime": {
+    "backend_bound_to_loopback": true,
+    "tui_connected_to_desktop_backend": true,
+    "same_persisted_sessions_visible": true,
+    "repository_clean_after_attempt": true
+  },
+  "provider": {
+    "provider_id": "codex",
+    "installed_cli_version": "codex-cli 0.172.0",
+    "cli_auth_state": "verified",
+    "cli_auth_method": "chatgpt",
+    "read_only_turn_result": "CODEX_NATIVE_AUTH_OK"
+  },
+  "edit_approval_attempt": {
+    "permission_mode": "ask",
+    "requested_change": "Add one exact line to README.md in the disposable repository.",
+    "result": "No native edit or approved command was reported; no edit was applied.",
+    "approval_presented": false,
+    "file_changed": false
+  },
+  "acceptance": {
+    "status": "partial; daily-driver acceptance not complete",
+    "proven": [
+      "Official Linux release assets match their checksums.",
+      "Side-by-side CLI and TUI launch at the published version.",
+      "Desktop launches its packaged backend on loopback.",
+      "The TUI can connect to the Desktop-owned backend and see its sessions.",
+      "A Codex-selected read-only response succeeds with the installed CLI authentication probe verified."
+    ],
+    "not_proven": [
+      "Interactive file-edit proposal and user approval on v0.116.0-next.0.",
+      "Visible Desktop appearance; the app was behind the lock screen.",
+      "Application-code test execution, restart recovery, installer lifecycle, or cross-platform acceptance."
+    ]
+  }
+}

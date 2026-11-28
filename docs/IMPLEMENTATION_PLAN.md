@@ -114,6 +114,23 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   verify native folder selection, application-code tasks/tests, restart
   recovery, installer lifecycle, cross-platform acceptance, or complete the
   daily-driver goal.
+- On 2026-11-28, the official `v0.116.0-next.0` Linux CLI, TUI runtime, and
+  Desktop AppImage hashes matched the published release checksums. The
+  side-by-side installed CLI and TUI reported that version, the Desktop opened
+  with an isolated profile, and its packaged V backend listened on loopback.
+  Native Codex authentication was verified and a read-only turn returned
+  `CODEX_NATIVE_AUTH_OK`; the TUI also connected to the Desktop-owned backend
+  and saw the same persisted sessions. A follow-up task explicitly requesting
+  a one-line README edit produced a completion response without a tool call or
+  approval, but no edit was applied and the disposable repository remained
+  unchanged. Therefore this release does not
+  add current packaged edit/approval evidence; repeat that path in an unlocked
+  interactive Desktop/TUI session before claiming it. The sanitized receipt is
+  in [`hornero-packaged-acceptance-2026-11-28.json`](desktop/evidence/hornero-packaged-acceptance-2026-11-28.json);
+  detailed local artifacts remain in the isolated validation cache. The release
+  manifest marks macOS unavailable, so website and Homebrew stay on the latest
+  release with complete macOS assets until a new verified cross-platform
+  release exists.
 
 - Current distribution synchronization on 2026-11-27 is verified for the
   immutable `v0.114.1-next.0` release from source `f812b4e4`. Website PRs #251

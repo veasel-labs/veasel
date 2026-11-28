@@ -40,7 +40,7 @@ const session_columns = "id, title, directory, created_at, preferred_provider, p
 // latest_schema_version is the highest migration open_store applies. Tests
 // compare against it instead of a literal so adding a migration never breaks
 // them; keep it equal to the last `if current < N` block below.
-const latest_schema_version = 41
+const latest_schema_version = 45
 
 // add_column_if_missing makes ADD COLUMN migrations re-runnable: a ledger row
 // that was removed (tests, manual repair) must not fail on a duplicate column.
@@ -1309,6 +1309,30 @@ fn open_store_at(path string) !&Store {
 			return error('unable to migrate goal task attempt deadline leases: ${err}')
 		}
 	}
+	if current < 42 {
+		migrate_goal_task_verification_leases(mut db) or {
+			db.close() or {}
+			return error('unable to migrate goal task verification leases: ${err}')
+		}
+	}
+	if current < 43 {
+		migrate_goal_task_verification_receipts(mut db) or {
+			db.close() or {}
+			return error('unable to migrate goal task verification receipts: ${err}')
+		}
+	}
+	if current < 44 {
+		migrate_goal_task_verified_state(mut db) or {
+			db.close() or {}
+			return error('unable to migrate verified goal task state: ${err}')
+		}
+	}
+	if current < 45 {
+		migrate_goal_task_acceptances(mut db) or {
+			db.close() or {}
+			return error('unable to migrate goal task acceptances: ${err}')
+		}
+	}
 	initialize_and_recover_goal_task_state(mut db) or {
 		db.close() or {}
 		return error('unable to recover goal task state: ${err}')
@@ -1371,7 +1395,7 @@ fn open_store_at(path string) !&Store {
 			return error('unable to record interrupted session operation')
 		}
 	}
-	_ = db.exec("UPDATE subagent_runs SET status = 'cancelled', error = 'The server restarted before this queued child run started.', updated_at = CURRENT_TIMESTAMP WHERE status = 'queued'") or {
+	_ = db.exec("UPDATE subagent_runs SET status = 'cancelled', error = 'The server restarted before this queued child run started.', updated_at = CURRENT_TIMESTAMP WHERE status = 'queued' AND id NOT IN (SELECT reviewer_run_id FROM goal_task_verifier_bindings WHERE status = 'bound' AND reviewer_run_id IS NOT NULL)") or {
 		db.rollback() or {}
 		db.close() or {}
 		return error('unable to cancel queued child agent run')

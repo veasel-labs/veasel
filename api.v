@@ -293,6 +293,8 @@ pub struct App {
 	plugin_mcp_slots            &sync.Semaphore
 	shell_command_slots         &sync.Semaphore
 	shell_operation_registry    &ShellCommandRegistry
+	goal_verifier_mutex         &sync.Mutex
+	goal_verifier_dispatches    map[string]bool
 pub:
 	store                 &Store
 	plugin_directory      string
@@ -342,12 +344,15 @@ fn new_app(store &Store, plugin_directory string) &App {
 			mutex:   sync.new_mutex()
 			workers: sync.new_waitgroup()
 		}
+		goal_verifier_mutex:         sync.new_mutex()
+		goal_verifier_dispatches:    map[string]bool{}
 	}
 	// Queued Prefer: respond-async turns survive store reopen; resume workers now.
 	mut mutable_store := store
 	mutable_store.cleanup_unstarted_subagent_workspaces()
 	mutable_store.cleanup_delivered_subagent_workspaces()
 	app.resume_durable_queued_operations()
+	app.resume_goal_task_verification_dispatches()
 	return app
 }
 
@@ -2558,6 +2563,7 @@ fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id strin
 	store.reconcile_goal_task_operation(operation_id, .verifying) or {
 		eprintln('veasel: unable to reconcile successful goal task operation (${err.msg()})')
 	}
+	app.resume_goal_task_verification_dispatches()
 	// Finishing a parent turn cancels any queued children; only clean workspaces
 	// that have never been claimed, preserving any child that may have executed.
 	store.cleanup_unstarted_subagent_workspaces()

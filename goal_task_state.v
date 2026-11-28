@@ -12,6 +12,7 @@ enum GoalTaskStatus {
 	pending
 	running
 	verifying
+	verified
 	succeeded
 	failed
 	uncertain
@@ -43,11 +44,43 @@ fn goal_task_attempt_status_from_db(value string) !GoalTaskAttemptStatus {
 	}
 }
 
+// SQLite cannot widen a CHECK constraint in place. Rebuild only the task state
+// table with foreign-key enforcement suspended; child rows remain untouched.
+fn migrate_goal_task_verified_state(mut db sqlite.DB) ! {
+	db.exec('PRAGMA foreign_keys = OFF')!
+	db.exec('PRAGMA legacy_alter_table = ON')!
+	db.begin()!
+	defer {
+		db.rollback() or {}
+		db.exec('PRAGMA legacy_alter_table = OFF') or {}
+		db.exec('PRAGMA foreign_keys = ON') or {}
+	}
+	db.exec('ALTER TABLE goal_task_states RENAME TO goal_task_states_v43')!
+	db.exec("CREATE TABLE goal_task_states (
+		goal_id TEXT NOT NULL,
+		task_id TEXT NOT NULL,
+		status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'verifying', 'verified', 'succeeded', 'failed', 'uncertain')),
+		attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+		owner_pid INTEGER NOT NULL DEFAULT 0,
+		owner_start_id TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (goal_id, task_id),
+		FOREIGN KEY (goal_id) REFERENCES goal_admissions(id) ON DELETE CASCADE
+	)")!
+	db.exec('INSERT INTO goal_task_states SELECT * FROM goal_task_states_v43')!
+	db.exec('DROP TABLE goal_task_states_v43')!
+	db.exec('INSERT INTO schema_migrations (version) VALUES (44)')!
+	db.commit()!
+	db.exec('PRAGMA legacy_alter_table = OFF')!
+	db.exec('PRAGMA foreign_keys = ON')!
+}
+
 fn goal_task_status_from_db(value string) !GoalTaskStatus {
 	return match value {
 		'pending' { .pending }
 		'running' { .running }
 		'verifying' { .verifying }
+		'verified' { .verified }
 		'succeeded' { .succeeded }
 		'failed' { .failed }
 		'uncertain' { .uncertain }
@@ -253,6 +286,53 @@ fn migrate_goal_task_verifying_state(mut db sqlite.DB) ! {
 // process-start identity. Dead, reused, legacy, or unverifiable ownership is
 // uncertain and never replayed. Opening another Store preserves verified live
 // claims in the current process.
+fn goal_task_verification_attempt_is_dispatchable_after_restart(row sqlite.Row) bool {
+	if row.val(9) != 'completed' || row.val(10) !in ['completed', 'completed_with_denials'] || row.val(11) != 'ready'
+		|| row.val(3).len == 0 || row.val(4).len == 0 || row.val(18).int() != 0 {
+		return false
+	}
+	if row.val(15).len > 0 {
+		if row.val(15) == 'bound' && row.val(16).len > 0 && row.val(19) == 'queued'
+			&& row.val(6).int() > 0 {
+			// A queued reviewer has not started provider execution and can safely
+			// be re-fenced after downtime.
+		} else if row.val(15) != 'reserved' || row.val(16).len > 0 {
+			return false
+		}
+	}
+	if row.val(6).int() > 0 {
+		hard_deadline := time.parse_rfc3339(row.val(7)) or { return false }
+		lease_expiry := time.parse_rfc3339(row.val(8)) or { return false }
+		now := time.now()
+		if now >= hard_deadline || now < lease_expiry {
+			return false
+		}
+	}
+	goal := json2.decode[GoalAdmission](row.val(17)) or { return false }
+	if goal.id != row.val(0) {
+		return false
+	}
+	validate_goal_admission(goal) or { return false }
+	task := goal_task_by_id(goal, row.val(1)) or { return false }
+	mut admitted_root := ''
+	for repository in goal.authorized_repositories {
+		if task.repository.to_lower() == '${repository.owner}/${repository.name}'.to_lower() {
+			admitted_root = repository.path
+			break
+		}
+	}
+	root := row.val(12)
+	workspace_path := row.val(13)
+	if admitted_root.len == 0 || root != admitted_root || row.val(14) != task.base_sha
+		|| !os.is_abs_path(root) || !os.is_abs_path(workspace_path) || os.is_link(root)
+		|| os.is_link(workspace_path) || !os.is_dir(root) || !os.is_dir(workspace_path)
+		|| os.real_path(root) != root || os.real_path(workspace_path) != workspace_path
+		|| goal_task_path_is_within(root, workspace_path) {
+		return false
+	}
+	return true
+}
+
 fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 	admissions := db.exec('SELECT manifest FROM goal_admissions')!
 	db.begin()!
@@ -282,6 +362,65 @@ fn initialize_and_recover_goal_task_state(mut db sqlite.DB) ! {
 					status:       'uncertain'
 					outcome:      'uncertain'
 					error:        'The task attempt lease expired before a result was recorded.'
+				}),
+			])!
+		}
+	}
+	// A verified task state is the durable result of receipt validation. Its
+	// worker attempt intentionally remains `verifying` until Goal acceptance.
+	// Also preserve a completed worker result that has not yet been dispatched:
+	// a missing lease is expected before the first reviewer run, and an expired
+	// lease can be reclaimed only while its hard deadline is still live and no
+	// reviewer run was bound. Everything else with a stale lease fails closed.
+	verification_expired := db.exec("SELECT a.goal_id, a.task_id, a.attempt, a.session_id, a.session_operation_id, COALESCE(v.fencing_token, ''), COALESCE(v.generation, 0), COALESCE(v.verification_deadline, ''), COALESCE(v.lease_expires_at, ''), COALESCE(o.status, ''), COALESCE(o.outcome, ''), COALESCE(w.status, ''), COALESCE(w.repository_root, ''), COALESCE(w.worktree_path, ''), COALESCE(w.base_sha, ''), COALESCE(b.status, ''), COALESCE(b.reviewer_run_id, ''), COALESCE(g.manifest, ''), EXISTS (SELECT 1 FROM goal_task_verification_receipts r WHERE r.goal_id = a.goal_id AND r.task_id = a.task_id AND r.attempt = a.attempt), COALESCE(sr.status, '') FROM goal_task_attempts a JOIN goal_task_states s ON s.goal_id = a.goal_id AND s.task_id = a.task_id LEFT JOIN goal_task_verification_leases v ON v.goal_id = a.goal_id AND v.task_id = a.task_id AND v.attempt = a.attempt LEFT JOIN session_operations o ON o.session_id = a.session_id AND o.id = a.session_operation_id LEFT JOIN goal_task_attempt_workspaces w ON w.goal_id = a.goal_id AND w.task_id = a.task_id AND w.attempt = a.attempt LEFT JOIN goal_task_verifier_bindings b ON b.goal_id = a.goal_id AND b.task_id = a.task_id AND b.attempt = a.attempt LEFT JOIN goal_admissions g ON g.id = a.goal_id LEFT JOIN subagent_runs sr ON sr.id = b.reviewer_run_id WHERE a.status = 'verifying' AND s.status != 'verified' AND (v.generation IS NULL OR julianday(v.verification_deadline) IS NULL OR julianday(v.lease_expires_at) IS NULL OR julianday(v.verification_deadline) <= julianday('now') OR julianday(v.lease_expires_at) <= julianday('now'))")!
+	for row in verification_expired {
+		if goal_task_verification_attempt_is_dispatchable_after_restart(row) {
+			continue
+		}
+		if row.val(5) != '' && row.val(6).int() > 0 {
+			db.exec_param_many('DELETE FROM goal_task_verification_leases WHERE goal_id = ? AND task_id = ? AND attempt = ? AND fencing_token = ? AND generation = ?', [
+				row.val(0),
+				row.val(1),
+				row.val(2),
+				row.val(5),
+				row.val(6),
+			])!
+			if db.get_affected_rows_count() != 1 {
+				return error('unable to recover expired verification lease fence')
+			}
+		}
+		db.exec_param_many("UPDATE goal_task_attempts SET status = 'uncertain', ended_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status = 'verifying'", [
+			row.val(0),
+			row.val(1),
+			row.val(2),
+		])!
+		if db.get_affected_rows_count() != 1 {
+			return error('unable to recover expired verification attempt')
+		}
+		db.exec_param_many("UPDATE goal_task_states SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND status = 'verifying'", [
+			row.val(0),
+			row.val(1),
+		])!
+		if db.get_affected_rows_count() != 1 {
+			return error('unable to recover expired verification state')
+		}
+		db.exec_param_many("UPDATE goal_task_attempt_workspaces SET status = 'uncertain', updated_at = CURRENT_TIMESTAMP WHERE goal_id = ? AND task_id = ? AND attempt = ? AND status IN ('preparing', 'ready')", [
+			row.val(0),
+			row.val(1),
+			row.val(2),
+		])!
+		if row.val(3) != '' && row.val(4) != '' {
+			db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+				'goal.task_attempt_completed',
+				row.val(3),
+				json2.encode[GoalTaskEventData](GoalTaskEventData{
+					goal_id:      row.val(0)
+					task_id:      row.val(1)
+					attempt:      row.val(2).int()
+					operation_id: row.val(4)
+					status:       'uncertain'
+					outcome:      'uncertain'
+					error:        'The verification lease expired before a receipt was recorded.'
 				}),
 			])!
 		}

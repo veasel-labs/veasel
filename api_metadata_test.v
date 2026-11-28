@@ -15,6 +15,29 @@ fn test_openapi_documents_subagent_and_context_handoff_routes() {
 	}
 }
 
+fn test_openapi_goal_projection_matches_durable_verification_states() {
+	openapi := os.read_file('docs/openapi.yaml') or { panic(err) }
+	assert openapi.contains('    GoalAdmission:')
+	assert openapi.contains('    GoalTasksProjection:')
+	assert openapi.contains('    GoalTaskProjectionItem:')
+	assert openapi.contains('    GoalPreflightReport:')
+	goal_admission := openapi.all_after('    GoalAdmission:').all_before('\n    GoalTasksProjection:')
+	assert goal_admission.contains('required: [id, title, repository, base_sha, paths, depends_on, recipe, runner, verifier]')
+	assert goal_admission.contains('verifier_provider: { type: string, minLength: 1, maxLength: 128 }')
+	assert goal_admission.contains('verifier_model: { type: string, minLength: 1, maxLength: 256 }')
+	assert goal_admission.contains('required: [verifier_provider]')
+	assert goal_admission.contains('required: [verifier_model]')
+	goal_projection := openapi.all_after('    GoalTaskProjectionItem:').all_before('\n    GoalPreflightReport:')
+	assert goal_projection.contains('status: { enum: [pending, running, verifying, verified, succeeded, failed, uncertain] }')
+	assert goal_projection.contains('status: { enum: [running, verifying, succeeded, failed, uncertain] }')
+	assert goal_projection.contains('required: [attempt, status, started_at, ended_at, effective_deadline, lease_expires_at, lease_generation]')
+	assert goal_projection.contains('verifier_provider: { type: string }')
+	assert goal_projection.contains('verifier_model: { type: string }')
+	assert goal_projection.contains('effective_deadline: { type: string }')
+	assert goal_projection.contains('lease_expires_at: { type: string }')
+	assert goal_projection.contains('lease_generation: { type: integer, minimum: 0 }')
+}
+
 fn test_model_catalog_error_message_explains_provider_auth_rejection() {
 	message := model_catalog_error_message('openai', 'model catalog endpoint returned HTTP 401')
 	assert message.contains('rejected the API key')

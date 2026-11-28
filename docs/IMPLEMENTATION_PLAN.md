@@ -115,6 +115,18 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   recovery, installer lifecycle, cross-platform acceptance, or complete the
   daily-driver goal.
 
+- Current distribution synchronization on 2026-11-27 is verified for the
+  immutable `v0.114.1-next.0` release from source `f812b4e4`. Website PRs #251
+  and #250 merged as `4d5621ec` and `b9cd79df`; production CI passed and the
+  live downloads page serves the new version plus explicit macOS
+  non-notarization/Gatekeeper and Windows SmartScreen warnings. Homebrew PR #91
+  merged as `f68b5b82` with both casks at `0.114.1-next.0`. AUR PR #96 merged,
+  then publisher workflow `46076130681` verified checksums, install-tested the
+  exact approved packages, published them, and confirmed RPC reports
+  `0.114.1.next.0-1` for CLI and Desktop. Desktop installers remain unsigned
+  and macOS is not notarized. This distribution evidence does not replace
+  installing and validating the current package on HorneroOS.
+
 ### Optional cozy World (#693)
 
 - The packaged Linux preview `v0.105.0-next.0` was installed side-by-side on
@@ -122,14 +134,14 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   AppImage FUSE mounting. Its top-down pixel-art World rendered nine real
   destinations; no session or productivity activity was fabricated. A
   separate isolated profile also opened the World with real temporary sessions.
-  Screenshots are retained under `/home/ulisesjcf/.cache/veasel-validation/`.
+  Screenshots are retained under `~/.cache/veasel-validation/`.
 - On 2026-11-26, the published `v0.106.1-next.0` AppImage was downloaded and
   SHA-256 verified against its release manifest before extraction. Its packaged
   Desktop launched with a throwaway HOME, data directory and workspace. The
   Cozy Valley at 1440×900 and Cyberpunk City at 1024×640 were rendered and
   visually reviewed; the map composition and pixel scaling are coherent at
   both sizes. Screenshots are retained in
-  `/home/ulisesjcf/.cache/veasel-validation/v0.106.1-next.0/`. This isolated
+  `~/.cache/veasel-validation/v0.106.1-next.0/`. This isolated
   profile had no authenticated providers or active sessions, and its runtime
   detail queries were unavailable. It proves packaged launch and visual
   framing only, not the daily-driver journey or live-agent display.
@@ -148,14 +160,14 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   The 1920×1080 World screenshot shows the Cozy Valley top-down pixel-art map
   with 15 real destinations and the honest banner that unavailable live
   runtime details are omitted; it is retained at
-  `/home/ulisesjcf/.cache/veasel-validation/v0.106.3-next.0/packaged-world-fullscreen.png`.
+  `~/.cache/veasel-validation/v0.106.3-next.0/packaged-world-fullscreen.png`.
   This is visual and provider-response evidence, not clean live-session
   acceptance or a publishable unqualified Desktop screenshot.
 - On 2026-11-27, packaged TUI `v0.111.0-next.0` reached a real Codex file-edit
   approval in `ask` mode, but the approval payload contained no patch. The
   request was explicitly denied; the fixture workspace remained unchanged.
   The sanitized receipt is retained outside the repository at
-  `/home/ulisesjcf/.cache/veasel-validation/acceptance-v0.111.0-next.0/tui-approval-denial.json`.
+  `~/.cache/veasel-validation/acceptance-v0.111.0-next.0/tui-approval-denial.json`.
   A second run on 2026-11-27 used the official immutable `v0.114.0-next.0`
   standalone TUI and CLI/runtime release assets in a fresh temporary HOME,
   data directory, loopback port, and disposable Git repository. SHA-256 checks
@@ -173,9 +185,29 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   Merged PR #860 adds bounded correlation of Codex v2
   `item/fileChange/patchUpdated` snapshots to approval by exact thread, turn,
   and item IDs, and denies malformed, stale, missing, or oversized snapshots.
-  That change is in main but is not yet included in the tested `v0.114.0-next.0`
+  That change is in main but is not yet included in the published `v0.114.1-next.0`
   package; a repeat packaged approval and rejection review against a release
   containing it remains required.
+- On 2026-11-27, the locally built AUR `0.114.1.next.0-1` CLI and Desktop
+  packages passed metadata/dependency inspection and their package-file hashes
+  were recorded in
+  `~/.cache/veasel-validation/acceptance-v0.114.1-next.0/aur-packages-local-probe.json`.
+  System installation on HorneroOS is still blocked: the Codex execution
+  environment sets `NoNewPrivs=1`, and `sudo pacman -U` is rejected before
+  package installation. The Desktop package was extracted to a disposable
+  cache directory and launched under a bounded user systemd scope with a fresh
+  HOME, data directory, and loopback port. Its authenticated backend health
+  reported `0.114.1-next.0`; `/v1/providers/cli` found Codex `0.172.0` signed in
+  through ChatGPT and detected Claude Code, OpenCode, and Muse. The native
+  Electron window was not available to this session's UI capture surface, so
+  renderer inspection through a browser is not counted as Desktop UI
+  acceptance. The extracted `0.114.1-next.0` TUI then selected that native
+  Codex runner in `ask` mode and completed a real read-only turn against this
+  repository; its operation completed, the recorded workspace-edit count was
+  zero, no approvals remained pending, and the repository status matched its
+  pre-turn state. This advances TUI/provider acceptance, but does not replace
+  system installation or the full Desktop edit/review/approval/recovery
+  journey.
 - The World remains optional and is not evidence of daily-driver completion.
   Focus/TUI session parity, provider authentication recovery, cancellation,
   packaged-session recovery, and cross-platform acceptance remain open under
@@ -193,7 +225,14 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ### Durable goals and worker coordination
 
-- [ ] Admit and project the portable Goal v2 permission contract while preserving v1 behavior. V2 dispatch remains fail-closed before claims, worktrees, or sessions until runtime policy intersection and enforcement are implemented. Compatibility is pinned in [`compatibility/agent-toolkit-goals-v2.md`](compatibility/agent-toolkit-goals-v2.md).
+- [x] Admit and project the portable Goal v2 permission contract while
+  preserving v1 behavior. Veasel validates each task's requested effects are
+  within the Goal ceiling and persists/projects the declarations; source
+  compatibility is recorded in
+  [`compatibility/agent-toolkit-goals-v2.md`](compatibility/agent-toolkit-goals-v2.md).
+- [ ] Intersect Goal v2 declarations with runtime policy and enforce the
+  resulting effects during execution. V2 dispatch remains fail-closed before
+  claims, worktrees, or sessions until this enforcement exists.
 - [x] Add Veasel-specific, authenticated admission, listing and manifest replay for portable goals.
   Admission records preserve the declared scope and survive restart.
 - [x] Implement authenticated read-only repository identity preflight for
@@ -1053,38 +1092,50 @@ attempt to explicit `verifying`; it never implies `succeeded` or `draft_ready`.
 PR #856 (`87103cf7`) adds fail-closed runner/verifier identifier preflight
 through the local registry before claiming work or creating a worktree/session;
 runner readiness/authentication and verifier execution remain open.
-The independent receipt lifecycle is integrated in #850 (`be8313b2`), and
-redacted Codex app-server effect receipts are integrated in #851
-(`8a7900c7`). These Codex receipts document tool effects; they are not
-independent task-verification receipts. Recovery never replays `verifying`,
-and verification does not satisfy dependencies. An independent receipt bound
-to the exact repository, base, and candidate SHAs remains required before
-promotion to `succeeded` or `draft_ready`; client-provided receipt promotion
-remains deferred until verifier trust and candidate observation are enforced
-at the persistence boundary. The #849 candidate observer is a read-only,
-non-accepting diagnostic and does not run tests, persist evidence, or promote a
-task. Recovery, live queued cancellation/rejection, and concurrent attempt
-paths are covered fail-closed.
+#850 (`be8313b2`) adds the durable `verifying` state and rejects generic
+success transitions without an independent receipt. The open draft PR #861
+contains durable candidate-bound reviewer receipts, the `verified` state, and
+automatic dispatch of bound reviewer runs under the runtime's tool and
+approval policies. The current open branch adds an authenticated
+`POST /v1/goals/:id/tasks/:task_id/accept` transition: a local operator must
+explicitly accept the exact pass-receipt candidate; Veasel revalidates the
+immutable commit SHA, base ancestry, and committed path/tree boundary in the
+shared Git object store, then persists the acceptance receipt and task/attempt
+`succeeded` states in one transaction. The mutable worktree's later HEAD does
+not change which commit was accepted. The bearer token identifies only the
+local API capability, not a named person. This slice does not execute
+repository test commands or prove free-text acceptance criteria. Redacted
+Codex app-server effect receipts are integrated in #851
+(`8a7900c7`); those receipts document tool effects and do not prove task
+correctness. Recovery never replays `verifying`; `verified` remains distinct
+from success and does not satisfy dependencies until the explicit acceptance
+transition. Promotion to `succeeded` still requires the exact candidate-bound
+pass receipt, repository-integrity rechecks, and local operator acceptance;
+`draft_ready` and GitHub publication remain separate. The #849 candidate
+observer is a read-only check and does not run tests. Recovery, live queued
+cancellation/rejection, and concurrent attempt paths are covered fail-closed.
 
 These slices do not yet provide the operational Veasel goal CLI commands
 listed below, automatic retries, an objective scheduler, GitHub publication,
-or fleet concurrency. PR #858 merged deadline-bound lease persistence and
-generation fencing; this change adds heartbeat and expiry handling for the
-on-host durable session worker. Scheduler-wide path coordination and remote
-worker leases remain open. Keep those items below open until the missing
+or fleet concurrency. PR #858 merged deadline-bound task lease persistence
+and generation fencing; PR #859 merged lease heartbeat and expiry handling
+for the on-host durable session worker. Scheduler-wide path coordination and
+remote worker leases remain open. Keep those items below open until the missing
 mechanisms and end-to-end acceptance exist.
 
 The candidate-observation slice adds a pure, non-accepting check for a ready
 attempt worktree: the requested full candidate SHA must resolve exactly, match
 `HEAD`, descend from the admitted base, leave the worktree clean, and change
-only the task's declared paths. It never runs tests, persists evidence, or
-promotes a task. A later receipt slice still needs trusted verifier identities,
-idempotent evidence storage, and an atomic `verifying` to `succeeded`
-transition. The observation is a diagnostic snapshot, not a receipt: its
-caller must hold a fenced task/worker lease, confirm that no live operation can
-still mutate the worktree, re-observe immediately before persistence, and
-persist/promote only in one fenced transaction. The observer itself provides no
-cross-process lock against a later Git mutation.
+only the task's declared paths. The open draft PR #861 adds trusted built-in
+reviewer bindings, immutable candidate-bound receipts, strict result parsing, and
+durable pass/fail/uncertain settlement. It does not execute free-form task
+tests. The current branch adds an atomic `verified` to `succeeded` operator
+acceptance endpoint after revalidating the immutable candidate commit.
+Candidate observation is not itself a receipt: dispatch must hold the
+verification fence, confirm no live operation can mutate the worktree,
+re-observe immediately before persistence, and bind acceptance to the exact
+candidate SHA. The observer itself provides no cross-process lock against a
+later Git mutation.
 
 The worker-side lease slice renews only an attempt linked to a canonical
 durable session operation. It validates the exact fencing token and generation
@@ -1095,18 +1146,75 @@ not replayed. Ordinary session operations do not start heartbeats. This does
 not add an objective scheduler, a multi-worker fleet, remote runner
 authentication, or independent verification receipts.
 
+Schema 42 adds a separate deadline-bound verification lease for attempts in
+`verifying`, with its own fencing token and generation. Its fixed hard deadline
+is capped by the attempt deadline; expired, malformed, or missing verifier
+leases fail closed to `uncertain` on recovery, including a crash before the
+first verifier claim. The open draft PR #861 builds on this infrastructure
+with durable reviewer bindings, receipt persistence, schema 44's `verified` task state, and
+transactional settlement for all receipt verdicts. Schema 45 on the current
+branch adds operator acceptance records and an atomic state transition to
+`succeeded`. Executable repository acceptance checks, `draft_ready`, and
+publication remain open.
+
+Schema 43 adds durable verifier-run bindings and immutable, candidate-bound
+review receipts. The server binds the built-in read-only reviewer run to the
+Goal attempt, verification fence, parent session/operation, admitted repository,
+base SHA, candidate SHA, declared paths, and acceptance criteria; receipt
+recording rechecks the active lease and candidate and parses a bounded strict
+result envelope. A valid `pass` receipt moves the task atomically from
+`verifying` to durable `verified`; the worker attempt remains `verifying` until
+the later Goal acceptance transition. Schema 44 adds that task state and keeps
+it through restart even after the verifier lease expires. The server now
+dispatches bound reviewer runs and checks supported provider/model routes
+before launch, but does not run executable acceptance checks. The route
+binding checks that `independent-review` uses a
+distinct configured provider or model string, not distinct underlying model
+lineage. Fail receipts now fail the attempt and return the task to pending only
+when Goal-wide attempt budget remains; otherwise they fail the task. Uncertain
+receipts settle the attempt, task, and workspace as uncertain. Every terminal
+receipt consumes its binding and removes its lease atomically, and replay reads
+the immutable receipt without requiring that lease. Lease renewal advances the
+binding fence with the lease; an expired bound reviewer run fails closed and
+cannot be reclaimed under a new fence. Binding a run also requires the exact
+fence captured by its dispatching worker, so a delayed worker cannot rebind
+after a reserved binding was reclaimed. Verified task state and consumed
+bindings both block lease reacquisition. The server now scans eligible tasks
+after startup and after worker completion, prepares and durably binds a queued
+reviewer before launch, renews its lease while it runs, and records its receipt
+on completion. Native Veasel reviewers are restricted to read-only tools;
+installed CLI reviewers are forced into `ask` mode and may pause for user
+approval before they can inspect files. Dispatch goroutines participate in
+shutdown draining. Startup preserves a
+completed worker candidate for retry, accepts `completed_with_denials` for
+independent review, resumes bound queued reviewers, and re-fences one only
+after confirming its lease expired and it never started. Dispatch defers rather
+than failing a Goal task when the per-session active subagent limit is reached.
+An end-to-end test now completes a real parent session provider turn, observes
+automatic reviewer dispatch and receipt-backed `verified`, and runs concurrent
+recovery scans while the reviewer is active to prove they do not launch a
+duplicate. The fixture uses only a local HTTP provider and isolated Git
+checkouts. Still open:
+executable acceptance policy/checks and the review/acceptance evidence
+projection in TUI/Desktop. Provider/model lineage independence and actual CLI
+sandbox behavior also need stronger evidence than route identity and local
+mode selection.
+
 - [x] Publish a versioned Toolkit Goal v1/task/evidence contract with an offline
   validator and planner for authorized repositories, acceptance criteria,
   deadline, budget, delivery mode, DAG, base SHA, paths, runner, verifier, and
-  evidence. The `ulises-jeremias/agent-toolkit` main branch provides the Goal
-  v1 schema, offline validation/planning, five recipes, and evidence schema;
-  Veasel's compatibility check landed in #846 (`d817f06e`). The checked-in
-  fixture is synthetic contract data, not execution evidence. This contract
-  does not dispatch work. Preserve existing Swarm commands and states.
-- [ ] Add explicit permission declarations and policy-ceiling fields to the
-  portable Goal contract; current Goal v1 does not encode permissions. Define
-  the portable permission vocabulary and compatibility behavior before
-  requiring it in Veasel admission or dispatch.
+  evidence. Toolkit main inspected at `f0290c17090ec4ee474bd9871aa4a2350c321ae1`
+  provides Goal v1, Goal v2 permission ceilings and task permissions, offline
+  validation/planning, five recipes, and the evidence schema. Veasel's
+  compatibility check landed in #846 (`d817f06e`) and continues to admit Goal
+  v1; Goal v2 runtime permission enforcement remains a separate open item above.
+  The checked-in fixture is synthetic contract data, not execution evidence.
+  This contract does not dispatch work. Preserve existing Swarm commands and
+  states.
+- [x] Add explicit permission declarations and policy-ceiling fields to the
+  portable Goal contract. Toolkit main defines Goal v2's permission vocabulary,
+  required task permissions, and policy ceiling while retaining Goal v1.
+  Veasel admission and runtime intersection for v2 remain tracked separately.
 - [ ] Add an optional pstack-inspired pack with provenance and compatibility
   metadata; do not copy external playbook sources into the marketplace.
 - [ ] Keep the official `veasel-labs/agent-toolkit` marketplace reference-based:

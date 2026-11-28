@@ -26,6 +26,18 @@ struct SubagentToolResult {
 	wait_interrupted      bool @[omitempty]
 }
 
+// PreparedSubagentTask is a durable, workspace-ready reservation whose worker
+// has not started yet. Goal verification uses this boundary to persist the
+// reviewer run and bind it to the exact verification fence before launch.
+struct PreparedSubagentTask {
+	run               SubagentRun
+	task              string
+	profile           SubagentProfile
+	model_config      ModelConfig
+	parent_policy     ExecutionPolicyTurn
+	child_tool_policy AgentToolPolicy
+}
+
 // truncate_utf8_bytes caps output by storage bytes without splitting a rune.
 fn truncate_utf8_bytes(value string, max_bytes int) string {
 	if max_bytes <= 0 {
@@ -236,6 +248,18 @@ fn (app &App) delegate_subagent_task(parent_session_id string, parent_operation_
 fn (app &App) delegate_subagent_task_with_policy(parent_session_id string, parent_operation_id string,
 	request_id string, agent_id string, task string, target_provider string, target_model string,
 	parent_policy ExecutionPolicyTurn, parent_tool_policy AgentToolPolicy) !SubagentRun {
+	prepared := app.prepare_subagent_task_with_policy(parent_session_id, parent_operation_id,
+		request_id, agent_id, task, target_provider, target_model, parent_policy, parent_tool_policy)!
+	return app.launch_prepared_subagent_task(prepared)
+}
+
+// prepare_subagent_task_with_policy performs all validation, route resolution,
+// and idempotent durable reservation, but never starts the worker. The returned
+// run is ready for a trusted caller to bind additional durable invariants before
+// explicitly calling launch_prepared_subagent_task.
+fn (app &App) prepare_subagent_task_with_policy(parent_session_id string, parent_operation_id string,
+	request_id string, agent_id string, task string, target_provider string, target_model string,
+	parent_policy ExecutionPolicyTurn, parent_tool_policy AgentToolPolicy) !PreparedSubagentTask {
 	if task.trim_space().len == 0 || task.len > 8192 {
 		return error('child task must contain 1 to 8192 bytes')
 	}
@@ -262,6 +286,11 @@ fn (app &App) delegate_subagent_task_with_policy(parent_session_id string, paren
 		} else {
 			app.model_config_for_session(parent_session_id)!
 		}
+	}
+	// Reviewer CLI runs must never inherit a user's permissive CLI mode. The
+	// ask mode blocks unapproved actions, including on durable retries.
+	if profile.id == 'reviewer' && provider_cli_by_id(config.provider) != none {
+		config.permission_mode = 'ask'
 	}
 	// Installed-CLI providers are supported model adapters too: they are
 	// not in the HTTP provider catalog, so model_provider_route cannot
@@ -290,11 +319,29 @@ fn (app &App) delegate_subagent_task_with_policy(parent_session_id string, paren
 	// including when an omitted target inherited a now-changed parent model.
 	if run.provider != config.provider || run.model != config.model {
 		config = app.provider_model_config_for_target(run.provider, run.model)!
+		if profile.id == 'reviewer' && provider_cli_by_id(config.provider) != none {
+			config.permission_mode = 'ask'
+		}
 	}
+	return PreparedSubagentTask{
+		run:               run
+		task:              task
+		profile:           profile
+		model_config:      config
+		parent_policy:     parent_policy
+		child_tool_policy: intersect_subagent_tool_policy(profile.tool_policy(), parent_tool_policy)
+	}
+}
+
+// launch_prepared_subagent_task starts a previously reserved run and retains
+// the established idempotent error and terminal-outcome handling used by
+// normal subagent delegation.
+fn (app &App) launch_prepared_subagent_task(prepared PreparedSubagentTask) !SubagentRun {
+	mut store := app.store
+	mut run := store.get_subagent_run(prepared.run.id)!
 	if run.status == 'queued' {
-		child_tool_policy := intersect_subagent_tool_policy(profile.tool_policy(), parent_tool_policy)
-		app.launch_subagent_worker(run, task, profile, config, parent_policy,
-			child_tool_policy) or {
+		app.launch_subagent_worker(run, prepared.task, prepared.profile, prepared.model_config,
+			prepared.parent_policy, prepared.child_tool_policy) or {
 			current := store.get_subagent_run(run.id)!
 			if current.status == 'queued' {
 				failed := store.fail_queued_subagent_run(run.id, truncate_utf8_bytes(err.msg(),
@@ -420,6 +467,7 @@ fn (app &App) launch_subagent_worker(run SubagentRun, task string, profile Subag
 				eprintln('veasel: unable to deliver child outcome ${finished.id}: ${err.msg()}')
 				return
 			}
+			app.reconcile_goal_task_verifier_run(claimed.id)
 			app.cleanup_delivered_subagent_workspace(claimed.id)
 			return
 		}
@@ -432,6 +480,7 @@ fn (app &App) launch_subagent_worker(run SubagentRun, task string, profile Subag
 			eprintln('veasel: unable to deliver child outcome ${finished.id}: ${err.msg()}')
 			return
 		}
+		app.reconcile_goal_task_verifier_run(claimed.id)
 		app.cleanup_delivered_subagent_workspace(claimed.id)
 	}(app, started.id, operation_id, mut turn_ctx, cancel, request_deadline, child_session, task,
 		profile, model_config, parent_policy, child_tool_policy)

@@ -95,6 +95,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/goals/{id}/tasks/{task_id}/accept:
+    post:
+      operationId: acceptVerifiedGoalTask
+      description: >-
+        Records an explicit local operator acceptance for the exact candidate
+        SHA in a pass verification receipt. The bearer token identifies only
+        the local API capability, not a named person. Veasel revalidates the
+        immutable commit object, base ancestry, declared paths, and safe tree
+        entries, then stores the acceptance record and transitions both task
+        and attempt to succeeded in one transaction. This endpoint does not
+        execute repository tests or prove free-text acceptance criteria; those
+        remain part of the operator's review. It accepts a committed candidate
+        SHA even if the mutable worktree HEAD has moved.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: task_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        description: Exact candidate-bound explicit acceptance decision; maximum 4 KiB.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoalTaskAcceptanceRequest'
+      responses:
+        '200':
+          description: Acceptance recorded, or an identical request replayed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalTaskAcceptanceReceipt'
+        '400':
+          description: Invalid or oversized acceptance request.
+        '401':
+          description: Authentication is required.
+        '404':
+          description: No goal or task exists for the request.
+        '409':
+          description: No acceptance-ready attempt exists, or the candidate does not match its pass receipt.
+        '500':
+          description: Stored goal or acceptance state could not be read or committed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/goals/{id}/preflight:
     get:
       operationId: preflightAdmittedGoal
@@ -2606,7 +2656,7 @@ components:
           minItems: 1
           items:
             type: object
-            required: [id, title, repository, base_sha, paths, recipe, runner, verifier]
+            required: [id, title, repository, base_sha, paths, depends_on, recipe, runner, verifier]
             properties:
               id: { type: string, minLength: 1 }
               title: { type: string, minLength: 1, maxLength: 200 }
@@ -2617,11 +2667,22 @@ components:
               recipe: { enum: [research, bug, feature, migration, release] }
               runner: { type: string, minLength: 1 }
               verifier: { type: string, minLength: 1 }
+              verifier_provider: { type: string, minLength: 1, maxLength: 128 }
+              verifier_model: { type: string, minLength: 1, maxLength: 256 }
               permissions:
                 type: array
                 uniqueItems: true
                 description: Required by Goal v2; requested effects are constrained by policy_ceiling and runtime policy.
                 items: { $ref: '#/components/schemas/GoalPermissionEffect' }
+            allOf:
+              - if:
+                  required: [verifier_provider]
+                then:
+                  required: [verifier_model]
+              - if:
+                  required: [verifier_model]
+                then:
+                  required: [verifier_provider]
       oneOf:
         - properties:
             schema_version: { const: 1 }
@@ -2666,9 +2727,33 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GoalTaskProjectionItem'
+    GoalTaskAcceptanceRequest:
+      type: object
+      additionalProperties: false
+      required: [attempt, candidate_sha, decision]
+      properties:
+        attempt: { type: string, pattern: '^[1-9][0-9]{0,8}$' }
+        candidate_sha: { type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$' }
+        decision: { const: accept }
+    GoalTaskAcceptanceReceipt:
+      type: object
+      required: [goal_id, task_id, attempt, repository, base_sha, candidate_sha, decision, actor, integrity_checks, created_at]
+      properties:
+        goal_id: { type: string }
+        task_id: { type: string }
+        attempt: { type: integer, minimum: 1 }
+        repository: { type: string }
+        base_sha: { type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$' }
+        candidate_sha: { type: string, pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$' }
+        decision: { const: accept }
+        actor: { const: local-api-bearer, description: Capability label; not a named human identity. }
+        integrity_checks:
+          type: array
+          items: { const: candidate_commit_descendant_and_declared_paths }
+        created_at: { type: string }
     GoalTaskProjectionItem:
       type: object
-      required: [id, title, repository, base_sha, paths, depends_on, recipe, runner, verifier, status, attempt_count, attempts]
+      required: [id, title, repository, base_sha, paths, depends_on, recipe, runner, verifier, verifier_provider, verifier_model, status, attempt_count, attempts]
       properties:
         id: { type: string }
         title: { type: string }
@@ -2682,18 +2767,23 @@ components:
         permissions:
           type: array
           items: { $ref: '#/components/schemas/GoalPermissionEffect' }
-        status: { enum: [pending, running, succeeded, failed, uncertain] }
+        status: { enum: [pending, running, verifying, verified, succeeded, failed, uncertain] }
+        verifier_provider: { type: string }
+        verifier_model: { type: string }
         attempt_count: { type: integer, minimum: 0 }
         attempts:
           type: array
           items:
             type: object
-            required: [attempt, status, started_at, ended_at]
+            required: [attempt, status, started_at, ended_at, effective_deadline, lease_expires_at, lease_generation]
             properties:
               attempt: { type: integer, minimum: 1 }
-              status: { enum: [running, succeeded, failed, uncertain] }
+              status: { enum: [running, verifying, succeeded, failed, uncertain] }
               started_at: { type: string }
               ended_at: { type: string }
+              effective_deadline: { type: string }
+              lease_expires_at: { type: string }
+              lease_generation: { type: integer, minimum: 0 }
     GoalPreflightReport:
       type: object
       required: [goal_id, checkouts_validated, repositories, diagnostics]

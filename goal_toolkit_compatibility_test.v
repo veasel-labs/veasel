@@ -37,6 +37,8 @@ fn test_agent_toolkit_goal_v1_export_is_admitted_without_semantic_loss() {
 	assert stored.tasks[0].recipe == 'feature'
 	assert stored.tasks[0].runner == 'local-v'
 	assert stored.tasks[0].verifier == 'independent-review'
+	assert stored.tasks[0].verifier_provider == ''
+	assert stored.tasks[0].verifier_model == ''
 	assert stored.tasks[1].id == 'docs'
 	assert stored.tasks[1].title == 'Document portable contract'
 	assert stored.tasks[1].repository == 'ulises-jeremias/agent-toolkit'
@@ -46,4 +48,25 @@ fn test_agent_toolkit_goal_v1_export_is_admitted_without_semantic_loss() {
 	assert stored.tasks[1].recipe == 'research'
 	assert stored.tasks[1].runner == 'local-v'
 	assert stored.tasks[1].verifier == 'independent-review'
+	assert stored.tasks[1].verifier_provider == ''
+	assert stored.tasks[1].verifier_model == ''
+}
+
+fn test_goal_v1_admission_rejects_partial_verifier_route_extension() {
+	fixture := os.join_path(os.getwd(), 'testdata', 'agent-toolkit-goal-v1-export.json')
+	raw := os.read_file(fixture) or { panic(err) }
+	goal := json2.decode[GoalAdmission](raw) or { panic(err) }
+	partial_task := GoalTask{
+		...goal.tasks[0]
+		verifier_provider: 'anthropic'
+	}
+	invalid_goal := GoalAdmission{
+		...goal
+		tasks: [partial_task, goal.tasks[1]]
+	}
+	if _ := validate_goal_admission(invalid_goal) {
+		assert false, 'a verifier provider without a model must fail admission'
+	} else {
+		assert err.msg().contains('verifier provider and model must be supplied together')
+	}
 }

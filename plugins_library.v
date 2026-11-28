@@ -2,6 +2,7 @@ module main
 
 import json2
 import os
+import time
 
 // Integrated plugin Library (#706): discovery/install/update/removal on top
 // of the existing plugin loader (plugins_links.v). The catalog is the
@@ -132,6 +133,133 @@ fn library_permission_summary(entry LibraryEntry) string {
 	return parts.join(' ')
 }
 
+fn library_package_path_under_root(root string, package string) !string {
+	if !os.is_dir(root) || !os.is_dir(package) {
+		return error('library package directory does not exist')
+	}
+	canonical_root := os.real_path(root)
+	canonical_package := os.real_path(package)
+	if canonical_root.len == 0 || canonical_package.len == 0
+		|| !path_is_within(canonical_root, canonical_package) {
+		return error('library package path escapes its source directory')
+	}
+	return canonical_package
+}
+
+const library_git_timeout = 120 * time.second
+const library_git_output_limit = 4096
+const max_library_git_metadata_entries = 100_000
+
+fn library_git_metadata_has_symlink(root string) !bool {
+	return library_git_metadata_has_symlink_with_limit(root, max_library_git_metadata_entries)
+}
+
+fn library_git_metadata_has_symlink_with_limit(root string, max_entries int) !bool {
+	mut pending := [root]
+	mut seen := 0
+	for pending.len > 0 {
+		current := pending.pop()
+		children := os.ls(current) or {
+			return error('unable to inspect library Git metadata')
+		}
+		seen += children.len
+		if seen > max_entries {
+			return error('library Git metadata exceeds the safety limit')
+		}
+		for child in children {
+			path := os.join_path(current, child)
+			if os.is_link(path) {
+				return true
+			}
+			if os.is_dir(path) {
+				pending << path
+			}
+		}
+	}
+	return false
+}
+
+fn library_validate_cached_clone(cache_root string, clone_dir string) !string {
+	if os.is_link(clone_dir) {
+		return error('library clone cache entry must not be a symlink')
+	}
+	canonical_clone := library_package_path_under_root(cache_root, clone_dir) or {
+		return error('library clone cache entry escapes the cache directory')
+	}
+	git_dir := os.join_path(canonical_clone, '.git')
+	if os.is_link(git_dir) || os.is_file(git_dir) || !os.is_dir(git_dir)
+		|| !path_is_within(canonical_clone, git_dir) {
+		return error('library clone metadata must be an in-cache directory')
+	}
+	if library_git_metadata_has_symlink(git_dir) or {
+		return error('unable to validate library clone metadata')
+	} {
+		return error('library clone metadata must not contain symlinks')
+	}
+	config := os.join_path(git_dir, 'config')
+	if os.is_link(config) || !os.is_file(config) || !path_is_within(git_dir, config) {
+		return error('library clone configuration must be an in-cache file')
+	}
+	workspace_git_refuse_command_config(canonical_clone) or {
+		return error('library clone has unsafe Git filters or includes')
+	}
+	return canonical_clone
+}
+
+fn run_library_git_command(checkout string, args []string) !string {
+	git := os.find_abs_path_of_executable('git') or {
+		return error('git executable is not available')
+	}
+	mut full_args := []string{}
+	for setting in workspace_git_hardened_config() {
+		full_args << '-c'
+		full_args << setting
+	}
+	full_args << args
+	mut process := os.new_process(git)
+	process.set_args(full_args)
+	process.set_work_folder(checkout)
+	process.set_environment(workspace_git_untrusted_env())
+	process.set_redirect_stdio()
+	process.run()
+	started := time.now()
+	mut stdout := []u8{}
+	for process.is_alive() || process.is_pending(.stdout) || process.is_pending(.stderr) {
+		if time.since(started) > library_git_timeout {
+			process.signal_kill()
+			process.wait()
+			process.close()
+			return error('library Git operation timed out')
+		}
+		mut read_output := false
+		if process.is_pending(.stdout) {
+			chunk := process.stdout_read()
+			if stdout.len + chunk.len > library_git_output_limit {
+				process.signal_kill()
+				process.wait()
+				process.close()
+				return error('library Git command output exceeded its limit')
+			}
+			stdout << chunk.bytes()
+			read_output = true
+		}
+		if process.is_pending(.stderr) {
+			_ = process.stderr_read()
+			read_output = true
+		}
+		if !read_output {
+			time.sleep(5 * time.millisecond)
+		}
+	}
+	process.wait()
+	code := process.code
+	process.close()
+	if code != 0 {
+		return error('library Git operation failed')
+	}
+	return stdout.bytestr()
+}
+
 fn library_resolve_package(catalog_directory string, entry LibraryEntry, options LibraryInstallOptions) !string {
 	match entry.source.typ {
 		'relative' {
@@ -143,10 +271,7 @@ fn library_resolve_package(catalog_directory string, entry LibraryEntry, options
 			if package != root && !package.starts_with(root + os.path_separator) {
 				return error('relative library source escapes the catalog directory')
 			}
-			if !os.is_dir(package) {
-				return error('library package directory does not exist')
-			}
-			return package
+			return library_package_path_under_root(root, package)
 		}
 		'github', 'git-subdir' {
 			if entry.source.repo.len == 0 || entry.source.repo.contains('..')
@@ -166,19 +291,27 @@ fn library_resolve_package(catalog_directory string, entry LibraryEntry, options
 				return error('unable to create library cache directory')
 			}
 			clone_dir := os.join_path(cache_root, '${entry.id}-${sha[..12]}')
-			if !os.is_dir(os.join_path(clone_dir, '.git')) {
+			if os.is_link(clone_dir) {
+				return error('library clone cache entry must not be a symlink')
+			}
+			if os.exists(clone_dir) {
+				_ = library_validate_cached_clone(cache_root, clone_dir) or {
+					return error('library clone cache entry is unsafe')
+				}
+			} else {
 				url := 'https://github.com/${entry.source.repo}.git'
-				cloned := os.exec(['git', 'clone', '-q', '--no-checkout', url, clone_dir])
-				if cloned.exit_code != 0 {
-					return error('unable to clone library package ${entry.source.repo}')
+				run_library_git_command(cache_root, ['clone', '-q', '--no-checkout', url, clone_dir]) or { return error('unable to clone library package ${entry.source.repo}') }
+				_ = library_validate_cached_clone(cache_root, clone_dir) or {
+					return error('new library clone failed cache safety checks')
 				}
 			}
-			checked := os.exec(['git', '-C', clone_dir, 'checkout', '-q', sha])
-			if checked.exit_code != 0 {
+			run_library_git_command(cache_root, ['-C', clone_dir, 'checkout', '-q', sha]) or {
 				return error('unable to checkout pinned commit for ${entry.id}')
 			}
-			head := os.exec(['git', '-C', clone_dir, 'rev-parse', 'HEAD'])
-			if head.exit_code != 0 || head.output.trim_space() != sha {
+			head := run_library_git_command(cache_root, ['-C', clone_dir, 'rev-parse', 'HEAD']) or {
+				return error('unable to verify pinned commit for ${entry.id}')
+			}
+			if head.trim_space() != sha {
 				return error('resolved commit for ${entry.id} does not match the catalog pin')
 			}
 			package := if entry.source.path.len > 0 {
@@ -186,10 +319,7 @@ fn library_resolve_package(catalog_directory string, entry LibraryEntry, options
 			} else {
 				clone_dir
 			}
-			if !os.is_dir(package) {
-				return error('library package path does not exist at the pinned commit')
-			}
-			return package
+			return library_package_path_under_root(clone_dir, package)
 		}
 		else {
 			return error('unsupported library source type')

@@ -158,6 +158,8 @@
   box-shadow: var(--shadow-panel);
   color: var(--text-on-chrome);
   font: var(--text-sm) / 1.4 var(--font-body);
+  /* Keep this truthful status visible without stealing click-to-walk or pan input. */
+  pointer-events: none;
 }
 
 .mapRegion {

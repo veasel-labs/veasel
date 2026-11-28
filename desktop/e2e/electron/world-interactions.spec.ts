@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { waitForBackend, type Desktop } from './fixtures';
+import { setViewport, waitForBackend, type Desktop } from './fixtures';
 import { launchFocusDesktop, stopSpawnedClis } from './journey-env';
 
 /**
@@ -62,6 +62,41 @@ test('a real thread appears in the World, opens in Focus, and disappears when de
     await nav.getByRole('link', { name: 'World' }).click();
     await expect(world.getByRole('button', { name: /World journey thread/ })).toHaveCount(0, {
       timeout: 20_000,
+    });
+  } finally {
+    await desktop.close();
+    await stopSpawnedClis(env);
+  }
+});
+
+test('the live-data status stays visible without intercepting World map input', async ({}, testInfo) => {
+  const { desktop, env } = await launchFocusDesktop();
+  try {
+    const { page } = desktop;
+    await page.route('**/v1/operations/latest*', (route) =>
+      route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"temporary outage"}' }),
+    );
+    await waitForBackend(page);
+    await page.getByRole('navigation', { name: 'Destinations' }).getByRole('link', { name: 'World' }).click();
+
+    const status = page
+      .getByRole('status')
+      .filter({ hasText: 'Some live runtime details are unavailable; missing activity is omitted.' });
+    await expect(status).toBeVisible({ timeout: 20_000 });
+    await setViewport(desktop.app, 1024, 640);
+
+    const hitTarget = await status.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const point = document.elementFromPoint(
+        bounds.left + Math.min(bounds.width / 2, 20),
+        bounds.top + bounds.height / 2,
+      );
+      return point?.closest('[role="application"]')?.getAttribute('aria-label') ?? null;
+    });
+    expect(hitTarget).toBe('Semantic workspace world');
+    await testInfo.attach('world-live-data-status-compact.png', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
     });
   } finally {
     await desktop.close();

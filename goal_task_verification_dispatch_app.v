@@ -299,22 +299,15 @@ fn (app &App) turn_operations_are_closing() bool {
 // reviewer run. Other built-in subagents follow their normal delivery path.
 fn (app &App) reconcile_goal_task_verifier_run(run_id string) {
 	mut store := app.store
-	mut store_mutex := store.mu
-	store_mutex.lock()
-	bindings := store.db.exec_param_many("SELECT goal_id, task_id, attempt, id FROM goal_task_verifier_bindings WHERE reviewer_run_id = ? AND status = 'bound'", [
-		run_id,
-	]) or {
-		store_mutex.unlock()
-		return
-	}
-	store_mutex.unlock()
+	bindings := store.list_bound_goal_task_verifiers(run_id) or { return }
 	if bindings.len != 1 {
 		app.resume_goal_task_verification_dispatches()
 		return
 	}
-	_ := store.record_goal_task_verification_receipt(bindings[0].val(3)) or {
-		_ = store.best_effort_mark_goal_task_verification_uncertain(bindings[0].val(0),
-			bindings[0].val(1), bindings[0].val(2).int(),
+	binding := bindings[0]
+	_ := store.record_goal_task_verification_receipt(binding.id) or {
+		_ = store.best_effort_mark_goal_task_verification_uncertain(binding.goal_id,
+			binding.task_id, binding.attempt,
 			'The reviewer result did not validate against the active candidate and lease.')
 		return
 	}

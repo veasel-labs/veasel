@@ -54,6 +54,8 @@ fn project_goal_task_receipts(verification ?GoalTaskVerificationReceipt,
 				return error('stored acceptance does not match verification evidence')
 			}
 		}
+	} else if _ := acceptance {
+		return error('stored acceptance has no verification evidence')
 	}
 	mut projected_verification := ?GoalTaskVerificationEvidence(none)
 	if receipt := verification {

@@ -72,6 +72,19 @@ fn test_goal_task_receipt_projection_rejects_candidate_mismatch() {
 	}
 }
 
+fn test_goal_task_receipt_projection_rejects_acceptance_without_verification() {
+	acceptance := GoalTaskAcceptanceReceipt{
+		repository:    'veasel-labs/veasel'
+		base_sha:      'a'.repeat(40)
+		candidate_sha: 'b'.repeat(40)
+		decision:      'accept'
+	}
+	if _ := project_goal_task_receipts(?GoalTaskVerificationReceipt(none), acceptance, 'goal',
+		'task', 1) {
+		assert false, 'acceptance without verification evidence was projected'
+	}
+}
+
 fn test_goal_task_attempt_path_parser_rejects_noncanonical_and_nonpositive_values() {
 	for value in ['', '0', '-1', '01', '1x', '999999999999999999999'] {
 		if _ := parse_goal_task_attempt_path(value) {
